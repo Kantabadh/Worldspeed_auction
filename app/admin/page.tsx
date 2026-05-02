@@ -18,7 +18,15 @@ type AdminOffer = {
   } | null;
 };
 
-const ADMIN_TIMEOUT_MS = 10 * 60 * 1000;
+type StaffProfile = {
+  id: string;
+  email: string;
+  role: string;
+  active: boolean;
+  expiresAt?: number;
+};
+
+const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
 
 export default function AdminPage() {
   const [offers, setOffers] = useState<AdminOffer[]>([]);
@@ -28,114 +36,138 @@ export default function AdminPage() {
   const [auctionStatus, setAuctionStatus] = useState("open");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
-  const [loginError, setLoginError] = useState("");
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
+  const [isCheckingStaff, setIsCheckingStaff] = useState(true);
 
-  function saveAdminSession() {
-    localStorage.setItem(
-      "adminSession",
-      JSON.stringify({
-        expiresAt: Date.now() + ADMIN_TIMEOUT_MS,
-      })
-    );
+  function saveStaffSession(profile: StaffProfile) {
+    const updatedProfile = {
+      ...profile,
+      expiresAt: Date.now() + STAFF_TIMEOUT_MS,
+    };
+
+    localStorage.setItem("staffProfile", JSON.stringify(updatedProfile));
+    setStaffProfile(updatedProfile);
   }
 
-  function logoutAdmin() {
-    localStorage.removeItem("adminSession");
-    setIsLoggedIn(false);
-    setPasswordInput("");
-    window.location.href = "/admin";
+  async function logoutStaff() {
+    localStorage.removeItem("staffProfile");
+    await supabase.auth.signOut();
+    setStaffProfile(null);
+    window.location.href = "/staff-login";
   }
 
-  function checkAdminSession() {
-    const savedSession = localStorage.getItem("adminSession");
+  async function checkStaffSession() {
+    const savedProfileText = localStorage.getItem("staffProfile");
 
-    if (!savedSession) {
-      setIsLoggedIn(false);
+    if (!savedProfileText) {
+      window.location.href = "/staff-login";
       return;
     }
 
-    const session = JSON.parse(savedSession);
+    const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
 
-    if (Date.now() > session.expiresAt) {
-      localStorage.removeItem("adminSession");
-      setIsLoggedIn(false);
+    if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
+      await logoutStaff();
       return;
     }
 
-    setIsLoggedIn(true);
-  }
+    const { data: userData, error: userError } = await supabase.auth.getUser();
 
-  function refreshAdminActivity() {
-    const savedSession = localStorage.getItem("adminSession");
-    if (!savedSession) return;
-    saveAdminSession();
-  }
-
-  function handleAdminLogin() {
-    const correctPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-
-    if (passwordInput === correctPassword) {
-      saveAdminSession();
-      setIsLoggedIn(true);
-      setLoginError("");
-    } else {
-      setLoginError("Wrong password. Please try again.");
+    if (userError || !userData.user) {
+      localStorage.removeItem("staffProfile");
+      window.location.href = "/staff-login";
+      return;
     }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("staff_profiles")
+      .select("id, email, role, active")
+      .eq("id", userData.user.id)
+      .eq("active", true)
+      .single();
+
+    if (profileError || !profile) {
+      await logoutStaff();
+      return;
+    }
+
+    saveStaffSession({
+      id: profile.id,
+      email: profile.email,
+      role: profile.role,
+      active: profile.active,
+    });
+
+    setIsCheckingStaff(false);
+  }
+
+  function refreshStaffActivity() {
+    const savedProfileText = localStorage.getItem("staffProfile");
+
+    if (!savedProfileText) return;
+
+    const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
+
+    saveStaffSession(savedProfile);
   }
 
   useEffect(() => {
-    checkAdminSession();
+    checkStaffSession();
   }, []);
 
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!staffProfile) return;
 
     const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
 
     events.forEach((event) => {
-      window.addEventListener(event, refreshAdminActivity);
+      window.addEventListener(event, refreshStaffActivity);
     });
 
     const interval = setInterval(() => {
-      const savedSession = localStorage.getItem("adminSession");
+      const savedProfileText = localStorage.getItem("staffProfile");
 
-      if (!savedSession) {
-        setIsLoggedIn(false);
+      if (!savedProfileText) {
+        logoutStaff();
         return;
       }
 
-      const session = JSON.parse(savedSession);
+      const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
 
-      if (Date.now() > session.expiresAt) {
-        logoutAdmin();
+      if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
+        logoutStaff();
       }
     }, 5000);
 
     return () => {
       events.forEach((event) => {
-        window.removeEventListener(event, refreshAdminActivity);
+        window.removeEventListener(event, refreshStaffActivity);
       });
 
       clearInterval(interval);
     };
-  }, [isLoggedIn]);
+  }, [staffProfile]);
 
   async function loadAuctionStatus() {
-    const { data, error } = await supabase
-      .from("auction_settings")
-      .select("id, status")
-      .limit(1)
-      .single();
+  const { data, error } = await supabase
+    .from("auction_settings")
+    .select("id, status")
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    setAuctionStatus(data.status);
+  if (error) {
+    setErrorMessage(error.message);
+    return;
   }
+
+  if (!data) {
+    setErrorMessage("No auction setting found.");
+    return;
+  }
+
+  setAuctionStatus(data.status);
+}
 
   async function toggleAuctionStatus() {
     setIsUpdatingStatus(true);
@@ -143,10 +175,10 @@ export default function AdminPage() {
 
     const newStatus = auctionStatus === "open" ? "closed" : "open";
 
-    const { error } = await supabase
-      .from("auction_settings")
-      .update({ status: newStatus })
-      .eq("id", 1);
+const { error } = await supabase
+  .from("auction_settings")
+  .update({ status: newStatus })
+  .eq("auction_name", "Main Motorcycle Auction");
 
     if (error) {
       setErrorMessage(error.message);
@@ -304,56 +336,21 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (!isLoggedIn) {
+  if (isCheckingStaff) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-8">
-        <section className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-lg ring-1 ring-gray-200">
-          <div className="bg-black px-6 py-6 text-white">
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-300">
-              Motorcycle Offer System
-            </p>
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <p className="text-gray-700">Checking staff login...</p>
+        </section>
+      </main>
+    );
+  }
 
-            <h1 className="mt-2 text-2xl font-bold">Admin Login</h1>
-
-            <p className="mt-2 text-sm text-gray-300">
-              Enter the admin password to manage auction results.
-            </p>
-          </div>
-
-          <div className="p-6">
-            {loginError && (
-              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-                <p className="font-semibold">Login failed</p>
-                <p className="text-sm">{loginError}</p>
-              </div>
-            )}
-
-            <label className="text-sm font-medium text-gray-700">
-              Admin Password
-            </label>
-
-            <input
-              type="password"
-              className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
-              placeholder="Enter password"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAdminLogin();
-              }}
-            />
-
-            <button
-              onClick={handleAdminLogin}
-              className="mt-6 w-full rounded-2xl bg-black px-4 py-3 font-semibold text-white shadow"
-            >
-              Login
-            </button>
-
-            <p className="mt-4 text-center text-xs text-gray-500">
-              Admin session expires after 10 minutes of no activity.
-            </p>
-          </div>
+  if (!staffProfile) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <p className="text-gray-700">Redirecting to staff login...</p>
         </section>
       </main>
     );
@@ -370,10 +367,13 @@ export default function AdminPage() {
             <h1 className="mt-1 text-2xl font-bold text-gray-900">
               Motorcycle Offer System
             </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Logged in as {staffProfile.email} • {staffProfile.role}
+            </p>
           </div>
 
           <button
-            onClick={logoutAdmin}
+            onClick={logoutStaff}
             className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
           >
             Logout
@@ -519,16 +519,13 @@ export default function AdminPage() {
 
         {!isLoading && winners.length > 0 && (
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  Highest Offer Per Motorcycle
-                </h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Current leading offer for each lot.
-                </p>
-              </div>
-            </div>
+            <h2 className="text-xl font-bold text-gray-900">
+              Highest Offer Per Motorcycle
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-600">
+              Current leading offer for each lot.
+            </p>
 
             <div className="mt-4 overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
