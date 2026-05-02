@@ -3,18 +3,23 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type MotorcyclePhoto = {
+  id: number;
+  image_url: string;
+};
+
 type Motorcycle = {
   id: number;
   lot_number: string;
   motorcycle_name: string;
-  image_url: string | null;
+  motorcycle_photos: MotorcyclePhoto[];
 };
 
 type Offer = {
   motorcycle_id: number;
   lot: string;
   motorcycle: string;
-  image_url: string | null;
+  photos: MotorcyclePhoto[];
   price: string;
 };
 
@@ -25,10 +30,10 @@ export default function MerchantPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-const [selectedImageName, setSelectedImageName] = useState("");
 
-  // Load saved merchant information when the page opens.
+  const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+
   useEffect(() => {
     const savedDraft = localStorage.getItem("merchantPageDraft");
 
@@ -41,7 +46,6 @@ const [selectedImageName, setSelectedImageName] = useState("");
     }
   }, []);
 
-  // Save merchant information whenever the user types.
   useEffect(() => {
     const draft = {
       merchantName,
@@ -52,7 +56,6 @@ const [selectedImageName, setSelectedImageName] = useState("");
     localStorage.setItem("merchantPageDraft", JSON.stringify(draft));
   }, [merchantName, shopName, phone]);
 
-  // Load auction status and motorcycles from Supabase when page opens.
   useEffect(() => {
     async function loadAuctionStatus() {
       const { data, error } = await supabase
@@ -72,7 +75,15 @@ const [selectedImageName, setSelectedImageName] = useState("");
     async function loadMotorcycles() {
       const { data, error } = await supabase
         .from("motorcycles")
-        .select("*")
+        .select(`
+          id,
+          lot_number,
+          motorcycle_name,
+          motorcycle_photos (
+            id,
+            image_url
+          )
+        `)
         .eq("active", true)
         .order("lot_number");
 
@@ -82,19 +93,17 @@ const [selectedImageName, setSelectedImageName] = useState("");
       }
 
       const motorcycleOffers =
-  data?.map((bike: Motorcycle) => ({
-    motorcycle_id: bike.id,
-    lot: bike.lot_number,
-    motorcycle: bike.motorcycle_name,
-    image_url: bike.image_url,
-    price: "",
-  })) || [];
+        data?.map((bike: Motorcycle) => ({
+          motorcycle_id: bike.id,
+          lot: bike.lot_number,
+          motorcycle: bike.motorcycle_name,
+          photos: bike.motorcycle_photos || [],
+          price: "",
+        })) || [];
 
-      // Load saved offer prices from browser storage.
       const savedPricesText = localStorage.getItem("merchantOfferPrices");
       const savedPrices = savedPricesText ? JSON.parse(savedPricesText) : {};
 
-      // Put saved prices back into the correct motorcycle lots.
       const motorcycleOffersWithSavedPrices = motorcycleOffers.map((offer) => ({
         ...offer,
         price: savedPrices[offer.motorcycle_id] || "",
@@ -112,7 +121,6 @@ const [selectedImageName, setSelectedImageName] = useState("");
     newOffers[index].price = value;
     setOffers(newOffers);
 
-    // Save prices by motorcycle id.
     const pricesToSave: Record<number, string> = {};
 
     newOffers.forEach((offer) => {
@@ -120,6 +128,28 @@ const [selectedImageName, setSelectedImageName] = useState("");
     });
 
     localStorage.setItem("merchantOfferPrices", JSON.stringify(pricesToSave));
+  }
+
+  function openGallery(photos: MotorcyclePhoto[], startIndex: number) {
+    setGalleryPhotos(photos);
+    setGalleryIndex(startIndex);
+  }
+
+  function closeGallery() {
+    setGalleryPhotos([]);
+    setGalleryIndex(0);
+  }
+
+  function showPreviousPhoto() {
+    setGalleryIndex((currentIndex) =>
+      currentIndex === 0 ? galleryPhotos.length - 1 : currentIndex - 1
+    );
+  }
+
+  function showNextPhoto() {
+    setGalleryIndex((currentIndex) =>
+      currentIndex === galleryPhotos.length - 1 ? 0 : currentIndex + 1
+    );
   }
 
   function handleSubmit() {
@@ -202,30 +232,28 @@ const [selectedImageName, setSelectedImageName] = useState("");
         )}
 
         {offers.map((offer, index) => (
-  <div key={offer.motorcycle_id} className="rounded border p-4">
-{offer.image_url && (
-  <button
-    type="button"
-    onClick={() => {
-      setSelectedImage(offer.image_url);
-      setSelectedImageName(`Lot ${offer.lot} - ${offer.motorcycle}`);
-    }}
-    className="mb-3 block w-full max-w-md text-left"
-  >
-    <img
-      src={offer.image_url}
-      alt={offer.motorcycle}
-      className="h-48 w-full rounded object-cover transition hover:opacity-80"
-    />
-
-    <p className="mt-1 text-sm text-gray-500">
-      Click photo to enlarge
-    </p>
-  </button>
+          <div key={offer.motorcycle_id} className="rounded border p-4">
+          {offer.photos.length > 0 && (
+  <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+    {offer.photos.map((photo, photoIndex) => (
+      <button
+        key={photo.id}
+        type="button"
+        onClick={() => openGallery(offer.photos, photoIndex)}
+        className="block overflow-hidden rounded border"
+      >
+        <img
+          src={photo.image_url}
+          alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
+          className="h-32 w-full object-cover transition hover:opacity-80"
+        />
+      </button>
+    ))}
+  </div>
 )}
 
-  <p className="font-bold">Lot {offer.lot}</p>
-  <p>{offer.motorcycle}</p>
+            <p className="font-bold">Lot {offer.lot}</p>
+            <p>{offer.motorcycle}</p>
 
             <input
               className="mt-3 w-full rounded border p-2"
@@ -244,47 +272,51 @@ const [selectedImageName, setSelectedImageName] = useState("");
       >
         Review My Offers
       </button>
-      {selectedImage && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-    <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded bg-white p-4">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="text-lg font-bold">{selectedImageName}</h2>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedImage(null);
-            setSelectedImageName("");
-          }}
-          className="rounded bg-black px-4 py-2 text-white"
-        >
-          Close
-        </button>
-      </div>
+      {galleryPhotos.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black">
+          <button
+            type="button"
+            onClick={closeGallery}
+            className="fixed right-4 top-4 z-50 rounded-full bg-black/60 px-4 py-2 text-2xl text-white"
+          >
+            ×
+          </button>
 
-      <img
-        src={selectedImage}
-        alt={selectedImageName}
-        className="mx-auto max-h-[75vh] w-auto max-w-full rounded object-contain"
-      />
+          {galleryPhotos.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={showPreviousPhoto}
+                className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-black/60 px-4 py-3 text-3xl text-white"
+              >
+                ‹
+              </button>
 
-      <div className="mt-3 flex gap-3">
-        <a
-          href={selectedImage}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded border px-4 py-2"
-        >
-          Open Full Size
-        </a>
+              <button
+                type="button"
+                onClick={showNextPhoto}
+                className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-black/60 px-4 py-3 text-3xl text-white"
+              >
+                ›
+              </button>
+            </>
+          )}
 
-        <p className="py-2 text-sm text-gray-600">
-          Tip: open full size, then use browser zoom or pinch zoom on phone.
-        </p>
-      </div>
-    </div>
-  </div>
-)}
+          <div className="flex h-screen w-screen items-center justify-center overflow-auto p-2">
+            <img
+              src={galleryPhotos[galleryIndex].image_url}
+              alt="Motorcycle photo"
+              className="max-h-none max-w-none object-contain"
+              style={{
+                width: "100%",
+                height: "auto",
+                touchAction: "pinch-zoom",
+              }}
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

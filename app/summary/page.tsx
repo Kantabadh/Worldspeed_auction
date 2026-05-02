@@ -12,6 +12,10 @@ type Offer = {
   motorcycle_id: number;
   lot: string;
   motorcycle: string;
+  photos?: {
+    id: number;
+    image_url: string;
+  }[];
   price: string;
 };
 
