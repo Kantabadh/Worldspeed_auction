@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
+import StaffGuard from "@/components/StaffGuard";
 
 type MerchantAccount = {
   id: number;
@@ -187,284 +188,288 @@ export default function AdminMerchantsPage() {
   const inactiveCount = merchants.filter((merchant) => !merchant.active).length;
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-10">
-      <section className="mx-auto max-w-6xl px-4 py-6">
-        <BackButton />
+    <StaffGuard>
+      <main className="min-h-screen bg-gray-50 pb-10">
+        <section className="mx-auto max-w-6xl px-4 py-6">
+          <BackButton />
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-              Admin Management
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+                Admin Management
+              </p>
 
-            <h1 className="mt-1 text-2xl font-bold text-gray-900">
-              Merchant Accounts
-            </h1>
+              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+                Merchant Accounts
+              </h1>
+
+              <p className="mt-1 text-sm text-gray-600">
+                Create and manage merchant code access for auction buyers.
+              </p>
+            </div>
+
+            <button
+              onClick={loadMerchants}
+              className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {errorMessage && (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+              <p className="font-semibold">Error</p>
+              <p className="text-sm">{errorMessage}</p>
+            </div>
+          )}
+
+          <section className="mt-5 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Total Merchants</p>
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {merchants.length}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Active</p>
+              <p className="mt-2 text-3xl font-bold text-green-600">
+                {activeCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Inactive</p>
+              <p className="mt-2 text-3xl font-bold text-red-600">
+                {inactiveCount}
+              </p>
+            </div>
+          </section>
+
+          <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">
+              Add Merchant Account
+            </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Create and manage merchant code access for auction buyers.
+              Merchant logs in using phone number and merchant code.
             </p>
-          </div>
 
-          <button
-            onClick={loadMerchants}
-            className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
-          >
-            Refresh
-          </button>
-        </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Merchant Code
+                </label>
 
-        {errorMessage && (
-          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-            <p className="font-semibold">Error</p>
-            <p className="text-sm">{errorMessage}</p>
-          </div>
-        )}
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="w-full rounded-2xl border p-3 uppercase outline-none focus:ring-2 focus:ring-black"
+                    placeholder="Example: M001"
+                    value={merchantCode}
+                    onChange={(e) =>
+                      setMerchantCode(e.target.value.toUpperCase())
+                    }
+                  />
 
-        <section className="mt-5 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Total Merchants</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {merchants.length}
-            </p>
-          </div>
+                  <button
+                    onClick={generateNextCode}
+                    className="rounded-2xl border px-4 py-2 font-medium hover:bg-gray-100"
+                  >
+                    Auto
+                  </button>
+                </div>
+              </div>
 
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Active</p>
-            <p className="mt-2 text-3xl font-bold text-green-600">
-              {activeCount}
-            </p>
-          </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Merchant Name
+                </label>
 
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Inactive</p>
-            <p className="mt-2 text-3xl font-bold text-red-600">
-              {inactiveCount}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">
-            Add Merchant Account
-          </h2>
-
-          <p className="mt-1 text-sm text-gray-600">
-            Merchant logs in using phone number and merchant code.
-          </p>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Merchant Code
-              </label>
-
-              <div className="mt-2 flex gap-2">
                 <input
-                  className="w-full rounded-2xl border p-3 uppercase outline-none focus:ring-2 focus:ring-black"
-                  placeholder="Example: M001"
-                  value={merchantCode}
-                  onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="Example: Somchai"
+                  value={merchantName}
+                  onChange={(e) => setMerchantName(e.target.value)}
                 />
+              </div>
 
-                <button
-                  onClick={generateNextCode}
-                  className="rounded-2xl border px-4 py-2 font-medium hover:bg-gray-100"
-                >
-                  Auto
-                </button>
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Shop Name
+                </label>
+
+                <input
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="Example: ABC Motor"
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Phone Number
+                </label>
+
+                <input
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="Example: 0812345678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </div>
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Merchant Name
-              </label>
+            <button
+              onClick={addMerchant}
+              disabled={isAdding}
+              className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+            >
+              {isAdding ? "Adding..." : "Add Merchant"}
+            </button>
+          </section>
 
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="Example: Somchai"
-                value={merchantName}
-                onChange={(e) => setMerchantName(e.target.value)}
-              />
-            </div>
+          <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">
+              Merchant Account List
+            </h2>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Shop Name
-              </label>
+            <p className="mt-1 text-sm text-gray-600">
+              Activate, deactivate, edit, or delete merchant access.
+            </p>
 
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="Example: ABC Motor"
-                value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
-              />
-            </div>
+            {isLoading && (
+              <div className="mt-4 rounded-2xl bg-gray-50 p-5">
+                <p className="text-gray-600">Loading merchants...</p>
+              </div>
+            )}
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Phone Number
-              </label>
+            {!isLoading && merchants.length === 0 && (
+              <div className="mt-4 rounded-2xl bg-gray-50 p-5">
+                <p className="text-gray-600">No merchant accounts found.</p>
+              </div>
+            )}
 
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="Example: 0812345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </div>
-          </div>
+            {!isLoading && merchants.length > 0 && (
+              <div className="mt-5 space-y-4">
+                {merchants.map((merchant) => (
+                  <article
+                    key={merchant.id}
+                    className="rounded-2xl border bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                          {merchant.merchant_code}
+                        </p>
 
-          <button
-            onClick={addMerchant}
-            disabled={isAdding}
-            className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
-          >
-            {isAdding ? "Adding..." : "Add Merchant"}
-          </button>
-        </section>
+                        <h3 className="mt-1 text-lg font-bold text-gray-900">
+                          {merchant.merchant_name}
+                        </h3>
 
-        <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">
-            Merchant Account List
-          </h2>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {merchant.shop_name} • {merchant.phone}
+                        </p>
+                      </div>
 
-          <p className="mt-1 text-sm text-gray-600">
-            Activate, deactivate, edit, or delete merchant access.
-          </p>
-
-          {isLoading && (
-            <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-              <p className="text-gray-600">Loading merchants...</p>
-            </div>
-          )}
-
-          {!isLoading && merchants.length === 0 && (
-            <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-              <p className="text-gray-600">No merchant accounts found.</p>
-            </div>
-          )}
-
-          {!isLoading && merchants.length > 0 && (
-            <div className="mt-5 space-y-4">
-              {merchants.map((merchant) => (
-                <article
-                  key={merchant.id}
-                  className="rounded-2xl border bg-white p-4 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                        {merchant.merchant_code}
-                      </p>
-
-                      <h3 className="mt-1 text-lg font-bold text-gray-900">
-                        {merchant.merchant_name}
-                      </h3>
-
-                      <p className="mt-1 text-sm text-gray-600">
-                        {merchant.shop_name} • {merchant.phone}
-                      </p>
+                      {merchant.active ? (
+                        <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
+                          Inactive
+                        </span>
+                      )}
                     </div>
 
-                    {merchant.active ? (
-                      <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                        Active
-                      </span>
+                    {editingId === merchant.id ? (
+                      <div className="mt-5 rounded-2xl bg-gray-50 p-4">
+                        <h4 className="font-semibold text-gray-900">
+                          Edit Merchant
+                        </h4>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <input
+                            className="rounded-xl border p-3 uppercase"
+                            value={editMerchantCode}
+                            onChange={(e) =>
+                              setEditMerchantCode(e.target.value.toUpperCase())
+                            }
+                          />
+
+                          <input
+                            className="rounded-xl border p-3"
+                            value={editMerchantName}
+                            onChange={(e) =>
+                              setEditMerchantName(e.target.value)
+                            }
+                          />
+
+                          <input
+                            className="rounded-xl border p-3"
+                            value={editShopName}
+                            onChange={(e) => setEditShopName(e.target.value)}
+                          />
+
+                          <input
+                            className="rounded-xl border p-3"
+                            value={editPhone}
+                            onChange={(e) => setEditPhone(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <button
+                            onClick={() => saveEdit(merchant.id)}
+                            className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
+                          >
+                            Save
+                          </button>
+
+                          <button
+                            onClick={cancelEditing}
+                            className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
                     ) : (
-                      <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                        Inactive
-                      </span>
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          onClick={() => startEditing(merchant)}
+                          className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() => toggleActive(merchant)}
+                          className={
+                            merchant.active
+                              ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
+                              : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+                          }
+                        >
+                          {merchant.active ? "Deactivate" : "Activate"}
+                        </button>
+
+                        <button
+                          onClick={() => deleteMerchant(merchant.id)}
+                          className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     )}
-                  </div>
-
-                  {editingId === merchant.id ? (
-                    <div className="mt-5 rounded-2xl bg-gray-50 p-4">
-                      <h4 className="font-semibold text-gray-900">
-                        Edit Merchant
-                      </h4>
-
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
-                        <input
-                          className="rounded-xl border p-3 uppercase"
-                          value={editMerchantCode}
-                          onChange={(e) =>
-                            setEditMerchantCode(e.target.value.toUpperCase())
-                          }
-                        />
-
-                        <input
-                          className="rounded-xl border p-3"
-                          value={editMerchantName}
-                          onChange={(e) =>
-                            setEditMerchantName(e.target.value)
-                          }
-                        />
-
-                        <input
-                          className="rounded-xl border p-3"
-                          value={editShopName}
-                          onChange={(e) => setEditShopName(e.target.value)}
-                        />
-
-                        <input
-                          className="rounded-xl border p-3"
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value)}
-                        />
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                          onClick={() => saveEdit(merchant.id)}
-                          className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
-                        >
-                          Save
-                        </button>
-
-                        <button
-                          onClick={cancelEditing}
-                          className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <button
-                        onClick={() => startEditing(merchant)}
-                        className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        onClick={() => toggleActive(merchant)}
-                        className={
-                          merchant.active
-                            ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
-                            : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-                        }
-                      >
-                        {merchant.active ? "Deactivate" : "Activate"}
-                      </button>
-
-                      <button
-                        onClick={() => deleteMerchant(merchant.id)}
-                        className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </section>
-      </section>
-    </main>
+      </main>
+    </StaffGuard>
   );
 }

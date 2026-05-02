@@ -37,9 +37,18 @@ export default function HomePage() {
         </div>
 
         <div className="border-t bg-gray-50 px-6 py-4">
-          <p className="text-center text-xs text-gray-500">
-            For auction merchants only.
-          </p>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-center text-xs text-gray-500">
+              For auction merchants only.
+            </p>
+
+            <a
+              href="/staff-login"
+              className="text-xs font-medium text-gray-400 underline hover:text-gray-700"
+            >
+              Staff / Admin Login
+            </a>
+          </div>
         </div>
       </section>
     </main>
