@@ -7,6 +7,7 @@ type Motorcycle = {
   id: number;
   lot_number: string;
   motorcycle_name: string;
+  image_url: string | null;
   active: boolean;
   created_at: string;
 };
@@ -15,12 +16,38 @@ export default function AdminMotorcyclesPage() {
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
   const [lotNumber, setLotNumber] = useState("");
   const [motorcycleName, setMotorcycleName] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editLotNumber, setEditLotNumber] = useState("");
   const [editMotorcycleName, setEditMotorcycleName] = useState("");
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function uploadPhoto(file: File, lot: string) {
+    const fileExtension = file.name.split(".").pop();
+    const filePath = `${lot}-${Date.now()}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("motorcycle-photos")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage
+      .from("motorcycle-photos")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
 
   async function loadMotorcycles() {
     setIsLoading(true);
@@ -50,37 +77,54 @@ export default function AdminMotorcyclesPage() {
     setIsAdding(true);
     setErrorMessage("");
 
-    const { error } = await supabase.from("motorcycles").insert({
-      lot_number: lotNumber,
-      motorcycle_name: motorcycleName,
-      active: true,
-    });
+    try {
+      let imageUrl = "";
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (photoFile) {
+        imageUrl = await uploadPhoto(photoFile, lotNumber);
+      }
+
+      const { error } = await supabase.from("motorcycles").insert({
+        lot_number: lotNumber,
+        motorcycle_name: motorcycleName,
+        image_url: imageUrl,
+        active: true,
+      });
+
+      if (error) {
+        setErrorMessage(error.message);
+        setIsAdding(false);
+        return;
+      }
+
+      setLotNumber("");
+      setMotorcycleName("");
+      setPhotoFile(null);
       setIsAdding(false);
-      return;
+      loadMotorcycles();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to upload photo."
+      );
+      setIsAdding(false);
     }
-
-    setLotNumber("");
-    setMotorcycleName("");
-    setIsAdding(false);
-    loadMotorcycles();
   }
 
   function startEditing(bike: Motorcycle) {
     setEditingId(bike.id);
     setEditLotNumber(bike.lot_number);
     setEditMotorcycleName(bike.motorcycle_name);
+    setEditPhotoFile(null);
   }
 
   function cancelEditing() {
     setEditingId(null);
     setEditLotNumber("");
     setEditMotorcycleName("");
+    setEditPhotoFile(null);
   }
 
-  async function saveEdit(id: number) {
+  async function saveEdit(bike: Motorcycle) {
     if (!editLotNumber || !editMotorcycleName) {
       alert("Please enter lot number and motorcycle name.");
       return;
@@ -88,21 +132,34 @@ export default function AdminMotorcyclesPage() {
 
     setErrorMessage("");
 
-    const { error } = await supabase
-      .from("motorcycles")
-      .update({
-        lot_number: editLotNumber,
-        motorcycle_name: editMotorcycleName,
-      })
-      .eq("id", id);
+    try {
+      let imageUrl = bike.image_url || "";
 
-    if (error) {
-      setErrorMessage(error.message);
-      return;
+      if (editPhotoFile) {
+        imageUrl = await uploadPhoto(editPhotoFile, editLotNumber);
+      }
+
+      const { error } = await supabase
+        .from("motorcycles")
+        .update({
+          lot_number: editLotNumber,
+          motorcycle_name: editMotorcycleName,
+          image_url: imageUrl,
+        })
+        .eq("id", bike.id);
+
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+
+      cancelEditing();
+      loadMotorcycles();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to upload photo."
+      );
     }
-
-    cancelEditing();
-    loadMotorcycles();
   }
 
   async function toggleActive(bike: Motorcycle) {
@@ -187,6 +244,13 @@ export default function AdminMotorcyclesPage() {
           onChange={(e) => setMotorcycleName(e.target.value)}
         />
 
+        <input
+          type="file"
+          accept="image/*"
+          className="mt-3 w-full rounded border p-2"
+          onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+        />
+
         <button
           onClick={addMotorcycle}
           disabled={isAdding}
@@ -209,6 +273,7 @@ export default function AdminMotorcyclesPage() {
           <table className="mt-3 w-full border">
             <thead>
               <tr className="bg-gray-100">
+                <th className="border p-2">Photo</th>
                 <th className="border p-2">Lot Number</th>
                 <th className="border p-2">Motorcycle Name</th>
                 <th className="border p-2">Status</th>
@@ -220,6 +285,18 @@ export default function AdminMotorcyclesPage() {
             <tbody>
               {motorcycles.map((bike) => (
                 <tr key={bike.id}>
+                  <td className="border p-2">
+                    {bike.image_url ? (
+                      <img
+                        src={bike.image_url}
+                        alt={bike.motorcycle_name}
+                        className="h-20 w-28 rounded object-cover"
+                      />
+                    ) : (
+                      <span>No photo</span>
+                    )}
+                  </td>
+
                   <td className="border p-2">
                     {editingId === bike.id ? (
                       <input
@@ -261,8 +338,17 @@ export default function AdminMotorcyclesPage() {
                   <td className="space-x-2 border p-2">
                     {editingId === bike.id ? (
                       <>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="mb-2 block rounded border p-1"
+                          onChange={(e) =>
+                            setEditPhotoFile(e.target.files?.[0] || null)
+                          }
+                        />
+
                         <button
-                          onClick={() => saveEdit(bike.id)}
+                          onClick={() => saveEdit(bike)}
                           className="rounded bg-black px-3 py-1 text-white"
                         >
                           Save

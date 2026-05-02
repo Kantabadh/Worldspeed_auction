@@ -7,12 +7,14 @@ type Motorcycle = {
   id: number;
   lot_number: string;
   motorcycle_name: string;
+  image_url: string | null;
 };
 
 type Offer = {
   motorcycle_id: number;
   lot: string;
   motorcycle: string;
+  image_url: string | null;
   price: string;
 };
 
@@ -78,12 +80,13 @@ export default function MerchantPage() {
       }
 
       const motorcycleOffers =
-        data?.map((bike: Motorcycle) => ({
-          motorcycle_id: bike.id,
-          lot: bike.lot_number,
-          motorcycle: bike.motorcycle_name,
-          price: "",
-        })) || [];
+  data?.map((bike: Motorcycle) => ({
+    motorcycle_id: bike.id,
+    lot: bike.lot_number,
+    motorcycle: bike.motorcycle_name,
+    image_url: bike.image_url,
+    price: "",
+  })) || [];
 
       // Load saved offer prices from browser storage.
       const savedPricesText = localStorage.getItem("merchantOfferPrices");
@@ -197,9 +200,17 @@ export default function MerchantPage() {
         )}
 
         {offers.map((offer, index) => (
-          <div key={offer.motorcycle_id} className="rounded border p-4">
-            <p className="font-bold">Lot {offer.lot}</p>
-            <p>{offer.motorcycle}</p>
+  <div key={offer.motorcycle_id} className="rounded border p-4">
+  {offer.image_url && (
+    <img
+      src={offer.image_url}
+      alt={offer.motorcycle}
+      className="mb-3 h-48 w-full max-w-md rounded object-cover"
+    />
+  )}
+
+  <p className="font-bold">Lot {offer.lot}</p>
+  <p>{offer.motorcycle}</p>
 
             <input
               className="mt-3 w-full rounded border p-2"
