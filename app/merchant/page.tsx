@@ -258,116 +258,210 @@ export default function MerchantPage() {
     window.location.href = "/summary";
   }
 
+  const enteredOfferCount = offers.filter((offer) => offer.price !== "").length;
+
   if (!isMerchantLoggedIn) {
     return (
-      <main className="min-h-screen p-8">
-        <p>Checking merchant login...</p>
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <div className="rounded-2xl bg-white p-6 shadow">
+          <p className="text-gray-700">Checking merchant login...</p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen p-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Merchant Offer Page</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Logged in as {merchantName} / {shopName}
-          </p>
+    <main className="min-h-screen bg-gray-50 pb-28">
+      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">
+              Motorcycle Offer System
+            </h1>
+
+            <p className="mt-1 text-sm text-gray-600">
+              {merchantName} • {shopName}
+            </p>
+          </div>
+
+          <button
+            onClick={logoutMerchant}
+            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+          >
+            Logout
+          </button>
         </div>
+      </header>
 
-        <button onClick={logoutMerchant} className="rounded border px-4 py-2">
-          Logout
-        </button>
-      </div>
-
-      {auctionStatus === "open" ? (
-        <p className="mt-4 rounded border border-green-500 p-3 text-green-700">
-          Auction is OPEN. You can submit offers.
-        </p>
-      ) : (
-        <p className="mt-4 rounded border border-red-500 p-3 text-red-700">
-          Auction is CLOSED. You cannot submit offers anymore.
-        </p>
-      )}
-
-      {errorMessage && (
-        <p className="mt-4 rounded border border-red-500 p-3 text-red-600">
-          Error: {errorMessage}
-        </p>
-      )}
-
-      <section className="mt-6 max-w-md space-y-3">
-        <input
-          className="w-full rounded border bg-gray-100 p-2"
-          placeholder="Merchant name"
-          value={merchantName}
-          readOnly
-        />
-
-        <input
-          className="w-full rounded border bg-gray-100 p-2"
-          placeholder="Shop name"
-          value={shopName}
-          readOnly
-        />
-
-        <input
-          className="w-full rounded border bg-gray-100 p-2"
-          placeholder="Phone number"
-          value={phone}
-          readOnly
-        />
-      </section>
-
-      <section className="mt-8 space-y-4">
-        <h2 className="text-xl font-semibold">Motorcycle Lots</h2>
-
-        {offers.length === 0 && !errorMessage && (
-          <p className="mt-4">Loading motorcycles...</p>
+      <section className="mx-auto max-w-5xl px-4 py-5">
+        {auctionStatus === "open" ? (
+          <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
+            <p className="font-semibold">Auction is OPEN</p>
+            <p className="text-sm">You can enter and submit offers.</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+            <p className="font-semibold">Auction is CLOSED</p>
+            <p className="text-sm">Offer submission is currently blocked.</p>
+          </div>
         )}
 
-        {offers.map((offer, index) => (
-          <div key={offer.motorcycle_id} className="rounded border p-4">
-            {offer.photos.length > 0 && (
-              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                {offer.photos.map((photo, photoIndex) => (
-                  <button
-                    key={photo.id}
-                    type="button"
-                    onClick={() => openGallery(offer.photos, photoIndex)}
-                    className="block overflow-hidden rounded border"
-                  >
-                    <img
-                      src={photo.image_url}
-                      alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
-                      className="h-32 w-full object-cover transition hover:opacity-80"
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <p className="font-bold">Lot {offer.lot}</p>
-            <p>{offer.motorcycle}</p>
-
-            <input
-              className="mt-3 w-full rounded border p-2"
-              placeholder="Enter offer price"
-              value={offer.price}
-              onChange={(e) => updatePrice(index, e.target.value)}
-            />
+        {errorMessage && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+            <p className="font-semibold">Error</p>
+            <p className="text-sm">{errorMessage}</p>
           </div>
-        ))}
+        )}
+
+        <section className="mt-5 rounded-2xl bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">
+            Merchant Information
+          </h2>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500">
+                Merchant
+              </label>
+              <input
+                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
+                value={merchantName}
+                readOnly
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">Shop</label>
+              <input
+                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
+                value={shopName}
+                readOnly
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">Phone</label>
+              <input
+                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
+                value={phone}
+                readOnly
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Motorcycle Lots
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Enter your one-time offer price for the motorcycles you want.
+              </p>
+            </div>
+
+            <div className="rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
+              {enteredOfferCount}/{offers.length}
+            </div>
+          </div>
+
+          {offers.length === 0 && !errorMessage && (
+            <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+              <p className="text-gray-600">Loading motorcycles...</p>
+            </div>
+          )}
+
+          <div className="mt-4 space-y-5">
+            {offers.map((offer, index) => (
+              <article
+                key={offer.motorcycle_id}
+                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
+              >
+                {offer.photos.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1 bg-gray-100 p-2 sm:grid-cols-3 md:grid-cols-4">
+                    {offer.photos.map((photo, photoIndex) => (
+                      <button
+                        key={photo.id}
+                        type="button"
+                        onClick={() => openGallery(offer.photos, photoIndex)}
+                        className="overflow-hidden rounded-xl bg-gray-200"
+                      >
+                        <img
+                          src={photo.image_url}
+                          alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
+                          className="h-32 w-full object-cover transition hover:scale-105"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                        Lot {offer.lot}
+                      </p>
+
+                      <h3 className="mt-1 text-lg font-bold text-gray-900">
+                        {offer.motorcycle}
+                      </h3>
+                    </div>
+
+                    {offer.price && (
+                      <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                        Offer entered
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="text-sm font-medium text-gray-700">
+                      Offer Price
+                    </label>
+
+                    <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
+                      <input
+                        inputMode="numeric"
+                        className="w-full p-3 text-lg outline-none"
+                        placeholder="Enter price"
+                        value={offer.price}
+                        onChange={(e) => updatePrice(index, e.target.value)}
+                      />
+
+                      <span className="border-l bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
+                        baht
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       </section>
 
-      <button
-        onClick={handleSubmit}
-        disabled={auctionStatus === "closed"}
-        className="mt-6 rounded bg-black px-4 py-2 text-white disabled:bg-gray-400"
-      >
-        Review My Offers
-      </button>
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white p-4 shadow-lg">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              {enteredOfferCount} offer(s) entered
+            </p>
+            <p className="text-xs text-gray-500">
+              Review before final submission
+            </p>
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={auctionStatus === "closed"}
+            className="rounded-xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+          >
+            Review Offers
+          </button>
+        </div>
+      </div>
 
       {galleryPhotos.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black">
