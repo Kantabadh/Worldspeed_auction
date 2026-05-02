@@ -90,21 +90,26 @@ export default function SummaryPage() {
 
   if (!draft) {
     return (
-      <main className="min-h-screen p-8">
-        <BackButton />
+      <main className="min-h-screen bg-gray-50 px-4 py-6">
+        <section className="mx-auto max-w-3xl">
+          <BackButton />
 
-        <h1 className="text-2xl font-bold">Summary Page</h1>
+          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+            <h1 className="text-2xl font-bold text-gray-900">No Offer Found</h1>
 
-        <p className="mt-4">
-          No offer data found. Please go back to the merchant page.
-        </p>
+            <p className="mt-3 text-gray-600">
+              No offer data was found. Please return to the merchant page and
+              enter your offers again.
+            </p>
 
-        <a
-          href="/merchant"
-          className="mt-6 inline-block rounded bg-black px-4 py-2 text-white"
-        >
-          Back to Merchant Page
-        </a>
+            <a
+              href="/merchant"
+              className="mt-6 inline-block rounded-2xl bg-black px-5 py-3 font-semibold text-white"
+            >
+              Back to Merchant Page
+            </a>
+          </div>
+        </section>
       </main>
     );
   }
@@ -114,73 +119,110 @@ export default function SummaryPage() {
   }, 0);
 
   return (
-    <main className="min-h-screen p-8">
-      <BackButton />
+    <main className="min-h-screen bg-gray-50 pb-28">
+      <section className="mx-auto max-w-4xl px-4 py-6">
+        <BackButton />
 
-      <h1 className="text-2xl font-bold">Review Your Offers</h1>
+        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+            Final Review
+          </p>
 
-      {errorMessage && (
-        <p className="mt-4 rounded border border-red-500 p-3 text-red-600">
-          Error: {errorMessage}
-        </p>
-      )}
+          <h1 className="mt-1 text-2xl font-bold text-gray-900">
+            Review Your Offers
+          </h1>
 
-      <section className="mt-6 rounded border p-4">
-        <p>
-          <strong>Merchant:</strong> {draft.merchantName}
-        </p>
+          <p className="mt-2 text-sm text-gray-600">
+            Please check carefully before final submission. After submitting,
+            your offers will be saved to the auction system.
+          </p>
+        </div>
 
-        <p>
-          <strong>Shop:</strong> {draft.shopName}
-        </p>
+        {errorMessage && (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+            <p className="font-semibold">Submission Error</p>
+            <p className="text-sm">{errorMessage}</p>
+          </div>
+        )}
 
-        <p>
-          <strong>Phone:</strong> {draft.phone}
-        </p>
-      </section>
+        <section className="mt-5 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">Merchant</p>
+            <p className="mt-2 font-bold text-gray-900">
+              {draft.merchantName}
+            </p>
+          </div>
 
-      <section className="mt-6">
-        <h2 className="text-xl font-semibold">Your Offers</h2>
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">Shop</p>
+            <p className="mt-2 font-bold text-gray-900">{draft.shopName}</p>
+          </div>
 
-        <table className="mt-3 w-full border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2">Lot</th>
-              <th className="border p-2">Motorcycle</th>
-              <th className="border p-2">Offer Price</th>
-            </tr>
-          </thead>
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">Phone</p>
+            <p className="mt-2 font-bold text-gray-900">{draft.phone}</p>
+          </div>
+        </section>
 
-          <tbody>
+        <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Your Offers</h2>
+
+              <p className="mt-1 text-sm text-gray-600">
+                {draft.offers.length} offer(s) ready to submit.
+              </p>
+            </div>
+
+            <div className="rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
+              Total {total.toLocaleString()} baht
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
             {draft.offers.map((offer) => (
-              <tr key={offer.motorcycle_id}>
-                <td className="border p-2">{offer.lot}</td>
-                <td className="border p-2">{offer.motorcycle}</td>
-                <td className="border p-2">
-                  {Number(offer.price).toLocaleString()} baht
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              <div
+                key={offer.motorcycle_id}
+                className="rounded-2xl border bg-gray-50 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                      Lot {offer.lot}
+                    </p>
 
-        <p className="mt-4 text-lg font-bold">
-          Total: {total.toLocaleString()} baht
-        </p>
+                    <h3 className="mt-1 font-bold text-gray-900">
+                      {offer.motorcycle}
+                    </h3>
+                  </div>
+
+                  <p className="text-lg font-bold text-green-700">
+                    {Number(offer.price).toLocaleString()} baht
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </section>
 
-      <div className="mt-6 flex gap-4">
-        <a href="/merchant" className="rounded border px-4 py-2">
-          Back to Edit
-        </a>
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white p-4 shadow-lg">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
+          <a
+            href="/merchant"
+            className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
+          >
+            Back to Edit
+          </a>
 
-        <button
-          onClick={confirmSubmit}
-          disabled={isSubmitting}
-          className="rounded bg-black px-4 py-2 text-white disabled:bg-gray-400"
-        >
-          {isSubmitting ? "Submitting..." : "Confirm Submit"}
-        </button>
+          <button
+            onClick={confirmSubmit}
+            disabled={isSubmitting}
+            className="rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+          >
+            {isSubmitting ? "Submitting..." : "Confirm Submit"}
+          </button>
+        </div>
       </div>
     </main>
   );
