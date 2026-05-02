@@ -22,7 +22,7 @@ export default function MerchantLoginPage() {
 
   async function handleLogin() {
     if (!phone || !merchantCode) {
-      alert("Please enter phone number and merchant code.");
+      setErrorMessage("Please enter phone number and merchant code.");
       return;
     }
 
@@ -32,8 +32,8 @@ export default function MerchantLoginPage() {
     const { data, error } = await supabase
       .from("merchant_accounts")
       .select("*")
-      .eq("phone", phone)
-      .eq("merchant_code", merchantCode)
+      .eq("phone", phone.trim())
+      .eq("merchant_code", merchantCode.trim())
       .eq("active", true)
       .single();
 
@@ -62,41 +62,66 @@ export default function MerchantLoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <section className="mx-auto mt-10 max-w-md rounded-2xl bg-white p-6 shadow">
-        <h1 className="text-2xl font-bold">Merchant Login</h1>
-
-        <p className="mt-2 text-gray-600">
-          Enter your phone number and merchant code to submit offers.
-        </p>
-
-        {errorMessage && (
-          <p className="mt-4 rounded border border-red-500 bg-red-50 p-3 text-red-600">
-            {errorMessage}
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-8">
+      <section className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-lg ring-1 ring-gray-200">
+        <div className="bg-black px-6 py-6 text-white">
+          <p className="text-sm font-medium uppercase tracking-wide text-gray-300">
+            Motorcycle Offer System
           </p>
-        )}
 
-        <input
-          className="mt-6 w-full rounded border p-3"
-          placeholder="Phone number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
+          <h1 className="mt-2 text-2xl font-bold">Merchant Login</h1>
 
-        <input
-          className="mt-3 w-full rounded border p-3"
-          placeholder="Merchant code, example: M001"
-          value={merchantCode}
-          onChange={(e) => setMerchantCode(e.target.value)}
-        />
+          <p className="mt-2 text-sm text-gray-300">
+            Enter your assigned phone number and merchant code to submit offers.
+          </p>
+        </div>
 
-        <button
-          onClick={handleLogin}
-          disabled={isLoading}
-          className="mt-5 w-full rounded bg-black px-4 py-3 text-white disabled:bg-gray-400"
-        >
-          {isLoading ? "Checking..." : "Login"}
-        </button>
+        <div className="p-6">
+          {errorMessage && (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+              <p className="font-semibold">Login failed</p>
+              <p className="text-sm">{errorMessage}</p>
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium text-gray-700">
+              Phone Number
+            </label>
+
+            <input
+              className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
+              placeholder="Example: 0812345678"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+
+          <div className="mt-4">
+            <label className="text-sm font-medium text-gray-700">
+              Merchant Code
+            </label>
+
+            <input
+              className="mt-2 w-full rounded-2xl border p-3 text-lg uppercase outline-none focus:ring-2 focus:ring-black"
+              placeholder="Example: M001"
+              value={merchantCode}
+              onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
+            />
+          </div>
+
+          <button
+            onClick={handleLogin}
+            disabled={isLoading}
+            className="mt-6 w-full rounded-2xl bg-black px-4 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+          >
+            {isLoading ? "Checking..." : "Login"}
+          </button>
+
+          <p className="mt-4 text-center text-xs text-gray-500">
+            Ask the auction staff if you do not know your merchant code.
+          </p>
+        </div>
       </section>
     </main>
   );
