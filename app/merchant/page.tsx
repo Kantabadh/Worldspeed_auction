@@ -25,6 +25,8 @@ export default function MerchantPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+const [selectedImageName, setSelectedImageName] = useState("");
 
   // Load saved merchant information when the page opens.
   useEffect(() => {
@@ -201,13 +203,26 @@ export default function MerchantPage() {
 
         {offers.map((offer, index) => (
   <div key={offer.motorcycle_id} className="rounded border p-4">
-  {offer.image_url && (
+{offer.image_url && (
+  <button
+    type="button"
+    onClick={() => {
+      setSelectedImage(offer.image_url);
+      setSelectedImageName(`Lot ${offer.lot} - ${offer.motorcycle}`);
+    }}
+    className="mb-3 block w-full max-w-md text-left"
+  >
     <img
       src={offer.image_url}
       alt={offer.motorcycle}
-      className="mb-3 h-48 w-full max-w-md rounded object-cover"
+      className="h-48 w-full rounded object-cover transition hover:opacity-80"
     />
-  )}
+
+    <p className="mt-1 text-sm text-gray-500">
+      Click photo to enlarge
+    </p>
+  </button>
+)}
 
   <p className="font-bold">Lot {offer.lot}</p>
   <p>{offer.motorcycle}</p>
@@ -229,6 +244,47 @@ export default function MerchantPage() {
       >
         Review My Offers
       </button>
+      {selectedImage && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+    <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <h2 className="text-lg font-bold">{selectedImageName}</h2>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedImage(null);
+            setSelectedImageName("");
+          }}
+          className="rounded bg-black px-4 py-2 text-white"
+        >
+          Close
+        </button>
+      </div>
+
+      <img
+        src={selectedImage}
+        alt={selectedImageName}
+        className="mx-auto max-h-[75vh] w-auto max-w-full rounded object-contain"
+      />
+
+      <div className="mt-3 flex gap-3">
+        <a
+          href={selectedImage}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded border px-4 py-2"
+        >
+          Open Full Size
+        </a>
+
+        <p className="py-2 text-sm text-gray-600">
+          Tip: open full size, then use browser zoom or pinch zoom on phone.
+        </p>
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }
