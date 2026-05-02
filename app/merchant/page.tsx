@@ -29,7 +29,10 @@ type MerchantSession = {
   shopName: string;
   phone: string;
   merchantCode: string;
+  expiresAt?: number;
 };
+
+const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 export default function MerchantPage() {
   const [merchantName, setMerchantName] = useState("");
@@ -45,7 +48,34 @@ export default function MerchantPage() {
   const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
-  // Check merchant login when page opens.
+  function saveMerchantSession(session: MerchantSession) {
+    localStorage.setItem(
+      "merchantSession",
+      JSON.stringify({
+        ...session,
+        expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
+      })
+    );
+  }
+
+  function logoutMerchant() {
+    localStorage.removeItem("merchantSession");
+    localStorage.removeItem("merchantPageDraft");
+    localStorage.removeItem("merchantOfferPrices");
+    localStorage.removeItem("draftSubmission");
+    window.location.href = "/merchant-login";
+  }
+
+  function refreshMerchantActivity() {
+    const savedSession = localStorage.getItem("merchantSession");
+
+    if (!savedSession) return;
+
+    const session = JSON.parse(savedSession) as MerchantSession;
+
+    saveMerchantSession(session);
+  }
+
   useEffect(() => {
     const savedSession = localStorage.getItem("merchantSession");
 
@@ -56,14 +86,52 @@ export default function MerchantPage() {
 
     const session = JSON.parse(savedSession) as MerchantSession;
 
+    if (session.expiresAt && Date.now() > session.expiresAt) {
+      logoutMerchant();
+      return;
+    }
+
+    saveMerchantSession(session);
+
     setMerchantName(session.merchantName || "");
     setShopName(session.shopName || "");
     setPhone(session.phone || "");
     setIsMerchantLoggedIn(true);
   }, []);
 
-  // Load saved offer prices when motorcycles are loaded later.
-  // This saves only prices, not merchant info, because merchant info now comes from login.
+  useEffect(() => {
+    if (!isMerchantLoggedIn) return;
+
+    const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
+
+    events.forEach((event) => {
+      window.addEventListener(event, refreshMerchantActivity);
+    });
+
+    const interval = setInterval(() => {
+      const savedSession = localStorage.getItem("merchantSession");
+
+      if (!savedSession) {
+        window.location.href = "/merchant-login";
+        return;
+      }
+
+      const session = JSON.parse(savedSession) as MerchantSession;
+
+      if (session.expiresAt && Date.now() > session.expiresAt) {
+        logoutMerchant();
+      }
+    }, 5000);
+
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, refreshMerchantActivity);
+      });
+
+      clearInterval(interval);
+    };
+  }, [isMerchantLoggedIn]);
+
   useEffect(() => {
     async function loadAuctionStatus() {
       const { data, error } = await supabase
@@ -158,14 +226,6 @@ export default function MerchantPage() {
     setGalleryIndex((currentIndex) =>
       currentIndex === galleryPhotos.length - 1 ? 0 : currentIndex + 1
     );
-  }
-
-  function logoutMerchant() {
-    localStorage.removeItem("merchantSession");
-    localStorage.removeItem("merchantPageDraft");
-    localStorage.removeItem("merchantOfferPrices");
-    localStorage.removeItem("draftSubmission");
-    window.location.href = "/merchant-login";
   }
 
   function handleSubmit() {

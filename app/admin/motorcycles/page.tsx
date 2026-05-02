@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import BackButton from "@/components/BackButton";
 
 type Motorcycle = {
   id: number;
@@ -209,13 +210,11 @@ export default function AdminMotorcyclesPage() {
 
   return (
     <main className="min-h-screen p-8">
+      <BackButton />
+
       <h1 className="text-2xl font-bold">Motorcycle Management</h1>
 
       <div className="mt-4 flex gap-4">
-        <a href="/admin" className="rounded border px-4 py-2">
-          Back to Admin
-        </a>
-
         <button onClick={loadMotorcycles} className="rounded border px-4 py-2">
           Refresh
         </button>

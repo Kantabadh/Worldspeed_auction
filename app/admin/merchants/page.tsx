@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import BackButton from "@/components/BackButton";
 
 type MerchantAccount = {
   id: number;
@@ -187,6 +188,8 @@ export default function AdminMerchantsPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-6">
       <section className="mx-auto max-w-6xl">
+        <BackButton />
+
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Merchant Management</h1>
@@ -196,11 +199,10 @@ export default function AdminMerchantsPage() {
           </div>
 
           <div className="flex gap-3">
-            <a href="/admin" className="rounded border bg-white px-4 py-2">
-              Back to Admin
-            </a>
-
-            <button onClick={loadMerchants} className="rounded border bg-white px-4 py-2">
+            <button
+              onClick={loadMerchants}
+              className="rounded border bg-white px-4 py-2"
+            >
               Refresh
             </button>
           </div>

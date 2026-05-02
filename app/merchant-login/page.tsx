@@ -12,6 +12,8 @@ type MerchantAccount = {
   active: boolean;
 };
 
+const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
 export default function MerchantLoginPage() {
   const [phone, setPhone] = useState("");
   const [merchantCode, setMerchantCode] = useState("");
@@ -51,6 +53,7 @@ export default function MerchantLoginPage() {
         shopName: merchant.shop_name,
         phone: merchant.phone,
         merchantCode: merchant.merchant_code,
+        expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
       })
     );
 

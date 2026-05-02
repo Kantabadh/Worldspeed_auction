@@ -28,71 +28,66 @@ export default function AdminPage() {
   const [auctionStatus, setAuctionStatus] = useState("open");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-const [isLoggedIn, setIsLoggedIn] = useState(false);
-const [isCheckingLogin, setIsCheckingLogin] = useState(true);
-const [passwordInput, setPasswordInput] = useState("");
-const [loginError, setLoginError] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [loginError, setLoginError] = useState("");
 
-function saveAdminSession() {
-  const expiresAt = Date.now() + ADMIN_TIMEOUT_MS;
+  function saveAdminSession() {
+    const expiresAt = Date.now() + ADMIN_TIMEOUT_MS;
 
-  localStorage.setItem(
-    "adminSession",
-    JSON.stringify({
-      expiresAt,
-    })
-  );
-}
-
-function logoutAdmin() {
-  localStorage.removeItem("adminSession");
-  setIsLoggedIn(false);
-  setPasswordInput("");
-  window.location.href = "/admin";
-}
-
-function checkAdminSession() {
-  const savedSession = localStorage.getItem("adminSession");
-
-  if (!savedSession) {
-    setIsLoggedIn(false);
-    setIsCheckingLogin(false);
-    return;
+    localStorage.setItem(
+      "adminSession",
+      JSON.stringify({
+        expiresAt,
+      })
+    );
   }
 
-  const session = JSON.parse(savedSession);
-
-  if (Date.now() > session.expiresAt) {
+  function logoutAdmin() {
     localStorage.removeItem("adminSession");
     setIsLoggedIn(false);
-    setIsCheckingLogin(false);
-    return;
+    setPasswordInput("");
+    window.location.href = "/admin";
   }
 
-  setIsLoggedIn(true);
-  setIsCheckingLogin(false);
-}
+  function checkAdminSession() {
+    const savedSession = localStorage.getItem("adminSession");
 
-function refreshAdminActivity() {
-  const savedSession = localStorage.getItem("adminSession");
+    if (!savedSession) {
+      setIsLoggedIn(false);
+      return;
+    }
 
-  if (!savedSession) return;
+    const session = JSON.parse(savedSession);
 
-  saveAdminSession();
-}
+    if (Date.now() > session.expiresAt) {
+      localStorage.removeItem("adminSession");
+      setIsLoggedIn(false);
+      return;
+    }
 
-function handleAdminLogin() {
-  const correctPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-
-  if (passwordInput === correctPassword) {
-    saveAdminSession();
     setIsLoggedIn(true);
-    setIsCheckingLogin(false);
-    setLoginError("");
-  } else {
-    setLoginError("Wrong password. Please try again.");
   }
-}
+
+  function refreshAdminActivity() {
+    const savedSession = localStorage.getItem("adminSession");
+
+    if (!savedSession) return;
+
+    saveAdminSession();
+  }
+
+  function handleAdminLogin() {
+    const correctPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+
+    if (passwordInput === correctPassword) {
+      saveAdminSession();
+      setIsLoggedIn(true);
+      setLoginError("");
+    } else {
+      setLoginError("Wrong password. Please try again.");
+    }
+  }
 
   useEffect(() => {
     checkAdminSession();
@@ -301,14 +296,6 @@ function handleAdminLogin() {
 
     URL.revokeObjectURL(url);
   }
-
-  if (isCheckingLogin) {
-  return (
-    <main className="min-h-screen p-8">
-      <p>Checking admin session...</p>
-    </main>
-  );
-}
 
   if (!isLoggedIn) {
     return (

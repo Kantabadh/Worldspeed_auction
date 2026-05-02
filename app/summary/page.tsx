@@ -1,13 +1,9 @@
 "use client";
 
-// useEffect runs code when the page loads.
-// useState stores data on the page.
 import { useEffect, useState } from "react";
-
-// Import Supabase connection.
 import { supabase } from "@/lib/supabase";
+import BackButton from "@/components/BackButton";
 
-// This describes one offer from the draft.
 type Offer = {
   motorcycle_id: number;
   lot: string;
@@ -19,7 +15,6 @@ type Offer = {
   price: string;
 };
 
-// This describes the draft submission data from localStorage.
 type DraftSubmission = {
   merchantName: string;
   shopName: string;
@@ -28,38 +23,24 @@ type DraftSubmission = {
 };
 
 export default function SummaryPage() {
-  // Store draft data from localStorage.
   const [draft, setDraft] = useState<DraftSubmission | null>(null);
-
-  // Store loading state when submitting.
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Store error message if Supabase has a problem.
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Load draft data when this page opens.
   useEffect(() => {
-    // Get draft submission from browser storage.
     const savedDraft = localStorage.getItem("draftSubmission");
 
-    // If draft exists, convert it from text to object.
     if (savedDraft) {
       setDraft(JSON.parse(savedDraft));
     }
   }, []);
 
-  // This function runs when merchant clicks Confirm Submit.
   async function confirmSubmit() {
-    // If no draft exists, stop.
     if (!draft) return;
 
-    // Start submitting.
     setIsSubmitting(true);
-
-    // Clear old error message.
     setErrorMessage("");
 
-    // Step 1: Insert merchant into Supabase.
     const { data: merchantData, error: merchantError } = await supabase
       .from("merchants")
       .insert({
@@ -70,56 +51,48 @@ export default function SummaryPage() {
       .select()
       .single();
 
-    // If merchant insert fails, show error and stop.
     if (merchantError) {
       setErrorMessage(merchantError.message);
       setIsSubmitting(false);
       return;
     }
 
-    // Step 2: Prepare offers to insert.
     const offersToInsert = draft.offers.map((offer) => ({
       merchant_id: merchantData.id,
       motorcycle_id: offer.motorcycle_id,
       offer_price: Number(offer.price),
     }));
 
-    // Step 3: Insert offers into Supabase.
     const { error: offersError } = await supabase
       .from("offers")
       .insert(offersToInsert);
 
-    // If offer insert fails, show error and stop.
     if (offersError) {
       setErrorMessage(offersError.message);
       setIsSubmitting(false);
       return;
     }
 
-    // Step 4: Create local receipt data for success page.
     const finalSubmission = {
       ...draft,
       submittedAt: new Date().toLocaleString(),
       receiptNo: "S-" + Date.now(),
     };
 
-    // Save only receipt display data locally.
     localStorage.setItem("latestSubmission", JSON.stringify(finalSubmission));
 
-    // Remove draft after final submission.
     localStorage.removeItem("draftSubmission");
-
     localStorage.removeItem("merchantPageDraft");
-localStorage.removeItem("merchantOfferPrices");
+    localStorage.removeItem("merchantOfferPrices");
 
-    // Move to success page.
     window.location.href = "/success";
   }
 
-  // If no draft data is found, show this message.
   if (!draft) {
     return (
       <main className="min-h-screen p-8">
+        <BackButton />
+
         <h1 className="text-2xl font-bold">Summary Page</h1>
 
         <p className="mt-4">
@@ -136,24 +109,22 @@ localStorage.removeItem("merchantOfferPrices");
     );
   }
 
-  // Calculate total offer value.
   const total = draft.offers.reduce((sum, offer) => {
     return sum + Number(offer.price || 0);
   }, 0);
 
   return (
     <main className="min-h-screen p-8">
-      {/* Page title */}
+      <BackButton />
+
       <h1 className="text-2xl font-bold">Review Your Offers</h1>
 
-      {/* Error message */}
       {errorMessage && (
         <p className="mt-4 rounded border border-red-500 p-3 text-red-600">
           Error: {errorMessage}
         </p>
       )}
 
-      {/* Merchant information */}
       <section className="mt-6 rounded border p-4">
         <p>
           <strong>Merchant:</strong> {draft.merchantName}
@@ -168,7 +139,6 @@ localStorage.removeItem("merchantOfferPrices");
         </p>
       </section>
 
-      {/* Offer summary table */}
       <section className="mt-6">
         <h2 className="text-xl font-semibold">Your Offers</h2>
 
@@ -199,7 +169,6 @@ localStorage.removeItem("merchantOfferPrices");
         </p>
       </section>
 
-      {/* Action buttons */}
       <div className="mt-6 flex gap-4">
         <a href="/merchant" className="rounded border px-4 py-2">
           Back to Edit
