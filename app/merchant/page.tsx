@@ -23,39 +23,47 @@ type Offer = {
   price: string;
 };
 
+type MerchantSession = {
+  merchantAccountId: number;
+  merchantName: string;
+  shopName: string;
+  phone: string;
+  merchantCode: string;
+};
+
 export default function MerchantPage() {
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
   const [phone, setPhone] = useState("");
+
   const [offers, setOffers] = useState<Offer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
 
+  const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
+
   const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
+  // Check merchant login when page opens.
   useEffect(() => {
-    const savedDraft = localStorage.getItem("merchantPageDraft");
+    const savedSession = localStorage.getItem("merchantSession");
 
-    if (savedDraft) {
-      const draft = JSON.parse(savedDraft);
-
-      setMerchantName(draft.merchantName || "");
-      setShopName(draft.shopName || "");
-      setPhone(draft.phone || "");
+    if (!savedSession) {
+      window.location.href = "/merchant-login";
+      return;
     }
+
+    const session = JSON.parse(savedSession) as MerchantSession;
+
+    setMerchantName(session.merchantName || "");
+    setShopName(session.shopName || "");
+    setPhone(session.phone || "");
+    setIsMerchantLoggedIn(true);
   }, []);
 
-  useEffect(() => {
-    const draft = {
-      merchantName,
-      shopName,
-      phone,
-    };
-
-    localStorage.setItem("merchantPageDraft", JSON.stringify(draft));
-  }, [merchantName, shopName, phone]);
-
+  // Load saved offer prices when motorcycles are loaded later.
+  // This saves only prices, not merchant info, because merchant info now comes from login.
   useEffect(() => {
     async function loadAuctionStatus() {
       const { data, error } = await supabase
@@ -152,6 +160,14 @@ export default function MerchantPage() {
     );
   }
 
+  function logoutMerchant() {
+    localStorage.removeItem("merchantSession");
+    localStorage.removeItem("merchantPageDraft");
+    localStorage.removeItem("merchantOfferPrices");
+    localStorage.removeItem("draftSubmission");
+    window.location.href = "/merchant-login";
+  }
+
   function handleSubmit() {
     if (auctionStatus === "closed") {
       alert("Auction is closed. You cannot submit offers anymore.");
@@ -161,7 +177,8 @@ export default function MerchantPage() {
     const submittedOffers = offers.filter((offer) => offer.price !== "");
 
     if (!merchantName || !shopName || !phone) {
-      alert("Please fill merchant name, shop name, and phone number.");
+      alert("Merchant information is missing. Please log in again.");
+      window.location.href = "/merchant-login";
       return;
     }
 
@@ -181,9 +198,28 @@ export default function MerchantPage() {
     window.location.href = "/summary";
   }
 
+  if (!isMerchantLoggedIn) {
+    return (
+      <main className="min-h-screen p-8">
+        <p>Checking merchant login...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-8">
-      <h1 className="text-2xl font-bold">Merchant Offer Page</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Merchant Offer Page</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Logged in as {merchantName} / {shopName}
+          </p>
+        </div>
+
+        <button onClick={logoutMerchant} className="rounded border px-4 py-2">
+          Logout
+        </button>
+      </div>
 
       {auctionStatus === "open" ? (
         <p className="mt-4 rounded border border-green-500 p-3 text-green-700">
@@ -203,24 +239,24 @@ export default function MerchantPage() {
 
       <section className="mt-6 max-w-md space-y-3">
         <input
-          className="w-full rounded border p-2"
+          className="w-full rounded border bg-gray-100 p-2"
           placeholder="Merchant name"
           value={merchantName}
-          onChange={(e) => setMerchantName(e.target.value)}
+          readOnly
         />
 
         <input
-          className="w-full rounded border p-2"
+          className="w-full rounded border bg-gray-100 p-2"
           placeholder="Shop name"
           value={shopName}
-          onChange={(e) => setShopName(e.target.value)}
+          readOnly
         />
 
         <input
-          className="w-full rounded border p-2"
+          className="w-full rounded border bg-gray-100 p-2"
           placeholder="Phone number"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          readOnly
         />
       </section>
 
@@ -233,24 +269,24 @@ export default function MerchantPage() {
 
         {offers.map((offer, index) => (
           <div key={offer.motorcycle_id} className="rounded border p-4">
-          {offer.photos.length > 0 && (
-  <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-    {offer.photos.map((photo, photoIndex) => (
-      <button
-        key={photo.id}
-        type="button"
-        onClick={() => openGallery(offer.photos, photoIndex)}
-        className="block overflow-hidden rounded border"
-      >
-        <img
-          src={photo.image_url}
-          alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
-          className="h-32 w-full object-cover transition hover:opacity-80"
-        />
-      </button>
-    ))}
-  </div>
-)}
+            {offer.photos.length > 0 && (
+              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                {offer.photos.map((photo, photoIndex) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => openGallery(offer.photos, photoIndex)}
+                    className="block overflow-hidden rounded border"
+                  >
+                    <img
+                      src={photo.image_url}
+                      alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
+                      className="h-32 w-full object-cover transition hover:opacity-80"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
 
             <p className="font-bold">Lot {offer.lot}</p>
             <p>{offer.motorcycle}</p>
