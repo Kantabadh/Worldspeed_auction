@@ -105,6 +105,9 @@ export default function SummaryPage() {
     // Remove draft after final submission.
     localStorage.removeItem("draftSubmission");
 
+    localStorage.removeItem("merchantPageDraft");
+localStorage.removeItem("merchantOfferPrices");
+
     // Move to success page.
     window.location.href = "/success";
   }
