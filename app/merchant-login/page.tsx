@@ -21,7 +21,10 @@ export default function MerchantLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleLogin() {
-    if (!phone || !merchantCode) {
+    const cleanPhone = phone.trim();
+    const cleanCode = merchantCode.trim().toUpperCase();
+
+    if (!cleanPhone || !cleanCode) {
       setErrorMessage("Please enter phone number and merchant code.");
       return;
     }
@@ -32,12 +35,19 @@ export default function MerchantLoginPage() {
     const { data, error } = await supabase
       .from("merchant_accounts")
       .select("*")
-      .eq("phone", phone.trim())
-      .eq("merchant_code", merchantCode.trim())
+      .eq("phone", cleanPhone)
+      .eq("merchant_code", cleanCode)
       .eq("active", true)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      setErrorMessage(error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!data) {
       setErrorMessage("Invalid phone number or merchant code.");
       setIsLoading(false);
       return;
@@ -56,6 +66,9 @@ export default function MerchantLoginPage() {
         expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
       })
     );
+
+    localStorage.removeItem("merchantOfferPrices");
+    localStorage.removeItem("draftSubmission");
 
     setIsLoading(false);
     window.location.href = "/merchant";
@@ -107,6 +120,9 @@ export default function MerchantLoginPage() {
               placeholder="Example: M001"
               value={merchantCode}
               onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleLogin();
+              }}
             />
           </div>
 

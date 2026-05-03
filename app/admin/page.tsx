@@ -39,6 +39,8 @@ export default function AdminPage() {
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
   const [isCheckingStaff, setIsCheckingStaff] = useState(true);
 
+  const [resetPassword, setResetPassword] = useState("");
+
   function saveStaffSession(profile: StaffProfile) {
     const updatedProfile = {
       ...profile,
@@ -149,25 +151,25 @@ export default function AdminPage() {
   }, [staffProfile]);
 
   async function loadAuctionStatus() {
-  const { data, error } = await supabase
-    .from("auction_settings")
-    .select("id, status")
-    .order("id", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from("auction_settings")
+      .select("id, status")
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  if (error) {
-    setErrorMessage(error.message);
-    return;
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage("No auction setting found.");
+      return;
+    }
+
+    setAuctionStatus(data.status);
   }
-
-  if (!data) {
-    setErrorMessage("No auction setting found.");
-    return;
-  }
-
-  setAuctionStatus(data.status);
-}
 
   async function toggleAuctionStatus() {
     setIsUpdatingStatus(true);
@@ -175,10 +177,10 @@ export default function AdminPage() {
 
     const newStatus = auctionStatus === "open" ? "closed" : "open";
 
-const { error } = await supabase
-  .from("auction_settings")
-  .update({ status: newStatus })
-  .eq("auction_name", "Main Motorcycle Auction");
+    const { error } = await supabase
+      .from("auction_settings")
+      .update({ status: newStatus })
+      .eq("auction_name", "Main Motorcycle Auction");
 
     if (error) {
       setErrorMessage(error.message);
@@ -241,6 +243,7 @@ const { error } = await supabase
   const winners = Object.values(winnerSummary).sort((a, b) => {
     const lotA = a.motorcycles?.lot_number || "";
     const lotB = b.motorcycles?.lot_number || "";
+
     return lotA.localeCompare(lotB);
   });
 
@@ -255,6 +258,69 @@ const { error } = await supabase
   const totalOfferValue = offers.reduce((sum, offer) => {
     return sum + Number(offer.offer_price || 0);
   }, 0);
+
+  async function resetAuctionData() {
+    if (!staffProfile?.email) {
+      setErrorMessage("Staff profile not found. Please log in again.");
+      return;
+    }
+
+    if (!resetPassword) {
+      alert("Please enter your staff password before resetting auction data.");
+      return;
+    }
+
+    const confirmReset = confirm(
+      "Are you sure you want to reset auction data? This will delete all submitted offers and merchant submission records. Motorcycle lots, photos, merchant accounts, and staff accounts will stay."
+    );
+
+    if (!confirmReset) return;
+
+    const { error: passwordError } = await supabase.auth.signInWithPassword({
+      email: staffProfile.email,
+      password: resetPassword,
+    });
+
+    if (passwordError) {
+      setErrorMessage("Wrong password. Reset auction data was cancelled.");
+      setResetPassword("");
+      return;
+    }
+
+    const secondConfirm = confirm(
+      "Final confirmation: this cannot be undone. Delete all submitted offers?"
+    );
+
+    if (!secondConfirm) return;
+
+    setIsLoading(true);
+    setErrorMessage("");
+
+    const { error: offersError } = await supabase
+      .from("offers")
+      .delete()
+      .neq("id", 0);
+
+    if (offersError) {
+      setErrorMessage(offersError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const { error: merchantsError } = await supabase
+      .from("merchants")
+      .delete()
+      .neq("id", 0);
+
+    if (merchantsError) {
+      setErrorMessage(merchantsError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setResetPassword("");
+    await loadOffers();
+  }
 
   function exportAllOffersCsv() {
     const headers = [
@@ -364,9 +430,11 @@ const { error } = await supabase
             <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
               Admin Dashboard
             </p>
+
             <h1 className="mt-1 text-2xl font-bold text-gray-900">
               Motorcycle Offer System
             </h1>
+
             <p className="mt-1 text-sm text-gray-600">
               Logged in as {staffProfile.email} • {staffProfile.role}
             </p>
@@ -447,7 +515,9 @@ const { error } = await supabase
           </div>
 
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Lots With Offers</p>
+            <p className="text-sm font-medium text-gray-500">
+              Lots With Offers
+            </p>
             <p className="mt-2 text-3xl font-bold text-gray-900">
               {uniqueMotorcycles.size}
             </p>
@@ -479,19 +549,34 @@ const { error } = await supabase
             </a>
 
             {staffProfile?.role === "owner" && (
-  <a
-    href="/admin/staff"
-    className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-  >
-    Manage Staff
-  </a>
-)}
+              <a
+                href="/admin/staff"
+                className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              >
+                Manage Staff
+              </a>
+            )}
 
             <button
               onClick={loadOffers}
               className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
             >
               Refresh Data
+            </button>
+
+            <input
+              type="password"
+              className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+              placeholder="Password for reset"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+            />
+
+            <button
+              onClick={resetAuctionData}
+              className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+            >
+              Reset Auction Data
             </button>
 
             {!isLoading && offers.length > 0 && (

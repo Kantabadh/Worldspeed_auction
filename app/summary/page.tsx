@@ -22,24 +22,67 @@ type DraftSubmission = {
   offers: Offer[];
 };
 
+type MerchantSession = {
+  merchantAccountId: number;
+  merchantName: string;
+  shopName: string;
+  phone: string;
+  merchantCode: string;
+  expiresAt?: number;
+};
+
 export default function SummaryPage() {
   const [draft, setDraft] = useState<DraftSubmission | null>(null);
+  const [merchantSession, setMerchantSession] =
+    useState<MerchantSession | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const savedDraft = localStorage.getItem("draftSubmission");
+    const savedSession = localStorage.getItem("merchantSession");
 
     if (savedDraft) {
       setDraft(JSON.parse(savedDraft));
+    }
+
+    if (savedSession) {
+      setMerchantSession(JSON.parse(savedSession));
     }
   }, []);
 
   async function confirmSubmit() {
     if (!draft) return;
 
+    if (!merchantSession?.merchantAccountId) {
+      setErrorMessage("Merchant login session not found. Please log in again.");
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage("");
+
+    const { data: existingMerchant, error: existingMerchantError } =
+      await supabase
+        .from("merchants")
+        .select("id")
+        .eq("merchant_account_id", merchantSession.merchantAccountId)
+        .maybeSingle();
+
+    if (existingMerchantError) {
+      setErrorMessage(existingMerchantError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (existingMerchant) {
+      setErrorMessage(
+        "This merchant account has already submitted offers for this auction. Please contact auction staff if you need changes."
+      );
+      setIsSubmitting(false);
+      return;
+    }
 
     const { data: merchantData, error: merchantError } = await supabase
       .from("merchants")
@@ -47,6 +90,7 @@ export default function SummaryPage() {
         name: draft.merchantName,
         shop_name: draft.shopName,
         phone: draft.phone,
+        merchant_account_id: merchantSession.merchantAccountId,
       })
       .select()
       .single();
@@ -140,7 +184,7 @@ export default function SummaryPage() {
 
         {errorMessage && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-            <p className="font-semibold">Submission Error</p>
+            <p className="font-semibold">Submission Blocked</p>
             <p className="text-sm">{errorMessage}</p>
           </div>
         )}
