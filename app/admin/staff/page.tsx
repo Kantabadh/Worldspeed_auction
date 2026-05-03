@@ -5,10 +5,12 @@ import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
+type StaffRole = "owner" | "admin";
+
 type StaffProfile = {
   id: string;
   email: string;
-  role: "owner" | "admin";
+  role: StaffRole;
   active: boolean;
   created_at: string;
 };
@@ -16,7 +18,17 @@ type StaffProfile = {
 export default function AdminStaffPage() {
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [currentStaff, setCurrentStaff] = useState<StaffProfile | null>(null);
+
+  const [newStaffId, setNewStaffId] = useState("");
+  const [newStaffEmail, setNewStaffEmail] = useState("");
+  const [newStaffRole, setNewStaffRole] = useState<StaffRole>("admin");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState<StaffRole>("admin");
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function loadStaffProfiles() {
@@ -66,9 +78,80 @@ export default function AdminStaffPage() {
     setIsLoading(false);
   }
 
+  async function addStaffProfile() {
+    if (!newStaffId || !newStaffEmail || !newStaffRole) {
+      alert("Please fill Auth User UID, email, and role.");
+      return;
+    }
+
+    setIsAdding(true);
+    setErrorMessage("");
+
+    const { error } = await supabase.from("staff_profiles").insert({
+      id: newStaffId.trim(),
+      email: newStaffEmail.trim(),
+      role: newStaffRole,
+      active: true,
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setIsAdding(false);
+      return;
+    }
+
+    setNewStaffId("");
+    setNewStaffEmail("");
+    setNewStaffRole("admin");
+    setIsAdding(false);
+    loadStaffProfiles();
+  }
+
+  function startEditing(staff: StaffProfile) {
+    setEditingId(staff.id);
+    setEditEmail(staff.email);
+    setEditRole(staff.role);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditEmail("");
+    setEditRole("admin");
+  }
+
+  async function saveEdit(staff: StaffProfile) {
+    if (!editEmail || !editRole) {
+      alert("Please fill email and role.");
+      return;
+    }
+
+    if (currentStaff?.id === staff.id && editRole !== "owner") {
+      alert("You cannot remove owner role from your own account.");
+      return;
+    }
+
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("staff_profiles")
+      .update({
+        email: editEmail.trim(),
+        role: editRole,
+      })
+      .eq("id", staff.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    cancelEditing();
+    loadStaffProfiles();
+  }
+
   async function toggleStaffActive(staff: StaffProfile) {
     if (currentStaff?.id === staff.id) {
-      alert("You cannot deactivate your own owner account.");
+      alert("You cannot deactivate your own account.");
       return;
     }
 
@@ -89,15 +172,17 @@ export default function AdminStaffPage() {
     loadStaffProfiles();
   }
 
+  const ownerCount = staffProfiles.filter((staff) => staff.role === "owner")
+    .length;
+
+  const adminCount = staffProfiles.filter((staff) => staff.role === "admin")
+    .length;
+
+  const activeCount = staffProfiles.filter((staff) => staff.active).length;
+
   useEffect(() => {
     loadStaffProfiles();
   }, []);
-
-  const ownerCount = staffProfiles.filter((staff) => staff.role === "owner")
-    .length;
-  const adminCount = staffProfiles.filter((staff) => staff.role === "admin")
-    .length;
-  const activeCount = staffProfiles.filter((staff) => staff.active).length;
 
   return (
     <StaffGuard>
@@ -116,7 +201,7 @@ export default function AdminStaffPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                View staff roles and activate or deactivate admin access.
+                Add staff profiles and manage owner/admin access.
               </p>
             </div>
 
@@ -159,14 +244,77 @@ export default function AdminStaffPage() {
             </div>
           </section>
 
+          <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">
+              Add Staff Profile
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-600">
+              First create the staff user in Supabase Authentication, then copy
+              the Auth User UID here.
+            </p>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Auth User UID
+                </label>
+
+                <input
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  value={newStaffId}
+                  onChange={(e) => setNewStaffId(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Staff Email
+                </label>
+
+                <input
+                  type="email"
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="staff@example.com"
+                  value={newStaffEmail}
+                  onChange={(e) => setNewStaffEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Role
+                </label>
+
+                <select
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as StaffRole)}
+                >
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={addStaffProfile}
+              disabled={isAdding}
+              className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+            >
+              {isAdding ? "Adding..." : "Add Staff Profile"}
+            </button>
+          </section>
+
           <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
               Staff Profile List
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Staff users must first be created in Supabase Authentication, then
-              added to the staff_profiles table.
+              Staff login accounts are created in Supabase Auth. This page
+              controls whether those accounts can access admin pages.
             </p>
 
             {isLoading && (
@@ -198,6 +346,10 @@ export default function AdminStaffPage() {
                           {staff.email}
                         </h3>
 
+                        <p className="mt-1 break-all text-xs text-gray-500">
+                          UID: {staff.id}
+                        </p>
+
                         <p className="mt-1 text-sm text-gray-600">
                           Created: {new Date(staff.created_at).toLocaleString()}
                         </p>
@@ -214,25 +366,88 @@ export default function AdminStaffPage() {
                       )}
                     </div>
 
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <button
-                        onClick={() => toggleStaffActive(staff)}
-                        disabled={currentStaff?.id === staff.id}
-                        className={
-                          staff.active
-                            ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600 disabled:bg-gray-400"
-                            : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700 disabled:bg-gray-400"
-                        }
-                      >
-                        {staff.active ? "Deactivate" : "Activate"}
-                      </button>
+                    {editingId === staff.id ? (
+                      <div className="mt-5 rounded-2xl bg-gray-50 p-4">
+                        <h4 className="font-semibold text-gray-900">
+                          Edit Staff Profile
+                        </h4>
 
-                      {currentStaff?.id === staff.id && (
-                        <span className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium text-gray-600">
-                          Current account
-                        </span>
-                      )}
-                    </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">
+                              Email
+                            </label>
+
+                            <input
+                              type="email"
+                              className="mt-1 w-full rounded-xl border p-3"
+                              value={editEmail}
+                              onChange={(e) => setEditEmail(e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">
+                              Role
+                            </label>
+
+                            <select
+                              className="mt-1 w-full rounded-xl border p-3"
+                              value={editRole}
+                              onChange={(e) =>
+                                setEditRole(e.target.value as StaffRole)
+                              }
+                            >
+                              <option value="admin">Admin</option>
+                              <option value="owner">Owner</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <button
+                            onClick={() => saveEdit(staff)}
+                            className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
+                          >
+                            Save
+                          </button>
+
+                          <button
+                            onClick={cancelEditing}
+                            className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          onClick={() => startEditing(staff)}
+                          className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() => toggleStaffActive(staff)}
+                          disabled={currentStaff?.id === staff.id}
+                          className={
+                            staff.active
+                              ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600 disabled:bg-gray-400"
+                              : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700 disabled:bg-gray-400"
+                          }
+                        >
+                          {staff.active ? "Deactivate" : "Activate"}
+                        </button>
+
+                        {currentStaff?.id === staff.id && (
+                          <span className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium text-gray-600">
+                            Current account
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
