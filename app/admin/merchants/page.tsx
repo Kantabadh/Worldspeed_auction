@@ -13,6 +13,7 @@ type MerchantAccount = {
   phone: string;
   active: boolean;
   created_at: string;
+  has_submission?: boolean;
 };
 
 export default function AdminMerchantsPage() {
@@ -31,24 +32,50 @@ export default function AdminMerchantsPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [clearingId, setClearingId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function loadMerchants() {
     setIsLoading(true);
     setErrorMessage("");
 
-    const { data, error } = await supabase
-      .from("merchant_accounts")
-      .select("*")
-      .order("merchant_code");
+    const { data: merchantAccountsData, error: merchantAccountsError } =
+      await supabase
+        .from("merchant_accounts")
+        .select("*")
+        .order("merchant_code");
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (merchantAccountsError) {
+      setErrorMessage(merchantAccountsError.message);
       setIsLoading(false);
       return;
     }
 
-    setMerchants((data as MerchantAccount[]) || []);
+    const { data: submittedMerchantsData, error: submittedMerchantsError } =
+      await supabase
+        .from("merchants")
+        .select("id, merchant_account_id")
+        .not("merchant_account_id", "is", null);
+
+    if (submittedMerchantsError) {
+      setErrorMessage(submittedMerchantsError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const submittedMerchantAccountIds = new Set(
+      (submittedMerchantsData || []).map(
+        (merchant) => merchant.merchant_account_id
+      )
+    );
+
+    const merchantAccountsWithSubmissionStatus =
+      (merchantAccountsData as MerchantAccount[] | null)?.map((merchant) => ({
+        ...merchant,
+        has_submission: submittedMerchantAccountIds.has(merchant.id),
+      })) || [];
+
+    setMerchants(merchantAccountsWithSubmissionStatus);
     setIsLoading(false);
   }
 
@@ -166,6 +193,69 @@ export default function AdminMerchantsPage() {
     loadMerchants();
   }
 
+  async function clearMerchantSubmission(merchant: MerchantAccount) {
+    const confirmClear = confirm(
+      `Clear submitted offers for ${merchant.merchant_name} / ${merchant.shop_name}? This will allow this merchant to submit again.`
+    );
+
+    if (!confirmClear) return;
+
+    const secondConfirm = confirm(
+      "Final confirmation: this will delete only this merchant's submitted offers. Continue?"
+    );
+
+    if (!secondConfirm) return;
+
+    setClearingId(merchant.id);
+    setErrorMessage("");
+
+    const { data: submittedMerchantRows, error: merchantRowsError } =
+      await supabase
+        .from("merchants")
+        .select("id")
+        .eq("merchant_account_id", merchant.id);
+
+    if (merchantRowsError) {
+      setErrorMessage(merchantRowsError.message);
+      setClearingId(null);
+      return;
+    }
+
+    if (!submittedMerchantRows || submittedMerchantRows.length === 0) {
+      alert("This merchant has no submitted offers to clear.");
+      setClearingId(null);
+      loadMerchants();
+      return;
+    }
+
+    const submittedMerchantIds = submittedMerchantRows.map((row) => row.id);
+
+    const { error: offersDeleteError } = await supabase
+      .from("offers")
+      .delete()
+      .in("merchant_id", submittedMerchantIds);
+
+    if (offersDeleteError) {
+      setErrorMessage(offersDeleteError.message);
+      setClearingId(null);
+      return;
+    }
+
+    const { error: merchantsDeleteError } = await supabase
+      .from("merchants")
+      .delete()
+      .in("id", submittedMerchantIds);
+
+    if (merchantsDeleteError) {
+      setErrorMessage(merchantsDeleteError.message);
+      setClearingId(null);
+      return;
+    }
+
+    setClearingId(null);
+    loadMerchants();
+  }
+
   function generateNextCode() {
     const numbers = merchants
       .map((merchant) => {
@@ -186,6 +276,9 @@ export default function AdminMerchantsPage() {
 
   const activeCount = merchants.filter((merchant) => merchant.active).length;
   const inactiveCount = merchants.filter((merchant) => !merchant.active).length;
+  const submittedCount = merchants.filter(
+    (merchant) => merchant.has_submission
+  ).length;
 
   return (
     <StaffGuard>
@@ -204,7 +297,8 @@ export default function AdminMerchantsPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Create and manage merchant code access for auction buyers.
+                Create merchant access, manage status, and clear individual
+                submissions.
               </p>
             </div>
 
@@ -223,9 +317,11 @@ export default function AdminMerchantsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-3">
+          <section className="mt-5 grid gap-4 md:grid-cols-4">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Total Merchants</p>
+              <p className="text-sm font-medium text-gray-500">
+                Total Merchants
+              </p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {merchants.length}
               </p>
@@ -242,6 +338,13 @@ export default function AdminMerchantsPage() {
               <p className="text-sm font-medium text-gray-500">Inactive</p>
               <p className="mt-2 text-3xl font-bold text-red-600">
                 {inactiveCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Submitted</p>
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {submittedCount}
               </p>
             </div>
           </section>
@@ -335,7 +438,7 @@ export default function AdminMerchantsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Activate, deactivate, edit, or delete merchant access.
+              Activate, edit, delete, or clear one merchant’s submission.
             </p>
 
             {isLoading && (
@@ -372,15 +475,27 @@ export default function AdminMerchantsPage() {
                         </p>
                       </div>
 
-                      {merchant.active ? (
-                        <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                          Inactive
-                        </span>
-                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {merchant.has_submission ? (
+                          <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">
+                            Submitted
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600">
+                            Not Submitted
+                          </span>
+                        )}
+
+                        {merchant.active ? (
+                          <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {editingId === merchant.id ? (
@@ -454,6 +569,18 @@ export default function AdminMerchantsPage() {
                         >
                           {merchant.active ? "Deactivate" : "Activate"}
                         </button>
+
+                        {merchant.has_submission && (
+                          <button
+                            onClick={() => clearMerchantSubmission(merchant)}
+                            disabled={clearingId === merchant.id}
+                            className="rounded-xl bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700 disabled:bg-gray-400"
+                          >
+                            {clearingId === merchant.id
+                              ? "Clearing..."
+                              : "Clear Submission"}
+                          </button>
+                        )}
 
                         <button
                           onClick={() => deleteMerchant(merchant.id)}
