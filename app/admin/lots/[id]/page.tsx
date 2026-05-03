@@ -105,6 +105,51 @@ export default function LotResultPage() {
 
   const highestOffer = offers[0];
 
+  function exportLotOffersCsv() {
+  if (!motorcycle) return;
+
+  const headers = [
+    "Rank",
+    "Lot",
+    "Motorcycle",
+    "Offer Price",
+    "Merchant",
+    "Shop",
+    "Phone",
+    "Submitted At",
+  ];
+
+  const rows = offers.map((offer, index) => [
+    index + 1,
+    motorcycle.lot_number,
+    motorcycle.motorcycle_name,
+    offer.offer_price,
+    offer.merchants?.name || "",
+    offer.merchants?.shop_name || "",
+    offer.merchants?.phone || "",
+    new Date(offer.submitted_at).toLocaleString(),
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map((row) =>
+      row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob([csvContent], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `lot-${motorcycle.lot_number}-offers.csv`;
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
+
   return (
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
@@ -216,12 +261,23 @@ export default function LotResultPage() {
                     </p>
                   </div>
 
-                  <button
-                    onClick={loadLotResult}
-                    className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-                  >
-                    Refresh
-                  </button>
+           <div className="flex flex-wrap gap-3">
+  <button
+    onClick={loadLotResult}
+    className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+  >
+    Refresh
+  </button>
+
+  {offers.length > 0 && (
+    <button
+      onClick={exportLotOffersCsv}
+      className="rounded-xl bg-black px-4 py-2 font-medium text-white hover:bg-gray-800"
+    >
+      Export Lot Offers CSV
+    </button>
+  )}
+</div>
                 </div>
 
                 {offers.length === 0 ? (

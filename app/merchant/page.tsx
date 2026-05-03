@@ -44,6 +44,7 @@ export default function MerchantPage() {
   const [auctionStatus, setAuctionStatus] = useState("open");
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -76,6 +77,25 @@ export default function MerchantPage() {
     saveMerchantSession(session);
   }
 
+  async function checkExistingSubmission(merchantAccountId: number) {
+    const { data, error } = await supabase
+      .from("merchants")
+      .select("id")
+      .eq("merchant_account_id", merchantAccountId)
+      .limit(1);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      setHasSubmitted(true);
+    } else {
+      setHasSubmitted(false);
+    }
+  }
+
   useEffect(() => {
     const savedSession = localStorage.getItem("merchantSession");
 
@@ -97,6 +117,8 @@ export default function MerchantPage() {
     setShopName(session.shopName || "");
     setPhone(session.phone || "");
     setIsMerchantLoggedIn(true);
+
+    checkExistingSubmission(session.merchantAccountId);
   }, []);
 
   useEffect(() => {
@@ -137,15 +159,20 @@ export default function MerchantPage() {
       const { data, error } = await supabase
         .from("auction_settings")
         .select("status")
-        .limit(1)
-        .single();
+        .order("id", { ascending: true })
+        .limit(1);
 
       if (error) {
         setErrorMessage(error.message);
         return;
       }
 
-      setAuctionStatus(data.status);
+      if (!data || data.length === 0) {
+        setErrorMessage("No auction setting found.");
+        return;
+      }
+
+      setAuctionStatus(data[0].status);
     }
 
     async function loadMotorcycles() {
@@ -229,6 +256,11 @@ export default function MerchantPage() {
   }
 
   function handleSubmit() {
+    if (hasSubmitted) {
+      alert("You have already submitted offers for this auction.");
+      return;
+    }
+
     if (auctionStatus === "closed") {
       alert("Auction is closed. You cannot submit offers anymore.");
       return;
@@ -303,6 +335,16 @@ export default function MerchantPage() {
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
             <p className="font-semibold">Auction is CLOSED</p>
             <p className="text-sm">Offer submission is currently blocked.</p>
+          </div>
+        )}
+
+        {hasSubmitted && (
+          <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+            <p className="font-semibold">Already Submitted</p>
+            <p className="text-sm">
+              This merchant account has already submitted offers for this
+              auction. Please contact auction staff if changes are needed.
+            </p>
           </div>
         )}
 
@@ -424,7 +466,8 @@ export default function MerchantPage() {
                     <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
                       <input
                         inputMode="numeric"
-                        className="w-full p-3 text-lg outline-none"
+                        disabled={hasSubmitted || auctionStatus === "closed"}
+                        className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Enter price"
                         value={offer.price}
                         onChange={(e) => updatePrice(index, e.target.value)}
@@ -448,17 +491,24 @@ export default function MerchantPage() {
             <p className="text-sm font-semibold text-gray-900">
               {enteredOfferCount} offer(s) entered
             </p>
-            <p className="text-xs text-gray-500">
-              Review before final submission
-            </p>
+
+            {hasSubmitted ? (
+              <p className="text-xs text-yellow-700">
+                Already submitted for this auction
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Review before final submission
+              </p>
+            )}
           </div>
 
           <button
             onClick={handleSubmit}
-            disabled={auctionStatus === "closed"}
+            disabled={auctionStatus === "closed" || hasSubmitted}
             className="rounded-xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
           >
-            Review Offers
+            {hasSubmitted ? "Already Submitted" : "Review Offers"}
           </button>
         </div>
       </div>
