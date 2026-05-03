@@ -34,6 +34,9 @@ export default function AdminPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  const [totalMotorcycles, setTotalMotorcycles] = useState(0);
+  const [activeMotorcycles, setActiveMotorcycles] = useState(0);
+
   const [auctionStatus, setAuctionStatus] = useState("open");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
@@ -41,6 +44,7 @@ export default function AdminPage() {
   const [isCheckingStaff, setIsCheckingStaff] = useState(true);
 
   const [resetPassword, setResetPassword] = useState("");
+  const [resetPhrase, setResetPhrase] = useState("");
 
   function saveStaffSession(profile: StaffProfile) {
     const updatedProfile = {
@@ -226,9 +230,28 @@ export default function AdminPage() {
     setIsLoading(false);
   }
 
+  async function loadMotorcycleCounts() {
+    const { data, error } = await supabase
+      .from("motorcycles")
+      .select("id, active");
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    const motorcycles = data || [];
+
+    setTotalMotorcycles(motorcycles.length);
+    setActiveMotorcycles(
+      motorcycles.filter((motorcycle) => motorcycle.active).length
+    );
+  }
+
   useEffect(() => {
     loadAuctionStatus();
     loadOffers();
+    loadMotorcycleCounts();
   }, []);
 
   const winnerSummary = offers.reduce((summary, offer) => {
@@ -257,72 +280,83 @@ export default function AdminPage() {
     offers.map((offer) => offer.motorcycles?.lot_number).filter(Boolean)
   );
 
-  const totalOfferValue = offers.reduce((sum, offer) => {
-    return sum + Number(offer.offer_price || 0);
-  }, 0);
+  const totalHighestOfferValue = winners.reduce((sum, winner) => {
+  return sum + Number(winner.offer_price || 0);
+}, 0);
 
-  async function resetAuctionData() {
-    if (!staffProfile?.email) {
-      setErrorMessage("Staff profile not found. Please log in again.");
-      return;
-    }
-
-    if (!resetPassword) {
-      alert("Please enter your staff password before resetting auction data.");
-      return;
-    }
-
-    const confirmReset = confirm(
-      "Are you sure you want to reset auction data? This will delete all submitted offers and merchant submission records. Motorcycle lots, photos, merchant accounts, and staff accounts will stay."
-    );
-
-    if (!confirmReset) return;
-
-    const { error: passwordError } = await supabase.auth.signInWithPassword({
-      email: staffProfile.email,
-      password: resetPassword,
-    });
-
-    if (passwordError) {
-      setErrorMessage("Wrong password. Reset auction data was cancelled.");
-      setResetPassword("");
-      return;
-    }
-
-    const secondConfirm = confirm(
-      "Final confirmation: this cannot be undone. Delete all submitted offers?"
-    );
-
-    if (!secondConfirm) return;
-
-    setIsLoading(true);
-    setErrorMessage("");
-
-    const { error: offersError } = await supabase
-      .from("offers")
-      .delete()
-      .neq("id", 0);
-
-    if (offersError) {
-      setErrorMessage(offersError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    const { error: merchantsError } = await supabase
-      .from("merchants")
-      .delete()
-      .neq("id", 0);
-
-    if (merchantsError) {
-      setErrorMessage(merchantsError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    setResetPassword("");
-    await loadOffers();
+ async function resetAuctionData() {
+  if (staffProfile?.role !== "owner") {
+    setErrorMessage("Only the owner account can reset auction data.");
+    return;
   }
+
+  if (!staffProfile?.email) {
+    setErrorMessage("Staff profile not found. Please log in again.");
+    return;
+  }
+
+  if (!resetPassword) {
+    alert("Please enter your owner password before resetting auction data.");
+    return;
+  }
+
+  if (resetPhrase !== "RESET AUCTION") {
+    alert('Please type exactly "RESET AUCTION" before resetting.');
+    return;
+  }
+
+  const confirmReset = confirm(
+    "Are you sure you want to reset auction data? This will delete all submitted offers and merchant submission records. Motorcycle lots, photos, merchant accounts, and staff accounts will stay."
+  );
+
+  if (!confirmReset) return;
+
+  const { error: passwordError } = await supabase.auth.signInWithPassword({
+    email: staffProfile.email,
+    password: resetPassword,
+  });
+
+  if (passwordError) {
+    setErrorMessage("Wrong password. Reset auction data was cancelled.");
+    setResetPassword("");
+    return;
+  }
+
+  const secondConfirm = confirm(
+    "Final confirmation: this cannot be undone. Delete all submitted offers?"
+  );
+
+  if (!secondConfirm) return;
+
+  setIsLoading(true);
+  setErrorMessage("");
+
+  const { error: offersError } = await supabase
+    .from("offers")
+    .delete()
+    .neq("id", 0);
+
+  if (offersError) {
+    setErrorMessage(offersError.message);
+    setIsLoading(false);
+    return;
+  }
+
+  const { error: merchantsError } = await supabase
+    .from("merchants")
+    .delete()
+    .neq("id", 0);
+
+  if (merchantsError) {
+    setErrorMessage(merchantsError.message);
+    setIsLoading(false);
+    return;
+  }
+
+  setResetPassword("");
+  setResetPhrase("");
+  await loadOffers();
+}
 
   function exportWinnersCsv() {
     const headers = [
@@ -460,7 +494,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-4 md:grid-cols-4">
+        <section className="mt-5 grid gap-4 md:grid-cols-5">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <p className="text-sm font-medium text-gray-500">Total Offers</p>
             <p className="mt-2 text-3xl font-bold text-gray-900">
@@ -485,9 +519,19 @@ export default function AdminPage() {
           </div>
 
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">Total Lots</p>
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {totalMotorcycles}
+            </p>
+            <p className="text-sm text-gray-500">
+              Active: {activeMotorcycles}
+            </p>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <p className="text-sm font-medium text-gray-500">Total Value</p>
             <p className="mt-2 text-2xl font-bold text-gray-900">
-              {totalOfferValue.toLocaleString()}
+              {totalHighestOfferValue.toLocaleString()}
             </p>
             <p className="text-sm text-gray-500">baht</p>
           </div>
@@ -519,26 +563,41 @@ export default function AdminPage() {
             )}
 
             <button
-              onClick={loadOffers}
+              onClick={() => {
+                loadOffers();
+                loadMotorcycleCounts();
+              }}
               className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
             >
               Refresh Data
             </button>
 
-            <input
-              type="password"
-              className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
-              placeholder="Password for reset"
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-            />
+{staffProfile?.role === "owner" && (
+  <>
+    <input
+      type="password"
+      className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+      placeholder="Owner password"
+      value={resetPassword}
+      onChange={(e) => setResetPassword(e.target.value)}
+    />
 
-            <button
-              onClick={resetAuctionData}
-              className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-            >
-              Reset Auction Data
-            </button>
+    <input
+      type="text"
+      className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+      placeholder='Type "RESET AUCTION"'
+      value={resetPhrase}
+      onChange={(e) => setResetPhrase(e.target.value)}
+    />
+
+    <button
+      onClick={resetAuctionData}
+      className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+    >
+      Reset Auction Data
+    </button>
+  </>
+)}
 
             {!isLoading && winners.length > 0 && (
               <button
