@@ -38,8 +38,7 @@ export default function MerchantLoginPage() {
       .eq("phone", cleanPhone)
       .eq("merchant_code", cleanCode)
       .eq("active", true)
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
 
     if (error) {
       setErrorMessage(error.message);
@@ -47,13 +46,13 @@ export default function MerchantLoginPage() {
       return;
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
       setErrorMessage("Invalid phone number or merchant code.");
       setIsLoading(false);
       return;
     }
 
-    const merchant = data as MerchantAccount;
+    const merchant = data[0] as MerchantAccount;
 
     localStorage.setItem(
       "merchantSession",

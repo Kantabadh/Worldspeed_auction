@@ -13,6 +13,7 @@ type AdminOffer = {
     phone: string;
   } | null;
   motorcycles: {
+    id: number;
     lot_number: string;
     motorcycle_name: string;
   } | null;
@@ -208,6 +209,7 @@ export default function AdminPage() {
           phone
         ),
         motorcycles (
+          id,
           lot_number,
           motorcycle_name
         )
@@ -320,47 +322,6 @@ export default function AdminPage() {
 
     setResetPassword("");
     await loadOffers();
-  }
-
-  function exportAllOffersCsv() {
-    const headers = [
-      "Lot",
-      "Motorcycle",
-      "Offer Price",
-      "Merchant",
-      "Shop",
-      "Phone",
-      "Submitted At",
-    ];
-
-    const rows = offers.map((offer) => [
-      offer.motorcycles?.lot_number || "",
-      offer.motorcycles?.motorcycle_name || "",
-      offer.offer_price,
-      offer.merchants?.name || "",
-      offer.merchants?.shop_name || "",
-      offer.merchants?.phone || "",
-      new Date(offer.submitted_at).toLocaleString(),
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")
-      )
-      .join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "all-submitted-offers.csv";
-    link.click();
-
-    URL.revokeObjectURL(url);
   }
 
   function exportWinnersCsv() {
@@ -579,22 +540,13 @@ export default function AdminPage() {
               Reset Auction Data
             </button>
 
-            {!isLoading && offers.length > 0 && (
-              <>
-                <button
-                  onClick={exportWinnersCsv}
-                  className="rounded-xl bg-black px-4 py-2 font-medium text-white"
-                >
-                  Export Highest Offers
-                </button>
-
-                <button
-                  onClick={exportAllOffersCsv}
-                  className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-                >
-                  Export All Offers
-                </button>
-              </>
+            {!isLoading && winners.length > 0 && (
+              <button
+                onClick={exportWinnersCsv}
+                className="rounded-xl bg-black px-4 py-2 font-medium text-white"
+              >
+                Export Highest Offers
+              </button>
             )}
           </div>
         </section>
@@ -618,7 +570,8 @@ export default function AdminPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Current leading offer for each lot.
+              Current leading offer for each lot. Click View Offers to see all
+              offers for that lot.
             </p>
 
             <div className="mt-4 overflow-x-auto">
@@ -631,6 +584,7 @@ export default function AdminPage() {
                     <th className="p-3">Merchant</th>
                     <th className="p-3">Shop</th>
                     <th className="p-3">Phone</th>
+                    <th className="p-3">Details</th>
                   </tr>
                 </thead>
 
@@ -654,61 +608,18 @@ export default function AdminPage() {
                       <td className="p-3">{winner.merchants?.shop_name}</td>
 
                       <td className="p-3">{winner.merchants?.phone}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {!isLoading && offers.length > 0 && (
-          <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">
-              All Submitted Offers
-            </h2>
-
-            <p className="mt-1 text-sm text-gray-600">
-              Full submission history from all merchants.
-            </p>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-100 text-gray-700">
-                    <th className="p-3">Lot</th>
-                    <th className="p-3">Motorcycle</th>
-                    <th className="p-3">Offer Price</th>
-                    <th className="p-3">Merchant</th>
-                    <th className="p-3">Shop</th>
-                    <th className="p-3">Phone</th>
-                    <th className="p-3">Submitted At</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {offers.map((offer) => (
-                    <tr key={offer.id} className="border-b">
-                      <td className="p-3 font-semibold">
-                        {offer.motorcycles?.lot_number}
-                      </td>
 
                       <td className="p-3">
-                        {offer.motorcycles?.motorcycle_name}
-                      </td>
-
-                      <td className="p-3 font-bold">
-                        {Number(offer.offer_price).toLocaleString()} baht
-                      </td>
-
-                      <td className="p-3">{offer.merchants?.name}</td>
-
-                      <td className="p-3">{offer.merchants?.shop_name}</td>
-
-                      <td className="p-3">{offer.merchants?.phone}</td>
-
-                      <td className="p-3">
-                        {new Date(offer.submitted_at).toLocaleString()}
+                        {winner.motorcycles?.id ? (
+                          <a
+                            href={`/admin/lots/${winner.motorcycles.id}`}
+                            className="rounded-xl bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                          >
+                            View Offers
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
