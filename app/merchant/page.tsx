@@ -49,6 +49,8 @@ export default function MerchantPage() {
   );
 
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [starredLotIds, setStarredLotIds] = useState<number[]>([]);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
 
@@ -87,6 +89,19 @@ export default function MerchantPage() {
 
     const session = JSON.parse(savedSession) as MerchantSession;
     saveMerchantSession(session);
+  }
+
+  function toggleStarLot(motorcycleId: number) {
+    const updatedStarredLotIds = starredLotIds.includes(motorcycleId)
+      ? starredLotIds.filter((id) => id !== motorcycleId)
+      : [...starredLotIds, motorcycleId];
+
+    setStarredLotIds(updatedStarredLotIds);
+
+    localStorage.setItem(
+      "merchantStarredLotIds",
+      JSON.stringify(updatedStarredLotIds)
+    );
   }
 
   async function checkExistingSubmission(accountId: number) {
@@ -165,6 +180,12 @@ export default function MerchantPage() {
     if (session.expiresAt && Date.now() > session.expiresAt) {
       logoutMerchant();
       return;
+    }
+
+    const savedStarredLots = localStorage.getItem("merchantStarredLotIds");
+
+    if (savedStarredLots) {
+      setStarredLotIds(JSON.parse(savedStarredLots));
     }
 
     setMerchantName(session.merchantName || "");
@@ -359,6 +380,16 @@ export default function MerchantPage() {
   const isLockedAfterSubmission = hasSubmitted && !canEditSubmission;
   const canTypeOffer = auctionStatus === "open" && !isLockedAfterSubmission;
 
+  const sortedOffers = [...offers].sort((a, b) => {
+    const aStarred = starredLotIds.includes(a.motorcycle_id);
+    const bStarred = starredLotIds.includes(b.motorcycle_id);
+
+    if (aStarred && !bStarred) return -1;
+    if (!aStarred && bStarred) return 1;
+
+    return a.lot.localeCompare(b.lot);
+  });
+
   if (!isMerchantLoggedIn) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
@@ -487,6 +518,15 @@ export default function MerchantPage() {
             </div>
           </div>
 
+          {starredLotIds.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+              <p className="font-semibold">Starred Lots</p>
+              <p className="text-sm">
+                Starred motorcycle lots are shown at the top for easier access.
+              </p>
+            </div>
+          )}
+
           {offers.length === 0 && !errorMessage && (
             <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
               <p className="text-gray-600">Loading motorcycles...</p>
@@ -494,72 +534,103 @@ export default function MerchantPage() {
           )}
 
           <div className="mt-4 space-y-5">
-            {offers.map((offer, index) => (
-              <article
-                key={offer.motorcycle_id}
-                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
-              >
-                {offer.photos.length > 0 && (
-                  <div className="grid grid-cols-2 gap-1 bg-gray-100 p-2 sm:grid-cols-3 md:grid-cols-4">
-                    {offer.photos.map((photo, photoIndex) => (
-                      <button
-                        key={photo.id}
-                        type="button"
-                        onClick={() => openGallery(offer.photos, photoIndex)}
-                        className="overflow-hidden rounded-xl bg-gray-200"
-                      >
-                        <img
-                          src={photo.image_url}
-                          alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
-                          className="h-32 w-full object-cover transition hover:scale-105"
+            {sortedOffers.map((offer) => {
+              const originalIndex = offers.findIndex(
+                (item) => item.motorcycle_id === offer.motorcycle_id
+              );
+
+              const isStarred = starredLotIds.includes(offer.motorcycle_id);
+
+              return (
+                <article
+                  key={offer.motorcycle_id}
+                  className={
+                    isStarred
+                      ? "overflow-hidden rounded-2xl border border-yellow-300 bg-yellow-50 shadow-sm"
+                      : "overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
+                  }
+                >
+                  {offer.photos.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1 bg-gray-100 p-2 sm:grid-cols-3 md:grid-cols-4">
+                      {offer.photos.map((photo, photoIndex) => (
+                        <button
+                          key={photo.id}
+                          type="button"
+                          onClick={() => openGallery(offer.photos, photoIndex)}
+                          className="overflow-hidden rounded-xl bg-gray-200"
+                        >
+                          <img
+                            src={photo.image_url}
+                            alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
+                            className="h-32 w-full object-cover transition hover:scale-105"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                          {isStarred ? "⭐ " : ""}
+                          Lot {offer.lot}
+                        </p>
+
+                        <h3 className="mt-1 text-lg font-bold text-gray-900">
+                          {offer.motorcycle}
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleStarLot(offer.motorcycle_id)}
+                          className={
+                            isStarred
+                              ? "rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-700"
+                              : "rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-yellow-50"
+                          }
+                        >
+                          {isStarred ? "⭐ Starred" : "☆ Star"}
+                        </button>
+
+                        {offer.price && (
+                          <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                            {hasSubmitted
+                              ? "Submitted price"
+                              : "Offer entered"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-sm font-medium text-gray-700">
+                        Offer Price
+                      </label>
+
+                      <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
+                        <input
+                          inputMode="numeric"
+                          disabled={!canTypeOffer}
+                          className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-700"
+                          placeholder="Enter price"
+                          value={offer.price}
+                          onChange={(e) =>
+                            updatePrice(originalIndex, e.target.value)
+                          }
                         />
-                      </button>
-                    ))}
-                  </div>
-                )}
 
-                <div className="p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                        Lot {offer.lot}
-                      </p>
-
-                      <h3 className="mt-1 text-lg font-bold text-gray-900">
-                        {offer.motorcycle}
-                      </h3>
-                    </div>
-
-                    {offer.price && (
-                      <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                        {hasSubmitted ? "Submitted price" : "Offer entered"}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="text-sm font-medium text-gray-700">
-                      Offer Price
-                    </label>
-
-                    <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
-                      <input
-                        inputMode="numeric"
-                        disabled={!canTypeOffer}
-                        className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-700"
-                        placeholder="Enter price"
-                        value={offer.price}
-                        onChange={(e) => updatePrice(index, e.target.value)}
-                      />
-
-                      <span className="border-l bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
-                        baht
-                      </span>
+                        <span className="border-l bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
+                          baht
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </section>
       </section>
