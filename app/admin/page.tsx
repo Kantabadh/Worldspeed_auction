@@ -556,14 +556,14 @@ export default function AdminPage() {
               Manage Merchants
             </a>
 
-            {staffProfile?.role === "owner" && (
-              <a
-                href="/admin/staff"
-                className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-              >
-                Manage Staff
-              </a>
-            )}
+        {staffProfile?.role === "owner" && (
+  <a
+    href="/admin/staff"
+    className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+  >
+    Owner Settings
+  </a>
+)}
 
             <button
               onClick={() => {

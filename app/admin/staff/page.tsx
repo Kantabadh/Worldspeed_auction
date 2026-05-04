@@ -47,17 +47,22 @@ export default function AdminStaffPage() {
       .from("staff_profiles")
       .select("*")
       .eq("id", userData.user.id)
-      .single();
+      .limit(1);
 
-    if (currentProfileError || !currentProfile) {
+    if (
+      currentProfileError ||
+      !currentProfile ||
+      currentProfile.length === 0
+    ) {
       setErrorMessage("Current staff profile not found.");
       setIsLoading(false);
       return;
     }
 
-    setCurrentStaff(currentProfile as StaffProfile);
+    const currentProfileData = currentProfile[0] as StaffProfile;
+    setCurrentStaff(currentProfileData);
 
-    if (currentProfile.role !== "owner") {
+    if (currentProfileData.role !== "owner") {
       setErrorMessage("Owner access only.");
       setIsLoading(false);
       return;
@@ -193,15 +198,16 @@ export default function AdminStaffPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Owner Management
+                Owner Settings
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                Staff Accounts
+                Admin & Staff Access
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Add staff profiles and manage owner/admin access.
+                Owner-only page for managing admin accounts, roles, and access
+                status.
               </p>
             </div>
 
@@ -222,14 +228,14 @@ export default function AdminStaffPage() {
 
           <section className="mt-5 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Total Staff</p>
+              <p className="text-sm font-medium text-gray-500">Total Accounts</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {staffProfiles.length}
               </p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Active Staff</p>
+              <p className="text-sm font-medium text-gray-500">Active Accounts</p>
               <p className="mt-2 text-3xl font-bold text-green-600">
                 {activeCount}
               </p>
@@ -246,7 +252,7 @@ export default function AdminStaffPage() {
 
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
-              Add Staff Profile
+              Add Admin Profile
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
@@ -283,9 +289,7 @@ export default function AdminStaffPage() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Role
-                </label>
+                <label className="text-sm font-medium text-gray-700">Role</label>
 
                 <select
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
@@ -303,13 +307,13 @@ export default function AdminStaffPage() {
               disabled={isAdding}
               className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
             >
-              {isAdding ? "Adding..." : "Add Staff Profile"}
+              {isAdding ? "Adding..." : "Add Admin Profile"}
             </button>
           </section>
 
           <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
-              Staff Profile List
+              Admin Account List
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
@@ -319,13 +323,13 @@ export default function AdminStaffPage() {
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">Loading staff profiles...</p>
+                <p className="text-gray-600">Loading admin profiles...</p>
               </div>
             )}
 
             {!isLoading && staffProfiles.length === 0 && !errorMessage && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">No staff profiles found.</p>
+                <p className="text-gray-600">No admin profiles found.</p>
               </div>
             )}
 
@@ -369,7 +373,7 @@ export default function AdminStaffPage() {
                     {editingId === staff.id ? (
                       <div className="mt-5 rounded-2xl bg-gray-50 p-4">
                         <h4 className="font-semibold text-gray-900">
-                          Edit Staff Profile
+                          Edit Admin Profile
                         </h4>
 
                         <div className="mt-3 grid gap-3 md:grid-cols-2">

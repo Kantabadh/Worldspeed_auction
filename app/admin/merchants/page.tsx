@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
+type ApprovalStatus = "pending" | "approved" | "rejected";
+
 type MerchantAccount = {
   id: number;
   merchant_code: string;
@@ -12,6 +14,7 @@ type MerchantAccount = {
   shop_name: string;
   phone: string;
   active: boolean;
+  approval_status: ApprovalStatus;
   can_edit_submission: boolean;
   created_at: string;
   has_submission?: boolean;
@@ -44,7 +47,7 @@ export default function AdminMerchantsPage() {
       await supabase
         .from("merchant_accounts")
         .select("*")
-        .order("merchant_code");
+        .order("created_at", { ascending: false });
 
     if (merchantAccountsError) {
       setErrorMessage(merchantAccountsError.message);
@@ -73,6 +76,7 @@ export default function AdminMerchantsPage() {
     const merchantAccountsWithSubmissionStatus =
       (merchantAccountsData as MerchantAccount[] | null)?.map((merchant) => ({
         ...merchant,
+        approval_status: merchant.approval_status || "approved",
         can_edit_submission: merchant.can_edit_submission ?? false,
         has_submission: submittedMerchantAccountIds.has(merchant.id),
       })) || [];
@@ -96,6 +100,7 @@ export default function AdminMerchantsPage() {
       shop_name: shopName.trim(),
       phone: phone.trim(),
       active: true,
+      approval_status: "approved",
       can_edit_submission: false,
     });
 
@@ -110,6 +115,50 @@ export default function AdminMerchantsPage() {
     setShopName("");
     setPhone("");
     setIsAdding(false);
+    loadMerchants();
+  }
+
+  async function approveMerchant(merchant: MerchantAccount) {
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("merchant_accounts")
+      .update({
+        approval_status: "approved",
+        active: true,
+      })
+      .eq("id", merchant.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    loadMerchants();
+  }
+
+  async function rejectMerchant(merchant: MerchantAccount) {
+    const confirmReject = confirm(
+      `Reject ${merchant.merchant_name} / ${merchant.shop_name}? They will not be able to log in.`
+    );
+
+    if (!confirmReject) return;
+
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("merchant_accounts")
+      .update({
+        approval_status: "rejected",
+        active: false,
+      })
+      .eq("id", merchant.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
     loadMerchants();
   }
 
@@ -310,6 +359,9 @@ export default function AdminMerchantsPage() {
   const editableCount = merchants.filter(
     (merchant) => merchant.can_edit_submission
   ).length;
+  const pendingCount = merchants.filter(
+    (merchant) => merchant.approval_status === "pending"
+  ).length;
 
   return (
     <StaffGuard>
@@ -328,8 +380,8 @@ export default function AdminMerchantsPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Create merchant access, manage status, and control whether a
-                submitted merchant can edit offers.
+                Approve new merchant registrations, manage access, and control
+                offer editing.
               </p>
             </div>
 
@@ -348,13 +400,20 @@ export default function AdminMerchantsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-5">
+          <section className="mt-5 grid gap-4 md:grid-cols-6">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
               <p className="text-sm font-medium text-gray-500">
                 Total Merchants
               </p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {merchants.length}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Pending</p>
+              <p className="mt-2 text-3xl font-bold text-orange-600">
+                {pendingCount}
               </p>
             </div>
 
@@ -393,7 +452,7 @@ export default function AdminMerchantsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Merchant logs in using phone number and merchant code.
+              Admin-created merchants are approved immediately.
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -476,8 +535,8 @@ export default function AdminMerchantsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Activate, edit, delete, clear submission, or allow a submitted
-              merchant to edit again.
+              Approve, reject, activate, edit, clear submission, or allow offer
+              editing.
             </p>
 
             {isLoading && (
@@ -515,6 +574,24 @@ export default function AdminMerchantsPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
+                        {merchant.approval_status === "pending" && (
+                          <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
+                            Pending
+                          </span>
+                        )}
+
+                        {merchant.approval_status === "approved" && (
+                          <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                            Approved
+                          </span>
+                        )}
+
+                        {merchant.approval_status === "rejected" && (
+                          <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
+                            Rejected
+                          </span>
+                        )}
+
                         {merchant.has_submission ? (
                           <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">
                             Submitted
@@ -597,6 +674,33 @@ export default function AdminMerchantsPage() {
                       </div>
                     ) : (
                       <div className="mt-5 flex flex-wrap gap-3">
+                        {merchant.approval_status === "pending" && (
+                          <>
+                            <button
+                              onClick={() => approveMerchant(merchant)}
+                              className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+                            >
+                              Approve
+                            </button>
+
+                            <button
+                              onClick={() => rejectMerchant(merchant)}
+                              className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+
+                        {merchant.approval_status === "rejected" && (
+                          <button
+                            onClick={() => approveMerchant(merchant)}
+                            className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+                          >
+                            Approve Again
+                          </button>
+                        )}
+
                         <button
                           onClick={() => startEditing(merchant)}
                           className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
