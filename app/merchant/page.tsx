@@ -303,8 +303,10 @@ export default function MerchantPage() {
   }, [offers.length, merchantAccountId]);
 
   function updatePrice(index: number, value: string) {
+    const cleanValue = value.replace(/[^\d]/g, "");
+
     const newOffers = [...offers];
-    newOffers[index].price = value;
+    newOffers[index].price = cleanValue;
     setOffers(newOffers);
 
     const pricesToSave: Record<number, string> = {};
@@ -401,106 +403,85 @@ export default function MerchantPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-28">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">
+    <main className="min-h-screen bg-gray-50 pb-32">
+      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
               Motorcycle Offer System
             </h1>
 
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-0.5 truncate text-xs text-gray-600 sm:text-sm">
               {merchantName} • {shopName}
             </p>
           </div>
 
           <button
             onClick={logoutMerchant}
-            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+            className="shrink-0 rounded-xl border bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-100 sm:px-4 sm:text-sm"
           >
             Logout
           </button>
         </div>
       </header>
 
-      <section className="mx-auto max-w-5xl px-4 py-5">
+      <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
         {auctionStatus === "open" ? (
-          <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
+          <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
             <p className="font-semibold">Auction is OPEN</p>
             <p className="text-sm">You can enter and submit offers.</p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
             <p className="font-semibold">Auction is CLOSED</p>
             <p className="text-sm">Offer submission is currently blocked.</p>
           </div>
         )}
 
         {hasSubmitted && !canEditSubmission && (
-          <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+          <div className="mt-3 rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
             <p className="font-semibold">Already Submitted</p>
             <p className="text-sm">
               Your submitted offer prices are shown below. Editing is currently
-              locked. Please contact auction staff if changes are needed.
+              locked.
             </p>
           </div>
         )}
 
         {hasSubmitted && canEditSubmission && (
-          <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
+          <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-800 sm:p-4">
             <p className="font-semibold">Editing Allowed</p>
             <p className="text-sm">
-              Auction staff has allowed you to edit your submitted offers. After
-              you submit again, editing will be locked automatically.
+              Auction staff has allowed you to edit your submitted offers.
             </p>
           </div>
         )}
 
         {errorMessage && (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+          <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700 sm:p-4">
             <p className="font-semibold">Error</p>
             <p className="text-sm">{errorMessage}</p>
           </div>
         )}
 
-        <section className="mt-5 rounded-2xl bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">
-            Merchant Information
-          </h2>
-
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-500">
-                Merchant
-              </label>
-              <input
-                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
-                value={merchantName}
-                readOnly
-              />
+              <h2 className="text-base font-semibold text-gray-900">
+                Merchant Info
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {merchantName} • {phone}
+              </p>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-500">Shop</label>
-              <input
-                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
-                value={shopName}
-                readOnly
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-gray-500">Phone</label>
-              <input
-                className="mt-1 w-full rounded-xl border bg-gray-100 p-3 text-sm"
-                value={phone}
-                readOnly
-              />
+            <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+              {shopName}
             </div>
           </div>
         </section>
 
-        <section className="mt-6">
+        <section className="mt-5">
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
@@ -508,22 +489,19 @@ export default function MerchantPage() {
               </h2>
               <p className="mt-1 text-sm text-gray-600">
                 {hasSubmitted
-                  ? "Your submitted offer prices are shown below."
-                  : "Enter your one-time offer price for the motorcycles you want."}
+                  ? "Your submitted prices are shown below."
+                  : "Enter offer prices for lots you want."}
               </p>
             </div>
 
-            <div className="rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
+            <div className="shrink-0 rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
               {enteredOfferCount}/{offers.length}
             </div>
           </div>
 
           {starredLotIds.length > 0 && (
-            <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
-              <p className="font-semibold">Starred Lots</p>
-              <p className="text-sm">
-                Starred motorcycle lots are shown at the top for easier access.
-              </p>
+            <div className="mt-3 rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800">
+              <p className="text-sm font-semibold">Starred lots are shown first.</p>
             </div>
           )}
 
@@ -533,45 +511,55 @@ export default function MerchantPage() {
             </div>
           )}
 
-          <div className="mt-4 space-y-5">
+          <div className="mt-4 space-y-4">
             {sortedOffers.map((offer) => {
               const originalIndex = offers.findIndex(
                 (item) => item.motorcycle_id === offer.motorcycle_id
               );
 
               const isStarred = starredLotIds.includes(offer.motorcycle_id);
+              const firstPhoto = offer.photos[0];
 
               return (
                 <article
                   key={offer.motorcycle_id}
                   className={
                     isStarred
-                      ? "overflow-hidden rounded-2xl border border-yellow-300 bg-yellow-50 shadow-sm"
-                      : "overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
+                      ? "overflow-hidden rounded-3xl border border-yellow-300 bg-yellow-50 shadow-sm"
+                      : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
                   }
                 >
-                  {offer.photos.length > 0 && (
-                    <div className="grid grid-cols-2 gap-1 bg-gray-100 p-2 sm:grid-cols-3 md:grid-cols-4">
-                      {offer.photos.map((photo, photoIndex) => (
-                        <button
-                          key={photo.id}
-                          type="button"
-                          onClick={() => openGallery(offer.photos, photoIndex)}
-                          className="overflow-hidden rounded-xl bg-gray-200"
-                        >
-                          <img
-                            src={photo.image_url}
-                            alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
-                            className="h-32 w-full object-cover transition hover:scale-105"
-                          />
-                        </button>
-                      ))}
+                  {firstPhoto ? (
+                    <button
+                      type="button"
+                      onClick={() => openGallery(offer.photos, 0)}
+                      className="relative block w-full overflow-hidden bg-gray-100"
+                    >
+                      <img
+                        src={firstPhoto.image_url}
+                        alt={`${offer.motorcycle} photo`}
+                        className="h-48 w-full object-cover sm:h-64"
+                      />
+
+                      {offer.photos.length > 1 && (
+                        <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
+                          {offer.photos.length} photos
+                        </span>
+                      )}
+
+                      <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
+                        Tap to view
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex h-32 items-center justify-center bg-gray-100 text-sm text-gray-500">
+                      No photo
                     </div>
                   )}
 
                   <div className="p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                           {isStarred ? "⭐ " : ""}
                           Lot {offer.lot}
@@ -582,27 +570,33 @@ export default function MerchantPage() {
                         </h3>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleStarLot(offer.motorcycle_id)}
-                          className={
-                            isStarred
-                              ? "rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-700"
-                              : "rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-yellow-50"
-                          }
-                        >
-                          {isStarred ? "⭐ Starred" : "☆ Star"}
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleStarLot(offer.motorcycle_id)}
+                        className={
+                          isStarred
+                            ? "shrink-0 rounded-full bg-yellow-200 px-3 py-2 text-sm font-semibold text-yellow-800"
+                            : "shrink-0 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-yellow-50"
+                        }
+                      >
+                        {isStarred ? "⭐" : "☆"}
+                      </button>
+                    </div>
 
-                        {offer.price && (
-                          <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                            {hasSubmitted
-                              ? "Submitted price"
-                              : "Offer entered"}
-                          </span>
-                        )}
-                      </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {offer.price && (
+                        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                          {hasSubmitted
+                            ? "Submitted price"
+                            : "Offer entered"}
+                        </span>
+                      )}
+
+                      {isStarred && (
+                        <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                          Starred
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-4">
@@ -610,19 +604,23 @@ export default function MerchantPage() {
                         Offer Price
                       </label>
 
-                      <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
+                      <div className="mt-2 flex items-center overflow-hidden rounded-2xl border bg-white focus-within:ring-2 focus-within:ring-black">
                         <input
                           inputMode="numeric"
                           disabled={!canTypeOffer}
-                          className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-700"
+                          className="w-full p-4 text-xl font-semibold outline-none disabled:bg-gray-100 disabled:text-gray-700"
                           placeholder="Enter price"
-                          value={offer.price}
+                          value={
+                            offer.price
+                              ? Number(offer.price).toLocaleString()
+                              : ""
+                          }
                           onChange={(e) =>
                             updatePrice(originalIndex, e.target.value)
                           }
                         />
 
-                        <span className="border-l bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
+                        <span className="border-l bg-gray-50 px-4 py-4 text-sm font-medium text-gray-600">
                           baht
                         </span>
                       </div>
@@ -635,9 +633,9 @@ export default function MerchantPage() {
         </section>
       </section>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white p-4 shadow-lg">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white p-3 shadow-lg sm:p-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
               {enteredOfferCount} offer(s) entered
             </p>
@@ -652,7 +650,7 @@ export default function MerchantPage() {
               </p>
             ) : (
               <p className="text-xs text-gray-500">
-                Review before final submission
+                Review before final submission.
               </p>
             )}
           </div>
@@ -660,13 +658,13 @@ export default function MerchantPage() {
           <button
             onClick={handleSubmit}
             disabled={auctionStatus === "closed" || isLockedAfterSubmission}
-            className="rounded-xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+            className="shrink-0 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow disabled:bg-gray-400 sm:px-6 sm:text-base"
           >
             {isLockedAfterSubmission
-              ? "Already Submitted"
+              ? "Submitted"
               : hasSubmitted && canEditSubmission
-              ? "Review Updated Offers"
-              : "Review Offers"}
+              ? "Review Update"
+              : "Review"}
           </button>
         </div>
       </div>
