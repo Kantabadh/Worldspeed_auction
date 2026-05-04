@@ -36,6 +36,7 @@ export default function AdminPage() {
 
   const [totalMotorcycles, setTotalMotorcycles] = useState(0);
   const [activeMotorcycles, setActiveMotorcycles] = useState(0);
+  const [pendingMerchantRequests, setPendingMerchantRequests] = useState(0);
 
   const [auctionStatus, setAuctionStatus] = useState("open");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -63,53 +64,51 @@ export default function AdminPage() {
     window.location.href = "/staff-login";
   }
 
- async function checkStaffSession() {
-  const savedProfileText = localStorage.getItem("staffProfile");
+  async function checkStaffSession() {
+    const savedProfileText = localStorage.getItem("staffProfile");
 
-  if (!savedProfileText) {
-    window.location.href = "/staff-login";
-    return;
+    if (!savedProfileText) {
+      window.location.href = "/staff-login";
+      return;
+    }
+
+    const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
+
+    if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
+      await logoutStaff();
+      return;
+    }
+
+    setStaffProfile(savedProfile);
+    setIsCheckingStaff(false);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user) {
+      localStorage.removeItem("staffProfile");
+      window.location.href = "/staff-login";
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("staff_profiles")
+      .select("id, email, role, active")
+      .eq("id", userData.user.id)
+      .eq("active", true)
+      .limit(1);
+
+    if (profileError || !profile || profile.length === 0) {
+      await logoutStaff();
+      return;
+    }
+
+    saveStaffSession({
+      id: profile[0].id,
+      email: profile[0].email,
+      role: profile[0].role,
+      active: profile[0].active,
+    });
   }
-
-  const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
-
-  if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
-    await logoutStaff();
-    return;
-  }
-
-  // Show the admin page immediately from saved session.
-  setStaffProfile(savedProfile);
-  setIsCheckingStaff(false);
-
-  // Then verify with Supabase in the background.
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-
-  if (userError || !userData.user) {
-    localStorage.removeItem("staffProfile");
-    window.location.href = "/staff-login";
-    return;
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("id, email, role, active")
-    .eq("id", userData.user.id)
-    .eq("active", true)
-    .limit(1);
-
-  if (profileError || !profile || profile.length === 0) {
-    await logoutStaff();
-    return;
-  }
-
-  saveStaffSession({
-    id: profile[0].id,
-    email: profile[0].email,
-    role: profile[0].role,
-    active: profile[0].active,
-  });
-}
 
   function refreshStaffActivity() {
     const savedProfileText = localStorage.getItem("staffProfile");
@@ -251,10 +250,31 @@ export default function AdminPage() {
     );
   }
 
+  async function loadPendingMerchantRequests() {
+    const { data, error } = await supabase
+      .from("merchant_accounts")
+      .select("id")
+      .eq("approval_status", "pending");
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setPendingMerchantRequests(data?.length || 0);
+  }
+
+  async function loadDashboardData() {
+    await Promise.all([
+      loadAuctionStatus(),
+      loadOffers(),
+      loadMotorcycleCounts(),
+      loadPendingMerchantRequests(),
+    ]);
+  }
+
   useEffect(() => {
-    loadAuctionStatus();
-    loadOffers();
-    loadMotorcycleCounts();
+    loadDashboardData();
   }, []);
 
   const winnerSummary = offers.reduce((summary, offer) => {
@@ -284,82 +304,82 @@ export default function AdminPage() {
   );
 
   const totalHighestOfferValue = winners.reduce((sum, winner) => {
-  return sum + Number(winner.offer_price || 0);
-}, 0);
+    return sum + Number(winner.offer_price || 0);
+  }, 0);
 
- async function resetAuctionData() {
-  if (staffProfile?.role !== "owner") {
-    setErrorMessage("Only the owner account can reset auction data.");
-    return;
-  }
+  async function resetAuctionData() {
+    if (staffProfile?.role !== "owner") {
+      setErrorMessage("Only the owner account can reset auction data.");
+      return;
+    }
 
-  if (!staffProfile?.email) {
-    setErrorMessage("Staff profile not found. Please log in again.");
-    return;
-  }
+    if (!staffProfile?.email) {
+      setErrorMessage("Staff profile not found. Please log in again.");
+      return;
+    }
 
-  if (!resetPassword) {
-    alert("Please enter your owner password before resetting auction data.");
-    return;
-  }
+    if (!resetPassword) {
+      alert("Please enter your owner password before resetting auction data.");
+      return;
+    }
 
-  if (resetPhrase !== "RESET AUCTION") {
-    alert('Please type exactly "RESET AUCTION" before resetting.');
-    return;
-  }
+    if (resetPhrase !== "RESET AUCTION") {
+      alert('Please type exactly "RESET AUCTION" before resetting.');
+      return;
+    }
 
-  const confirmReset = confirm(
-    "Are you sure you want to reset auction data? This will delete all submitted offers and merchant submission records. Motorcycle lots, photos, merchant accounts, and staff accounts will stay."
-  );
+    const confirmReset = confirm(
+      "Are you sure you want to reset auction data? This will delete all submitted offers and merchant submission records. Motorcycle lots, photos, merchant accounts, and staff accounts will stay."
+    );
 
-  if (!confirmReset) return;
+    if (!confirmReset) return;
 
-  const { error: passwordError } = await supabase.auth.signInWithPassword({
-    email: staffProfile.email,
-    password: resetPassword,
-  });
+    const { error: passwordError } = await supabase.auth.signInWithPassword({
+      email: staffProfile.email,
+      password: resetPassword,
+    });
 
-  if (passwordError) {
-    setErrorMessage("Wrong password. Reset auction data was cancelled.");
+    if (passwordError) {
+      setErrorMessage("Wrong password. Reset auction data was cancelled.");
+      setResetPassword("");
+      return;
+    }
+
+    const secondConfirm = confirm(
+      "Final confirmation: this cannot be undone. Delete all submitted offers?"
+    );
+
+    if (!secondConfirm) return;
+
+    setIsLoading(true);
+    setErrorMessage("");
+
+    const { error: offersError } = await supabase
+      .from("offers")
+      .delete()
+      .neq("id", 0);
+
+    if (offersError) {
+      setErrorMessage(offersError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const { error: merchantsError } = await supabase
+      .from("merchants")
+      .delete()
+      .neq("id", 0);
+
+    if (merchantsError) {
+      setErrorMessage(merchantsError.message);
+      setIsLoading(false);
+      return;
+    }
+
     setResetPassword("");
-    return;
+    setResetPhrase("");
+    await loadDashboardData();
   }
-
-  const secondConfirm = confirm(
-    "Final confirmation: this cannot be undone. Delete all submitted offers?"
-  );
-
-  if (!secondConfirm) return;
-
-  setIsLoading(true);
-  setErrorMessage("");
-
-  const { error: offersError } = await supabase
-    .from("offers")
-    .delete()
-    .neq("id", 0);
-
-  if (offersError) {
-    setErrorMessage(offersError.message);
-    setIsLoading(false);
-    return;
-  }
-
-  const { error: merchantsError } = await supabase
-    .from("merchants")
-    .delete()
-    .neq("id", 0);
-
-  if (merchantsError) {
-    setErrorMessage(merchantsError.message);
-    setIsLoading(false);
-    return;
-  }
-
-  setResetPassword("");
-  setResetPhrase("");
-  await loadOffers();
-}
 
   function exportWinnersCsv() {
     const headers = [
@@ -455,6 +475,32 @@ export default function AdminPage() {
           </div>
         )}
 
+        {pendingMerchantRequests > 0 && (
+          <section className="mb-5 rounded-3xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide">
+                  New Merchant Requests
+                </p>
+                <h2 className="mt-1 text-2xl font-bold">
+                  {pendingMerchantRequests} merchant account request
+                  {pendingMerchantRequests > 1 ? "s" : ""} pending approval
+                </h2>
+                <p className="mt-1 text-sm">
+                  Review and approve new merchant registrations.
+                </p>
+              </div>
+
+              <a
+                href="/admin/merchants"
+                className="rounded-2xl bg-red-600 px-5 py-3 font-semibold text-white shadow hover:bg-red-700"
+              >
+                Review Requests
+              </a>
+            </div>
+          </section>
+        )}
+
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -497,7 +543,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-4 md:grid-cols-5">
+        <section className="mt-5 grid gap-4 md:grid-cols-6">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <p className="text-sm font-medium text-gray-500">Total Offers</p>
             <p className="mt-2 text-3xl font-bold text-gray-900">
@@ -532,6 +578,22 @@ export default function AdminPage() {
           </div>
 
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">
+              Merchant Requests
+            </p>
+            <p
+              className={
+                pendingMerchantRequests > 0
+                  ? "mt-2 text-3xl font-bold text-red-600"
+                  : "mt-2 text-3xl font-bold text-gray-900"
+              }
+            >
+              {pendingMerchantRequests}
+            </p>
+            <p className="text-sm text-gray-500">Pending approval</p>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <p className="text-sm font-medium text-gray-500">Total Value</p>
             <p className="mt-2 text-2xl font-bold text-gray-900">
               {totalHighestOfferValue.toLocaleString()}
@@ -551,56 +613,59 @@ export default function AdminPage() {
 
             <a
               href="/admin/merchants"
-              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="relative rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
             >
               Manage Merchants
+
+              {pendingMerchantRequests > 0 && (
+                <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                  {pendingMerchantRequests}
+                </span>
+              )}
             </a>
 
-        {staffProfile?.role === "owner" && (
-  <a
-    href="/admin/staff"
-    className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-  >
-    Owner Settings
-  </a>
-)}
+            {staffProfile?.role === "owner" && (
+              <a
+                href="/admin/staff"
+                className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              >
+                Owner Settings
+              </a>
+            )}
 
             <button
-              onClick={() => {
-                loadOffers();
-                loadMotorcycleCounts();
-              }}
+              onClick={loadDashboardData}
               className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
             >
               Refresh Data
             </button>
 
-{staffProfile?.role === "owner" && (
-  <>
-    <input
-      type="password"
-      className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
-      placeholder="Owner password"
-      value={resetPassword}
-      onChange={(e) => setResetPassword(e.target.value)}
-    />
+            {staffProfile?.role === "owner" && (
+              <>
+                <input
+                  type="password"
+                  className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+                  placeholder="Owner password"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                />
 
-    <input
-      type="text"
-      className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
-      placeholder='Type "RESET AUCTION"'
-      value={resetPhrase}
-      onChange={(e) => setResetPhrase(e.target.value)}
-    />
+                <input
+                  type="text"
+                  className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+                  placeholder='Type "RESET AUCTION"'
+                  value={resetPhrase}
+                  onChange={(e) => setResetPhrase(e.target.value)}
+                />
 
-    <button
-      onClick={resetAuctionData}
-      className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-    >
-      Reset Auction Data
-    </button>
-  </>
-)}
+                <button
+                  onClick={resetAuctionData}
+                  className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+                >
+                  Reset Auction Data
+                </button>
+              </>
+            )}
 
             {!isLoading && winners.length > 0 && (
               <button

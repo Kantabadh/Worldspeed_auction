@@ -70,15 +70,18 @@ export default function MerchantSignupPage() {
       return;
     }
 
-    setSuccessMessage(
-      "Registration submitted. Please wait for auction staff to approve your account."
-    );
+    localStorage.setItem(
+  "merchantSignupReceipt",
+  JSON.stringify({
+    merchantName: cleanMerchantName,
+    shopName: cleanShopName,
+    phone: cleanPhone,
+    merchantCode: cleanCode,
+  })
+);
 
-    setMerchantName("");
-    setShopName("");
-    setPhone("");
-    setMerchantCode("");
-    setIsSubmitting(false);
+setIsSubmitting(false);
+window.location.href = "/merchant-pending";
   }
 
   return (

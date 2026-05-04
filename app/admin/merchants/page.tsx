@@ -16,6 +16,7 @@ type MerchantAccount = {
   active: boolean;
   approval_status: ApprovalStatus;
   can_edit_submission: boolean;
+  is_starred: boolean;
   created_at: string;
   has_submission?: boolean;
 };
@@ -47,6 +48,7 @@ export default function AdminMerchantsPage() {
       await supabase
         .from("merchant_accounts")
         .select("*")
+        .order("is_starred", { ascending: false })
         .order("created_at", { ascending: false });
 
     if (merchantAccountsError) {
@@ -78,6 +80,7 @@ export default function AdminMerchantsPage() {
         ...merchant,
         approval_status: merchant.approval_status || "approved",
         can_edit_submission: merchant.can_edit_submission ?? false,
+        is_starred: merchant.is_starred ?? false,
         has_submission: submittedMerchantAccountIds.has(merchant.id),
       })) || [];
 
@@ -102,6 +105,7 @@ export default function AdminMerchantsPage() {
       active: true,
       approval_status: "approved",
       can_edit_submission: false,
+      is_starred: false,
     });
 
     if (error) {
@@ -151,6 +155,24 @@ export default function AdminMerchantsPage() {
       .update({
         approval_status: "rejected",
         active: false,
+      })
+      .eq("id", merchant.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    loadMerchants();
+  }
+
+  async function toggleStar(merchant: MerchantAccount) {
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("merchant_accounts")
+      .update({
+        is_starred: !merchant.is_starred,
       })
       .eq("id", merchant.id);
 
@@ -362,6 +384,8 @@ export default function AdminMerchantsPage() {
   const pendingCount = merchants.filter(
     (merchant) => merchant.approval_status === "pending"
   ).length;
+  const starredCount = merchants.filter((merchant) => merchant.is_starred)
+    .length;
 
   return (
     <StaffGuard>
@@ -380,8 +404,8 @@ export default function AdminMerchantsPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Approve new merchant registrations, manage access, and control
-                offer editing.
+                Approve new merchant registrations, star important accounts, and
+                control offer editing.
               </p>
             </div>
 
@@ -400,13 +424,20 @@ export default function AdminMerchantsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-6">
+          <section className="mt-5 grid gap-4 md:grid-cols-7">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
               <p className="text-sm font-medium text-gray-500">
                 Total Merchants
               </p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {merchants.length}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Starred</p>
+              <p className="mt-2 text-3xl font-bold text-yellow-600">
+                {starredCount}
               </p>
             </div>
 
@@ -535,8 +566,8 @@ export default function AdminMerchantsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Approve, reject, activate, edit, clear submission, or allow offer
-              editing.
+              Star, approve, reject, activate, edit, clear submission, or allow
+              offer editing.
             </p>
 
             {isLoading && (
@@ -556,11 +587,16 @@ export default function AdminMerchantsPage() {
                 {merchants.map((merchant) => (
                   <article
                     key={merchant.id}
-                    className="rounded-2xl border bg-white p-4 shadow-sm"
+                    className={
+                      merchant.is_starred
+                        ? "rounded-2xl border border-yellow-300 bg-yellow-50 p-4 shadow-sm"
+                        : "rounded-2xl border bg-white p-4 shadow-sm"
+                    }
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                          {merchant.is_starred ? "⭐ " : ""}
                           {merchant.merchant_code}
                         </p>
 
@@ -574,6 +610,12 @@ export default function AdminMerchantsPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
+                        {merchant.is_starred && (
+                          <span className="rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-700">
+                            Starred
+                          </span>
+                        )}
+
                         {merchant.approval_status === "pending" && (
                           <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
                             Pending
@@ -674,6 +716,17 @@ export default function AdminMerchantsPage() {
                       </div>
                     ) : (
                       <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          onClick={() => toggleStar(merchant)}
+                          className={
+                            merchant.is_starred
+                              ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
+                              : "rounded-xl border px-4 py-2 font-medium hover:bg-yellow-50"
+                          }
+                        >
+                          {merchant.is_starred ? "Unstar" : "⭐ Star"}
+                        </button>
+
                         {merchant.approval_status === "pending" && (
                           <>
                             <button
