@@ -33,50 +33,52 @@ export default function StaffGuard({ children }: { children: React.ReactNode }) 
     window.location.href = "/staff-login";
   }
 
-  async function checkStaff() {
-    const savedProfileText = localStorage.getItem("staffProfile");
+async function checkStaff() {
+  const savedProfileText = localStorage.getItem("staffProfile");
 
-    if (!savedProfileText) {
-      window.location.href = "/staff-login";
-      return;
-    }
-
-    const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
-
-    if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
-      await logoutStaff();
-      return;
-    }
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !userData.user) {
-      await logoutStaff();
-      return;
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("staff_profiles")
-      .select("id, email, role, active")
-      .eq("id", userData.user.id)
-      .eq("active", true)
-      .single();
-
-    if (profileError || !profile) {
-      await logoutStaff();
-      return;
-    }
-
-    saveStaffSession({
-      id: profile.id,
-      email: profile.email,
-      role: profile.role,
-      active: profile.active,
-    });
-
-    setIsAllowed(true);
-    setIsChecking(false);
+  if (!savedProfileText) {
+    window.location.href = "/staff-login";
+    return;
   }
+
+  const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
+
+  if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
+    await logoutStaff();
+    return;
+  }
+
+  // Allow page to show immediately.
+  setIsAllowed(true);
+  setIsChecking(false);
+
+  // Verify with Supabase in the background.
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !userData.user) {
+    await logoutStaff();
+    return;
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("staff_profiles")
+    .select("id, email, role, active")
+    .eq("id", userData.user.id)
+    .eq("active", true)
+    .limit(1);
+
+  if (profileError || !profile || profile.length === 0) {
+    await logoutStaff();
+    return;
+  }
+
+  saveStaffSession({
+    id: profile[0].id,
+    email: profile[0].email,
+    role: profile[0].role,
+    active: profile[0].active,
+  });
+}
 
   function refreshStaffActivity() {
     const savedProfileText = localStorage.getItem("staffProfile");

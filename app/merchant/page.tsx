@@ -292,15 +292,15 @@ export default function MerchantPage() {
 
   const enteredOfferCount = offers.filter((offer) => offer.price !== "").length;
 
-  if (!isMerchantLoggedIn) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="rounded-2xl bg-white p-6 shadow">
-          <p className="text-gray-700">Checking merchant login...</p>
-        </div>
-      </main>
-    );
-  }
+if (!isMerchantLoggedIn) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        <p className="text-sm text-gray-600">Opening merchant page...</p>
+      </div>
+    </main>
+  );
+}
 
   return (
     <main className="min-h-screen bg-gray-50 pb-28">
