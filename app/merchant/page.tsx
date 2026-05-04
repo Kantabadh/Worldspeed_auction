@@ -32,12 +32,21 @@ type MerchantSession = {
   expiresAt?: number;
 };
 
+type ExistingSubmissionOffer = {
+  id: number;
+  offer_price: number;
+  motorcycle_id: number;
+};
+
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 export default function MerchantPage() {
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
   const [phone, setPhone] = useState("");
+  const [merchantAccountId, setMerchantAccountId] = useState<number | null>(
+    null
+  );
 
   const [offers, setOffers] = useState<Offer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -45,6 +54,10 @@ export default function MerchantPage() {
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [canEditSubmission, setCanEditSubmission] = useState(false);
+  const [submittedMerchantId, setSubmittedMerchantId] = useState<number | null>(
+    null
+  );
 
   const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -73,27 +86,70 @@ export default function MerchantPage() {
     if (!savedSession) return;
 
     const session = JSON.parse(savedSession) as MerchantSession;
-
     saveMerchantSession(session);
   }
 
-  async function checkExistingSubmission(merchantAccountId: number) {
-    const { data, error } = await supabase
-      .from("merchants")
-      .select("id")
-      .eq("merchant_account_id", merchantAccountId)
+  async function checkExistingSubmission(accountId: number) {
+    const { data: accountData, error: accountError } = await supabase
+      .from("merchant_accounts")
+      .select("can_edit_submission")
+      .eq("id", accountId)
       .limit(1);
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (accountError) {
+      setErrorMessage(accountError.message);
       return;
     }
 
-    if (data && data.length > 0) {
-      setHasSubmitted(true);
-    } else {
-      setHasSubmitted(false);
+    const canEdit = accountData?.[0]?.can_edit_submission || false;
+    setCanEditSubmission(canEdit);
+
+    const { data: merchantRows, error: merchantError } = await supabase
+      .from("merchants")
+      .select("id")
+      .eq("merchant_account_id", accountId)
+      .limit(1);
+
+    if (merchantError) {
+      setErrorMessage(merchantError.message);
+      return;
     }
+
+    if (!merchantRows || merchantRows.length === 0) {
+      setHasSubmitted(false);
+      setSubmittedMerchantId(null);
+      return;
+    }
+
+    const merchantRowId = merchantRows[0].id;
+
+    setHasSubmitted(true);
+    setSubmittedMerchantId(merchantRowId);
+
+    const { data: existingOffers, error: offersError } = await supabase
+      .from("offers")
+      .select("id, offer_price, motorcycle_id")
+      .eq("merchant_id", merchantRowId);
+
+    if (offersError) {
+      setErrorMessage(offersError.message);
+      return;
+    }
+
+    const submittedPrices: Record<number, string> = {};
+
+    (existingOffers as ExistingSubmissionOffer[] | null)?.forEach((offer) => {
+      submittedPrices[offer.motorcycle_id] = String(offer.offer_price);
+    });
+
+    localStorage.setItem("merchantOfferPrices", JSON.stringify(submittedPrices));
+
+    setOffers((currentOffers) =>
+      currentOffers.map((offer) => ({
+        ...offer,
+        price: submittedPrices[offer.motorcycle_id] || offer.price || "",
+      }))
+    );
   }
 
   useEffect(() => {
@@ -111,13 +167,13 @@ export default function MerchantPage() {
       return;
     }
 
-    saveMerchantSession(session);
-
     setMerchantName(session.merchantName || "");
     setShopName(session.shopName || "");
     setPhone(session.phone || "");
+    setMerchantAccountId(session.merchantAccountId);
     setIsMerchantLoggedIn(true);
 
+    saveMerchantSession(session);
     checkExistingSubmission(session.merchantAccountId);
   }, []);
 
@@ -219,6 +275,12 @@ export default function MerchantPage() {
     loadMotorcycles();
   }, []);
 
+  useEffect(() => {
+    if (merchantAccountId) {
+      checkExistingSubmission(merchantAccountId);
+    }
+  }, [offers.length, merchantAccountId]);
+
   function updatePrice(index: number, value: string) {
     const newOffers = [...offers];
     newOffers[index].price = value;
@@ -256,7 +318,7 @@ export default function MerchantPage() {
   }
 
   function handleSubmit() {
-    if (hasSubmitted) {
+    if (hasSubmitted && !canEditSubmission) {
       alert("You have already submitted offers for this auction.");
       return;
     }
@@ -268,7 +330,7 @@ export default function MerchantPage() {
 
     const submittedOffers = offers.filter((offer) => offer.price !== "");
 
-    if (!merchantName || !shopName || !phone) {
+    if (!merchantName || !shopName || !phone || !merchantAccountId) {
       alert("Merchant information is missing. Please log in again.");
       window.location.href = "/merchant-login";
       return;
@@ -284,6 +346,9 @@ export default function MerchantPage() {
       shopName,
       phone,
       offers: submittedOffers,
+      isEditingSubmission: hasSubmitted && canEditSubmission,
+      submittedMerchantId,
+      merchantAccountId,
     };
 
     localStorage.setItem("draftSubmission", JSON.stringify(data));
@@ -291,16 +356,18 @@ export default function MerchantPage() {
   }
 
   const enteredOfferCount = offers.filter((offer) => offer.price !== "").length;
+  const isLockedAfterSubmission = hasSubmitted && !canEditSubmission;
+  const canTypeOffer = auctionStatus === "open" && !isLockedAfterSubmission;
 
-if (!isMerchantLoggedIn) {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-        <p className="text-sm text-gray-600">Opening merchant page...</p>
-      </div>
-    </main>
-  );
-}
+  if (!isMerchantLoggedIn) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <p className="text-sm text-gray-600">Opening merchant page...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 pb-28">
@@ -338,12 +405,22 @@ if (!isMerchantLoggedIn) {
           </div>
         )}
 
-        {hasSubmitted && (
+        {hasSubmitted && !canEditSubmission && (
           <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
             <p className="font-semibold">Already Submitted</p>
             <p className="text-sm">
-              This merchant account has already submitted offers for this
-              auction. Please contact auction staff if changes are needed.
+              Your submitted offer prices are shown below. Editing is currently
+              locked. Please contact auction staff if changes are needed.
+            </p>
+          </div>
+        )}
+
+        {hasSubmitted && canEditSubmission && (
+          <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
+            <p className="font-semibold">Editing Allowed</p>
+            <p className="text-sm">
+              Auction staff has allowed you to edit your submitted offers. After
+              you submit again, editing will be locked automatically.
             </p>
           </div>
         )}
@@ -399,7 +476,9 @@ if (!isMerchantLoggedIn) {
                 Motorcycle Lots
               </h2>
               <p className="mt-1 text-sm text-gray-600">
-                Enter your one-time offer price for the motorcycles you want.
+                {hasSubmitted
+                  ? "Your submitted offer prices are shown below."
+                  : "Enter your one-time offer price for the motorcycles you want."}
               </p>
             </div>
 
@@ -453,7 +532,7 @@ if (!isMerchantLoggedIn) {
 
                     {offer.price && (
                       <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                        Offer entered
+                        {hasSubmitted ? "Submitted price" : "Offer entered"}
                       </span>
                     )}
                   </div>
@@ -466,8 +545,8 @@ if (!isMerchantLoggedIn) {
                     <div className="mt-2 flex items-center overflow-hidden rounded-xl border bg-white focus-within:ring-2 focus-within:ring-black">
                       <input
                         inputMode="numeric"
-                        disabled={hasSubmitted || auctionStatus === "closed"}
-                        className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-500"
+                        disabled={!canTypeOffer}
+                        className="w-full p-3 text-lg outline-none disabled:bg-gray-100 disabled:text-gray-700"
                         placeholder="Enter price"
                         value={offer.price}
                         onChange={(e) => updatePrice(index, e.target.value)}
@@ -492,9 +571,13 @@ if (!isMerchantLoggedIn) {
               {enteredOfferCount} offer(s) entered
             </p>
 
-            {hasSubmitted ? (
+            {isLockedAfterSubmission ? (
               <p className="text-xs text-yellow-700">
-                Already submitted for this auction
+                Already submitted. Editing locked.
+              </p>
+            ) : hasSubmitted && canEditSubmission ? (
+              <p className="text-xs text-orange-700">
+                Editing allowed. Submit again to update.
               </p>
             ) : (
               <p className="text-xs text-gray-500">
@@ -505,10 +588,14 @@ if (!isMerchantLoggedIn) {
 
           <button
             onClick={handleSubmit}
-            disabled={auctionStatus === "closed" || hasSubmitted}
+            disabled={auctionStatus === "closed" || isLockedAfterSubmission}
             className="rounded-xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
           >
-            {hasSubmitted ? "Already Submitted" : "Review Offers"}
+            {isLockedAfterSubmission
+              ? "Already Submitted"
+              : hasSubmitted && canEditSubmission
+              ? "Review Updated Offers"
+              : "Review Offers"}
           </button>
         </div>
       </div>

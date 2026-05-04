@@ -12,6 +12,7 @@ type MerchantAccount = {
   shop_name: string;
   phone: string;
   active: boolean;
+  can_edit_submission: boolean;
   created_at: string;
   has_submission?: boolean;
 };
@@ -72,6 +73,7 @@ export default function AdminMerchantsPage() {
     const merchantAccountsWithSubmissionStatus =
       (merchantAccountsData as MerchantAccount[] | null)?.map((merchant) => ({
         ...merchant,
+        can_edit_submission: merchant.can_edit_submission ?? false,
         has_submission: submittedMerchantAccountIds.has(merchant.id),
       })) || [];
 
@@ -94,6 +96,7 @@ export default function AdminMerchantsPage() {
       shop_name: shopName.trim(),
       phone: phone.trim(),
       active: true,
+      can_edit_submission: false,
     });
 
     if (error) {
@@ -160,6 +163,24 @@ export default function AdminMerchantsPage() {
       .from("merchant_accounts")
       .update({
         active: !merchant.active,
+      })
+      .eq("id", merchant.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    loadMerchants();
+  }
+
+  async function toggleEditPermission(merchant: MerchantAccount) {
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("merchant_accounts")
+      .update({
+        can_edit_submission: !merchant.can_edit_submission,
       })
       .eq("id", merchant.id);
 
@@ -252,6 +273,13 @@ export default function AdminMerchantsPage() {
       return;
     }
 
+    await supabase
+      .from("merchant_accounts")
+      .update({
+        can_edit_submission: false,
+      })
+      .eq("id", merchant.id);
+
     setClearingId(null);
     loadMerchants();
   }
@@ -279,6 +307,9 @@ export default function AdminMerchantsPage() {
   const submittedCount = merchants.filter(
     (merchant) => merchant.has_submission
   ).length;
+  const editableCount = merchants.filter(
+    (merchant) => merchant.can_edit_submission
+  ).length;
 
   return (
     <StaffGuard>
@@ -297,8 +328,8 @@ export default function AdminMerchantsPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Create merchant access, manage status, and clear individual
-                submissions.
+                Create merchant access, manage status, and control whether a
+                submitted merchant can edit offers.
               </p>
             </div>
 
@@ -317,7 +348,7 @@ export default function AdminMerchantsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-4">
+          <section className="mt-5 grid gap-4 md:grid-cols-5">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
               <p className="text-sm font-medium text-gray-500">
                 Total Merchants
@@ -345,6 +376,13 @@ export default function AdminMerchantsPage() {
               <p className="text-sm font-medium text-gray-500">Submitted</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {submittedCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">Editable</p>
+              <p className="mt-2 text-3xl font-bold text-orange-600">
+                {editableCount}
               </p>
             </div>
           </section>
@@ -438,7 +476,8 @@ export default function AdminMerchantsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Activate, edit, delete, or clear one merchant’s submission.
+              Activate, edit, delete, clear submission, or allow a submitted
+              merchant to edit again.
             </p>
 
             {isLoading && (
@@ -483,6 +522,12 @@ export default function AdminMerchantsPage() {
                         ) : (
                           <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600">
                             Not Submitted
+                          </span>
+                        )}
+
+                        {merchant.can_edit_submission && (
+                          <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
+                            Edit Allowed
                           </span>
                         )}
 
@@ -569,6 +614,21 @@ export default function AdminMerchantsPage() {
                         >
                           {merchant.active ? "Deactivate" : "Activate"}
                         </button>
+
+                        {merchant.has_submission && (
+                          <button
+                            onClick={() => toggleEditPermission(merchant)}
+                            className={
+                              merchant.can_edit_submission
+                                ? "rounded-xl bg-gray-700 px-4 py-2 font-medium text-white hover:bg-gray-800"
+                                : "rounded-xl bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700"
+                            }
+                          >
+                            {merchant.can_edit_submission
+                              ? "Lock Edit"
+                              : "Allow Edit"}
+                          </button>
+                        )}
 
                         {merchant.has_submission && (
                           <button

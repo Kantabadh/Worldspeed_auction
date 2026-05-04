@@ -20,6 +20,9 @@ type DraftSubmission = {
   shopName: string;
   phone: string;
   offers: Offer[];
+  isEditingSubmission?: boolean;
+  submittedMerchantId?: number | null;
+  merchantAccountId?: number | null;
 };
 
 type MerchantSession = {
@@ -55,7 +58,10 @@ export default function SummaryPage() {
   async function confirmSubmit() {
     if (!draft) return;
 
-    if (!merchantSession?.merchantAccountId) {
+    const accountId =
+      draft.merchantAccountId || merchantSession?.merchantAccountId;
+
+    if (!accountId) {
       setErrorMessage("Merchant login session not found. Please log in again.");
       return;
     }
@@ -63,12 +69,98 @@ export default function SummaryPage() {
     setIsSubmitting(true);
     setErrorMessage("");
 
+    const offersToInsert = draft.offers.map((offer) => ({
+      motorcycle_id: offer.motorcycle_id,
+      offer_price: Number(offer.price),
+    }));
+
+    if (draft.isEditingSubmission && draft.submittedMerchantId) {
+      const { data: merchantRows, error: merchantCheckError } = await supabase
+        .from("merchants")
+        .select("id, merchant_account_id")
+        .eq("id", draft.submittedMerchantId)
+        .eq("merchant_account_id", accountId)
+        .limit(1);
+
+      if (merchantCheckError) {
+        setErrorMessage(merchantCheckError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!merchantRows || merchantRows.length === 0) {
+        setErrorMessage(
+          "Could not verify your existing submission. Please log in again."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      const { error: deleteOldOffersError } = await supabase
+        .from("offers")
+        .delete()
+        .eq("merchant_id", draft.submittedMerchantId);
+
+      if (deleteOldOffersError) {
+        setErrorMessage(deleteOldOffersError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const updatedOffersToInsert = offersToInsert.map((offer) => ({
+        ...offer,
+        merchant_id: draft.submittedMerchantId,
+      }));
+
+      const { error: insertUpdatedOffersError } = await supabase
+        .from("offers")
+        .insert(updatedOffersToInsert);
+
+      if (insertUpdatedOffersError) {
+        setErrorMessage(insertUpdatedOffersError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const { error: lockEditError } = await supabase
+        .from("merchant_accounts")
+        .update({
+          can_edit_submission: false,
+        })
+        .eq("id", accountId);
+
+      if (lockEditError) {
+        setErrorMessage(lockEditError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const finalSubmission = {
+        ...draft,
+        submittedAt: new Date().toLocaleString(),
+        receiptNo: "S-" + Date.now(),
+        isUpdatedSubmission: true,
+      };
+
+      localStorage.setItem(
+        "latestSubmission",
+        JSON.stringify(finalSubmission)
+      );
+
+      localStorage.removeItem("draftSubmission");
+      localStorage.removeItem("merchantPageDraft");
+      localStorage.removeItem("merchantOfferPrices");
+
+      window.location.href = "/success";
+      return;
+    }
+
     const { data: existingMerchant, error: existingMerchantError } =
       await supabase
         .from("merchants")
         .select("id")
-        .eq("merchant_account_id", merchantSession.merchantAccountId)
-        .maybeSingle();
+        .eq("merchant_account_id", accountId)
+        .limit(1);
 
     if (existingMerchantError) {
       setErrorMessage(existingMerchantError.message);
@@ -76,7 +168,7 @@ export default function SummaryPage() {
       return;
     }
 
-    if (existingMerchant) {
+    if (existingMerchant && existingMerchant.length > 0) {
       setErrorMessage(
         "This merchant account has already submitted offers for this auction. Please contact auction staff if you need changes."
       );
@@ -90,10 +182,10 @@ export default function SummaryPage() {
         name: draft.merchantName,
         shop_name: draft.shopName,
         phone: draft.phone,
-        merchant_account_id: merchantSession.merchantAccountId,
+        merchant_account_id: accountId,
       })
       .select()
-      .single();
+      .limit(1);
 
     if (merchantError) {
       setErrorMessage(merchantError.message);
@@ -101,15 +193,22 @@ export default function SummaryPage() {
       return;
     }
 
-    const offersToInsert = draft.offers.map((offer) => ({
-      merchant_id: merchantData.id,
-      motorcycle_id: offer.motorcycle_id,
-      offer_price: Number(offer.price),
+    if (!merchantData || merchantData.length === 0) {
+      setErrorMessage("Could not create merchant submission record.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const newMerchantId = merchantData[0].id;
+
+    const newOffersToInsert = offersToInsert.map((offer) => ({
+      ...offer,
+      merchant_id: newMerchantId,
     }));
 
     const { error: offersError } = await supabase
       .from("offers")
-      .insert(offersToInsert);
+      .insert(newOffersToInsert);
 
     if (offersError) {
       setErrorMessage(offersError.message);
@@ -121,6 +220,7 @@ export default function SummaryPage() {
       ...draft,
       submittedAt: new Date().toLocaleString(),
       receiptNo: "S-" + Date.now(),
+      isUpdatedSubmission: false,
     };
 
     localStorage.setItem("latestSubmission", JSON.stringify(finalSubmission));
@@ -173,12 +273,15 @@ export default function SummaryPage() {
           </p>
 
           <h1 className="mt-1 text-2xl font-bold text-gray-900">
-            Review Your Offers
+            {draft.isEditingSubmission
+              ? "Review Updated Offers"
+              : "Review Your Offers"}
           </h1>
 
           <p className="mt-2 text-sm text-gray-600">
-            Please check carefully before final submission. After submitting,
-            your offers will be saved to the auction system.
+            {draft.isEditingSubmission
+              ? "Please check your updated offers carefully. After submitting, editing will be locked again."
+              : "Please check carefully before final submission. After submitting, your offers will be saved to the auction system."}
           </p>
         </div>
 
@@ -186,6 +289,16 @@ export default function SummaryPage() {
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
             <p className="font-semibold">Submission Blocked</p>
             <p className="text-sm">{errorMessage}</p>
+          </div>
+        )}
+
+        {draft.isEditingSubmission && (
+          <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
+            <p className="font-semibold">Editing Existing Submission</p>
+            <p className="text-sm">
+              This will replace your previous submitted offers. After
+              confirmation, editing will be locked again.
+            </p>
           </div>
         )}
 
@@ -211,7 +324,9 @@ export default function SummaryPage() {
         <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Your Offers</h2>
+              <h2 className="text-xl font-bold text-gray-900">
+                {draft.isEditingSubmission ? "Updated Offers" : "Your Offers"}
+              </h2>
 
               <p className="mt-1 text-sm text-gray-600">
                 {draft.offers.length} offer(s) ready to submit.
@@ -264,7 +379,11 @@ export default function SummaryPage() {
             disabled={isSubmitting}
             className="rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
           >
-            {isSubmitting ? "Submitting..." : "Confirm Submit"}
+            {isSubmitting
+              ? "Submitting..."
+              : draft.isEditingSubmission
+              ? "Confirm Updated Offers"
+              : "Confirm Submit"}
           </button>
         </div>
       </div>
