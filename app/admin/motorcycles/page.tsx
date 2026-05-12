@@ -10,25 +10,147 @@ type MotorcyclePhoto = {
   image_url: string;
 };
 
-type Motorcycle = {
+type MotorcycleDetails = {
+  brand: string;
+  model: string;
+  year: string;
+  color: string;
+  license_plate: string;
+  mileage: string;
+  frame_number: string;
+  engine_number: string;
+  registration_status: string;
+  tax_expiry: string;
+  condition: string;
+  notes: string;
+};
+
+type DetailKey = keyof MotorcycleDetails;
+
+type Motorcycle = MotorcycleDetails & {
   id: number;
   lot_number: string;
   motorcycle_name: string;
+  cost_price: number | null;
   active: boolean;
   created_at: string;
   motorcycle_photos: MotorcyclePhoto[];
 };
+
+const detailFields: {
+  key: DetailKey;
+  label: string;
+  placeholder: string;
+  multiline?: boolean;
+}[] = [
+  { key: "brand", label: "ยี่ห้อ", placeholder: "เช่น Honda" },
+  { key: "model", label: "รุ่น", placeholder: "เช่น Wave 110i" },
+  { key: "year", label: "ปี", placeholder: "เช่น 2020" },
+  { key: "color", label: "สี", placeholder: "เช่น แดง" },
+  { key: "license_plate", label: "ทะเบียน", placeholder: "เช่น 1กก 1234" },
+  { key: "mileage", label: "เลขไมล์", placeholder: "เช่น 25,000 กม." },
+  { key: "frame_number", label: "เลขตัวถัง", placeholder: "เลขตัวถัง" },
+  { key: "engine_number", label: "เลขเครื่อง", placeholder: "เลขเครื่อง" },
+  {
+    key: "registration_status",
+    label: "สถานะเล่ม",
+    placeholder: "เช่น มีเล่ม / ไม่มีเล่ม / รอโอน",
+  },
+  {
+    key: "tax_expiry",
+    label: "ภาษีหมดอายุ",
+    placeholder: "เช่น 12/2567",
+  },
+  {
+    key: "condition",
+    label: "สภาพรถ",
+    placeholder: "เช่น ใช้งานปกติ / มีตำหนิ",
+    multiline: true,
+  },
+  {
+    key: "notes",
+    label: "หมายเหตุ",
+    placeholder: "รายละเอียดเพิ่มเติม",
+    multiline: true,
+  },
+];
+
+function createEmptyDetails(): MotorcycleDetails {
+  return {
+    brand: "",
+    model: "",
+    year: "",
+    color: "",
+    license_plate: "",
+    mileage: "",
+    frame_number: "",
+    engine_number: "",
+    registration_status: "",
+    tax_expiry: "",
+    condition: "",
+    notes: "",
+  };
+}
+
+function cleanDetails(details: MotorcycleDetails) {
+  return Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [key, value.trim() || null])
+  );
+}
+
+function cleanMoney(value: string) {
+  const cleaned = value.replace(/[^\d.]/g, "");
+
+  if (!cleaned) return null;
+
+  const numberValue = Number(cleaned);
+
+  if (Number.isNaN(numberValue)) return null;
+
+  return numberValue;
+}
+
+function formatMoneyInput(value: number | null) {
+  if (value === null || value === undefined) return "";
+
+  return String(value);
+}
+
+function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
+  return {
+    brand: bike.brand || "",
+    model: bike.model || "",
+    year: bike.year || "",
+    color: bike.color || "",
+    license_plate: bike.license_plate || "",
+    mileage: bike.mileage || "",
+    frame_number: bike.frame_number || "",
+    engine_number: bike.engine_number || "",
+    registration_status: bike.registration_status || "",
+    tax_expiry: bike.tax_expiry || "",
+    condition: bike.condition || "",
+    notes: bike.notes || "",
+  };
+}
 
 export default function AdminMotorcyclesPage() {
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
 
   const [lotNumber, setLotNumber] = useState("");
   const [motorcycleName, setMotorcycleName] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [details, setDetails] = useState<MotorcycleDetails>(
+    createEmptyDetails()
+  );
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editLotNumber, setEditLotNumber] = useState("");
   const [editMotorcycleName, setEditMotorcycleName] = useState("");
+  const [editCostPrice, setEditCostPrice] = useState("");
+  const [editDetails, setEditDetails] = useState<MotorcycleDetails>(
+    createEmptyDetails()
+  );
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -96,6 +218,19 @@ export default function AdminMotorcyclesPage() {
         id,
         lot_number,
         motorcycle_name,
+        cost_price,
+        brand,
+        model,
+        year,
+        color,
+        license_plate,
+        mileage,
+        frame_number,
+        engine_number,
+        registration_status,
+        tax_expiry,
+        condition,
+        notes,
         active,
         created_at,
         motorcycle_photos (
@@ -117,7 +252,7 @@ export default function AdminMotorcyclesPage() {
 
   async function addMotorcycle() {
     if (!lotNumber || !motorcycleName) {
-      alert("Please enter lot number and motorcycle name.");
+      alert("กรุณากรอกเลข Lot และชื่อรถ");
       return;
     }
 
@@ -128,8 +263,10 @@ export default function AdminMotorcyclesPage() {
       const { data: motorcycleData, error: motorcycleError } = await supabase
         .from("motorcycles")
         .insert({
-          lot_number: lotNumber,
-          motorcycle_name: motorcycleName,
+          lot_number: lotNumber.trim(),
+          motorcycle_name: motorcycleName.trim(),
+          cost_price: cleanMoney(costPrice),
+          ...cleanDetails(details),
           active: true,
         })
         .select()
@@ -143,12 +280,14 @@ export default function AdminMotorcyclesPage() {
 
       setLotNumber("");
       setMotorcycleName("");
+      setCostPrice("");
+      setDetails(createEmptyDetails());
       setPhotoFiles([]);
       setIsAdding(false);
       loadMotorcycles();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to add motorcycle."
+        error instanceof Error ? error.message : "เพิ่มรายการรถไม่สำเร็จ"
       );
       setIsAdding(false);
     }
@@ -158,6 +297,8 @@ export default function AdminMotorcyclesPage() {
     setEditingId(bike.id);
     setEditLotNumber(bike.lot_number);
     setEditMotorcycleName(bike.motorcycle_name);
+    setEditCostPrice(formatMoneyInput(bike.cost_price));
+    setEditDetails(getDetailsFromBike(bike));
     setEditPhotoFiles([]);
   }
 
@@ -165,12 +306,14 @@ export default function AdminMotorcyclesPage() {
     setEditingId(null);
     setEditLotNumber("");
     setEditMotorcycleName("");
+    setEditCostPrice("");
+    setEditDetails(createEmptyDetails());
     setEditPhotoFiles([]);
   }
 
   async function saveEdit(bike: Motorcycle) {
     if (!editLotNumber || !editMotorcycleName) {
-      alert("Please enter lot number and motorcycle name.");
+      alert("กรุณากรอกเลข Lot และชื่อรถ");
       return;
     }
 
@@ -180,8 +323,10 @@ export default function AdminMotorcyclesPage() {
       const { error } = await supabase
         .from("motorcycles")
         .update({
-          lot_number: editLotNumber,
-          motorcycle_name: editMotorcycleName,
+          lot_number: editLotNumber.trim(),
+          motorcycle_name: editMotorcycleName.trim(),
+          cost_price: cleanMoney(editCostPrice),
+          ...cleanDetails(editDetails),
         })
         .eq("id", bike.id);
 
@@ -195,13 +340,13 @@ export default function AdminMotorcyclesPage() {
       loadMotorcycles();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to save edit."
+        error instanceof Error ? error.message : "บันทึกข้อมูลไม่สำเร็จ"
       );
     }
   }
 
   async function deletePhoto(photoId: number) {
-    const confirmDelete = confirm("Delete this photo?");
+    const confirmDelete = confirm("ต้องการลบรูปนี้ใช่หรือไม่?");
 
     if (!confirmDelete) return;
 
@@ -240,7 +385,7 @@ export default function AdminMotorcyclesPage() {
 
   async function deleteMotorcycle(id: number) {
     const confirmDelete = confirm(
-      "Delete permanently? If this motorcycle has offers, deletion may fail. Hide is safer."
+      "ต้องการลบรายการนี้ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน"
     );
 
     if (!confirmDelete) return;
@@ -251,12 +396,95 @@ export default function AdminMotorcyclesPage() {
 
     if (error) {
       setErrorMessage(
-        "Cannot delete this motorcycle because it may already have offers. Use Hide instead."
+        "ลบไม่ได้ เพราะรายการนี้อาจมีราคาเสนออยู่แล้ว แนะนำให้ใช้ปุ่มซ่อนแทน"
       );
       return;
     }
 
     loadMotorcycles();
+  }
+
+  function renderDetailInputs(
+    value: MotorcycleDetails,
+    setValue: React.Dispatch<React.SetStateAction<MotorcycleDetails>>
+  ) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {detailFields.map((field) => (
+          <div
+            key={field.key}
+            className={field.multiline ? "md:col-span-2" : ""}
+          >
+            <label className="text-sm font-medium text-gray-700">
+              {field.label}
+            </label>
+
+            {field.multiline ? (
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                placeholder={field.placeholder}
+                value={value[field.key]}
+                onChange={(e) =>
+                  setValue((current) => ({
+                    ...current,
+                    [field.key]: e.target.value,
+                  }))
+                }
+              />
+            ) : (
+              <input
+                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                placeholder={field.placeholder}
+                value={value[field.key]}
+                onChange={(e) =>
+                  setValue((current) => ({
+                    ...current,
+                    [field.key]: e.target.value,
+                  }))
+                }
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderBikeDetails(bike: Motorcycle) {
+    const displayItems = [
+      ["ต้นทุน", bike.cost_price ? `${Number(bike.cost_price).toLocaleString()} บาท` : "-"],
+      ["ยี่ห้อ", bike.brand],
+      ["รุ่น", bike.model],
+      ["ปี", bike.year],
+      ["สี", bike.color],
+      ["ทะเบียน", bike.license_plate],
+      ["เลขไมล์", bike.mileage],
+      ["เลขตัวถัง", bike.frame_number],
+      ["เลขเครื่อง", bike.engine_number],
+      ["สถานะเล่ม", bike.registration_status],
+      ["ภาษีหมดอายุ", bike.tax_expiry],
+      ["สภาพรถ", bike.condition],
+      ["หมายเหตุ", bike.notes],
+    ];
+
+    return (
+      <div className="mt-4 grid gap-3 rounded-2xl bg-gray-50 p-4 text-sm md:grid-cols-2">
+        {displayItems.map(([label, value]) => (
+          <div key={label}>
+            <p className="font-semibold text-gray-700">{label}</p>
+            <p
+              className={
+                label === "ต้นทุน"
+                  ? "mt-1 font-bold text-orange-700"
+                  : "mt-1 text-gray-600"
+              }
+            >
+              {value || "-"}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   useEffect(() => {
@@ -269,6 +497,10 @@ export default function AdminMotorcyclesPage() {
     return sum + (bike.motorcycle_photos?.length || 0);
   }, 0);
 
+  const totalCost = motorcycles.reduce((sum, bike) => {
+    return sum + Number(bike.cost_price || 0);
+  }, 0);
+
   return (
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
@@ -278,15 +510,15 @@ export default function AdminMotorcyclesPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Admin Management
+                จัดการระบบ
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                Motorcycle Lots
+                รายการรถจักรยานยนต์
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Add lots, upload photos, edit details, and hide or show motorcycles.
+                เพิ่มรถ อัปโหลดรูป แก้ไขรายละเอียด ต้นทุน และเปิด/ซ่อนรายการ
               </p>
             </div>
 
@@ -294,59 +526,65 @@ export default function AdminMotorcyclesPage() {
               onClick={loadMotorcycles}
               className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
             >
-              Refresh
+              โหลดใหม่
             </button>
           </div>
 
           {errorMessage && (
             <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-              <p className="font-semibold">Error</p>
+              <p className="font-semibold">เกิดข้อผิดพลาด</p>
               <p className="text-sm">{errorMessage}</p>
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-3">
+          <section className="mt-5 grid gap-4 md:grid-cols-4">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Total Lots</p>
+              <p className="text-sm font-medium text-gray-500">รายการทั้งหมด</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {motorcycles.length}
               </p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Active Lots</p>
+              <p className="text-sm font-medium text-gray-500">เปิดใช้งาน</p>
               <p className="mt-2 text-3xl font-bold text-green-600">
                 {activeCount}
               </p>
-              <p className="mt-1 text-sm text-gray-500">
-                Hidden: {hiddenCount}
-              </p>
+              <p className="mt-1 text-sm text-gray-500">ซ่อน: {hiddenCount}</p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Photos Uploaded</p>
+              <p className="text-sm font-medium text-gray-500">รูปทั้งหมด</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {totalPhotos}
               </p>
             </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">ต้นทุนรวม</p>
+              <p className="mt-2 text-2xl font-bold text-orange-700">
+                {totalCost.toLocaleString()}
+              </p>
+              <p className="text-sm text-gray-500">บาท</p>
+            </div>
           </section>
 
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">Add Motorcycle Lot</h2>
+            <h2 className="text-xl font-bold text-gray-900">เพิ่มรายการรถ</h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Create a new lot and upload multiple photos at once.
+              เพิ่มข้อมูลรถ ต้นทุน และอัปโหลดรูปหลายรูปได้
             </p>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  Lot Number
+                  เลข Lot
                 </label>
 
                 <input
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  placeholder="Example: 004"
+                  placeholder="เช่น 004"
                   value={lotNumber}
                   onChange={(e) => setLotNumber(e.target.value)}
                 />
@@ -354,21 +592,43 @@ export default function AdminMotorcyclesPage() {
 
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  Motorcycle Name
+                  ชื่อรถ
                 </label>
 
                 <input
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  placeholder="Example: Honda PCX 160"
+                  placeholder="เช่น Honda PCX 160"
                   value={motorcycleName}
                   onChange={(e) => setMotorcycleName(e.target.value)}
                 />
               </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  ต้นทุน / ราคาทุน
+                </label>
+
+                <input
+                  inputMode="decimal"
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="เช่น 25000"
+                  value={costPrice}
+                  onChange={(e) =>
+                    setCostPrice(e.target.value.replace(/[^\d.]/g, ""))
+                  }
+                />
+
+                <p className="mt-1 text-xs text-gray-500">
+                  เห็นเฉพาะผู้ดูแลระบบ ร้านค้าไม่เห็นข้อมูลนี้
+                </p>
+              </div>
             </div>
+
+            <div className="mt-5">{renderDetailInputs(details, setDetails)}</div>
 
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
-                Motorcycle Photos
+                รูปรถ
               </label>
 
               <input
@@ -381,7 +641,7 @@ export default function AdminMotorcyclesPage() {
 
               {photoFiles.length > 0 && (
                 <p className="mt-2 text-sm text-gray-600">
-                  Selected {photoFiles.length} photo(s)
+                  เลือกแล้ว {photoFiles.length} รูป
                 </p>
               )}
             </div>
@@ -391,28 +651,26 @@ export default function AdminMotorcyclesPage() {
               disabled={isAdding}
               className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
             >
-              {isAdding ? "Adding..." : "Add Motorcycle"}
+              {isAdding ? "กำลังเพิ่ม..." : "เพิ่มรายการรถ"}
             </button>
           </section>
 
           <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">
-              Motorcycle Lot List
-            </h2>
+            <h2 className="text-xl font-bold text-gray-900">รายการรถทั้งหมด</h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Manage all motorcycle lots shown to merchants.
+              จัดการรายการรถที่จะแสดงให้ร้านค้าเห็น
             </p>
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">Loading motorcycles...</p>
+                <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
               </div>
             )}
 
             {!isLoading && motorcycles.length === 0 && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">No motorcycles found.</p>
+                <p className="text-gray-600">ยังไม่มีรายการรถ</p>
               </div>
             )}
 
@@ -433,15 +691,22 @@ export default function AdminMotorcyclesPage() {
                           <h3 className="mt-1 text-lg font-bold text-gray-900">
                             {bike.motorcycle_name}
                           </h3>
+
+                          <p className="mt-2 text-sm font-semibold text-orange-700">
+                            ต้นทุน:{" "}
+                            {bike.cost_price
+                              ? `${Number(bike.cost_price).toLocaleString()} บาท`
+                              : "-"}
+                          </p>
                         </div>
 
                         {bike.active ? (
                           <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                            Active
+                            แสดงอยู่
                           </span>
                         ) : (
                           <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                            Hidden
+                            ซ่อนอยู่
                           </span>
                         )}
                       </div>
@@ -465,27 +730,29 @@ export default function AdminMotorcyclesPage() {
                                 onClick={() => deletePhoto(photo.id)}
                                 className="w-full bg-red-600 px-2 py-2 text-xs font-semibold text-white hover:bg-red-700"
                               >
-                                Delete Photo
+                                ลบรูป
                               </button>
                             </div>
                           ))}
                         </div>
                       ) : (
                         <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
-                          No photos uploaded.
+                          ยังไม่มีรูป
                         </div>
                       )}
+
+                      {renderBikeDetails(bike)}
 
                       {editingId === bike.id ? (
                         <div className="mt-5 rounded-2xl border bg-gray-50 p-4">
                           <h4 className="font-semibold text-gray-900">
-                            Edit Lot
+                            แก้ไขรายการรถ
                           </h4>
 
-                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="mt-3 grid gap-3 md:grid-cols-3">
                             <div>
                               <label className="text-sm font-medium text-gray-700">
-                                Lot Number
+                                เลข Lot
                               </label>
 
                               <input
@@ -499,7 +766,7 @@ export default function AdminMotorcyclesPage() {
 
                             <div>
                               <label className="text-sm font-medium text-gray-700">
-                                Motorcycle Name
+                                ชื่อรถ
                               </label>
 
                               <input
@@ -510,11 +777,32 @@ export default function AdminMotorcyclesPage() {
                                 }
                               />
                             </div>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">
+                                ต้นทุน / ราคาทุน
+                              </label>
+
+                              <input
+                                inputMode="decimal"
+                                className="mt-1 w-full rounded-xl border p-3"
+                                value={editCostPrice}
+                                onChange={(e) =>
+                                  setEditCostPrice(
+                                    e.target.value.replace(/[^\d.]/g, "")
+                                  )
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-5">
+                            {renderDetailInputs(editDetails, setEditDetails)}
                           </div>
 
                           <div className="mt-3">
                             <label className="text-sm font-medium text-gray-700">
-                              Add More Photos
+                              เพิ่มรูป
                             </label>
 
                             <input
@@ -531,7 +819,7 @@ export default function AdminMotorcyclesPage() {
 
                             {editPhotoFiles.length > 0 && (
                               <p className="mt-2 text-sm text-gray-600">
-                                Selected {editPhotoFiles.length} new photo(s)
+                                เลือกเพิ่ม {editPhotoFiles.length} รูป
                               </p>
                             )}
                           </div>
@@ -541,14 +829,14 @@ export default function AdminMotorcyclesPage() {
                               onClick={() => saveEdit(bike)}
                               className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
                             >
-                              Save
+                              บันทึก
                             </button>
 
                             <button
                               onClick={cancelEditing}
                               className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
                             >
-                              Cancel
+                              ยกเลิก
                             </button>
                           </div>
                         </div>
@@ -558,7 +846,7 @@ export default function AdminMotorcyclesPage() {
                             onClick={() => startEditing(bike)}
                             className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
                           >
-                            Edit
+                            แก้ไข
                           </button>
 
                           <button
@@ -569,14 +857,14 @@ export default function AdminMotorcyclesPage() {
                                 : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
                             }
                           >
-                            {bike.active ? "Hide" : "Show"}
+                            {bike.active ? "ซ่อน" : "แสดง"}
                           </button>
 
                           <button
                             onClick={() => deleteMotorcycle(bike.id)}
                             className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
                           >
-                            Delete Lot
+                            ลบรายการ
                           </button>
                         </div>
                       )}

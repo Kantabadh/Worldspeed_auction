@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
@@ -16,18 +16,60 @@ type MerchantAccount = {
 
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
+function cleanPhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 10);
+}
+
+function isValidPhone(value: string) {
+  return /^\d{9,10}$/.test(value);
+}
+
 export default function MerchantLoginPage() {
   const [phone, setPhone] = useState("");
   const [merchantCode, setMerchantCode] = useState("");
+  const [rememberPhone, setRememberPhone] = useState(true);
+
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false);
+  const [showPolicy, setShowPolicy] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  async function handleLogin() {
-    const cleanPhone = phone.trim();
+  useEffect(() => {
+    const savedPhone = localStorage.getItem("rememberedMerchantPhone");
+
+    if (savedPhone) {
+      setPhone(savedPhone);
+      setRememberPhone(true);
+    }
+
+    const savedPolicy = localStorage.getItem("merchantAcceptedPolicy");
+
+    if (savedPolicy === "yes") {
+      setAcceptedPolicy(true);
+    }
+  }, []);
+
+  async function handleLogin(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+
+    if (isLoading) return;
+
+    const cleanPhoneNumber = cleanPhone(phone);
     const cleanCode = merchantCode.trim().toUpperCase();
 
-    if (!cleanPhone || !cleanCode) {
-      setErrorMessage("Please enter phone number and merchant code.");
+    if (!cleanPhoneNumber || !cleanCode) {
+      setErrorMessage("กรุณากรอกเบอร์โทรและรหัสร้านค้า");
+      return;
+    }
+
+    if (!isValidPhone(cleanPhoneNumber)) {
+      setErrorMessage("เบอร์โทรต้องเป็นตัวเลข 9 หรือ 10 หลัก");
+      return;
+    }
+
+    if (!acceptedPolicy) {
+      setErrorMessage("กรุณายอมรับเงื่อนไขก่อนเข้าสู่ระบบ");
       return;
     }
 
@@ -37,7 +79,7 @@ export default function MerchantLoginPage() {
     const { data, error } = await supabase
       .from("merchant_accounts")
       .select("*")
-      .eq("phone", cleanPhone)
+      .eq("phone", cleanPhoneNumber)
       .eq("merchant_code", cleanCode)
       .limit(1);
 
@@ -48,7 +90,7 @@ export default function MerchantLoginPage() {
     }
 
     if (!data || data.length === 0) {
-      setErrorMessage("Invalid phone number or merchant code.");
+      setErrorMessage("เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง");
       setIsLoading(false);
       return;
     }
@@ -56,26 +98,30 @@ export default function MerchantLoginPage() {
     const merchant = data[0] as MerchantAccount;
 
     if (merchant.approval_status === "pending") {
-      setErrorMessage(
-        "Your registration is still pending approval. Please wait for auction staff."
-      );
+      setErrorMessage("บัญชีร้านค้านี้ยังรออนุมัติ กรุณารอผู้ดูแลระบบอนุมัติ");
       setIsLoading(false);
       return;
     }
 
     if (merchant.approval_status === "rejected") {
-      setErrorMessage(
-        "Your registration was not approved. Please contact auction staff."
-      );
+      setErrorMessage("บัญชีร้านค้านี้ไม่ได้รับการอนุมัติ กรุณาติดต่อผู้ดูแล");
       setIsLoading(false);
       return;
     }
 
     if (!merchant.active || merchant.approval_status !== "approved") {
-      setErrorMessage("This merchant account is not active.");
+      setErrorMessage("บัญชีร้านค้านี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแล");
       setIsLoading(false);
       return;
     }
+
+    if (rememberPhone) {
+      localStorage.setItem("rememberedMerchantPhone", cleanPhoneNumber);
+    } else {
+      localStorage.removeItem("rememberedMerchantPhone");
+    }
+
+    localStorage.setItem("merchantAcceptedPolicy", "yes");
 
     localStorage.setItem(
       "merchantSession",
@@ -92,7 +138,6 @@ export default function MerchantLoginPage() {
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
 
-    setIsLoading(false);
     window.location.href = "/merchant";
   }
 
@@ -102,61 +147,94 @@ export default function MerchantLoginPage() {
         <div className="w-full overflow-hidden rounded-[32px] bg-white shadow-2xl ring-1 ring-black/5">
           <div className="bg-black px-6 py-8 text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-400">
-              Merchant Access
+              ร้านค้า
             </p>
 
-            <h1 className="mt-3 text-3xl font-bold">Merchant Login</h1>
+            <h1 className="mt-3 text-3xl font-bold">เข้าสู่ระบบ</h1>
 
             <p className="mt-3 text-sm leading-6 text-gray-300">
-              Enter your approved phone number and merchant code to submit or
-              view your offers.
+              ใช้เบอร์โทรและรหัสร้านค้าเพื่อเสนอราคา
             </p>
           </div>
 
-          <div className="p-6">
+          <form onSubmit={handleLogin} className="p-6">
             {errorMessage && (
               <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-                <p className="font-semibold">Login failed</p>
+                <p className="font-semibold">เข้าสู่ระบบไม่ได้</p>
                 <p className="text-sm">{errorMessage}</p>
               </div>
             )}
 
             <div>
               <label className="text-sm font-medium text-gray-700">
-                Phone Number
+                เบอร์โทร
               </label>
 
               <input
-                inputMode="tel"
+                inputMode="numeric"
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
-                placeholder="Example: 0812345678"
+                placeholder="9 หรือ 10 หลัก"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(cleanPhone(e.target.value))}
               />
+
+              <p className="mt-1 text-xs text-gray-500">
+                ใช้ได้ทั้งเบอร์บ้าน 9 หลัก และเบอร์มือถือ 10 หลัก
+              </p>
+
+              <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={rememberPhone}
+                  onChange={(e) => setRememberPhone(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                จำเบอร์โทรไว้
+              </label>
             </div>
 
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
-                Merchant Code
+                รหัสร้านค้า
               </label>
 
               <input
                 className="mt-2 w-full rounded-2xl border p-3 text-lg uppercase outline-none focus:ring-2 focus:ring-black"
-                placeholder="Example: SHOP001"
+                placeholder="เช่น M001"
                 value={merchantCode}
                 onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleLogin();
-                }}
               />
             </div>
 
+            <div className="mt-5 rounded-2xl border bg-gray-50 p-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={acceptedPolicy}
+                  onChange={(e) => setAcceptedPolicy(e.target.checked)}
+                  className="mt-1 h-4 w-4"
+                />
+
+                <span className="text-sm leading-6 text-gray-700">
+                  ยอมรับเงื่อนไขการใช้งานและนโยบายความเป็นส่วนตัว
+                </span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowPolicy(true)}
+                className="mt-3 text-sm font-semibold text-gray-900 underline underline-offset-4"
+              >
+                อ่านเงื่อนไข
+              </button>
+            </div>
+
             <button
-              onClick={handleLogin}
+              type="submit"
               disabled={isLoading}
               className="mt-6 w-full rounded-2xl bg-black px-4 py-3 font-semibold text-white shadow disabled:bg-gray-400"
             >
-              {isLoading ? "Checking..." : "Login"}
+              {isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </button>
 
             <div className="mt-5 flex items-center justify-between gap-3">
@@ -164,19 +242,105 @@ export default function MerchantLoginPage() {
                 href="/merchant-signup"
                 className="text-sm font-medium text-gray-500 underline underline-offset-4 hover:text-black"
               >
-                Register merchant
+                สมัครร้านค้า
               </Link>
 
               <Link
                 href="/"
                 className="text-sm font-medium text-gray-500 underline underline-offset-4 hover:text-black"
               >
-                Back home
+                กลับหน้าแรก
               </Link>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      {showPolicy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  เงื่อนไขการใช้งาน
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  กรุณาอ่านก่อนเข้าสู่ระบบ
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPolicy(false)}
+                className="rounded-full bg-gray-100 px-3 py-1 text-xl font-bold text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4 text-sm leading-7 text-gray-700">
+              <p>
+                1. ผู้ใช้งานต้องใช้บัญชีของตนเอง และรักษารหัสร้านค้าไม่ให้ผู้อื่นใช้งานแทน
+              </p>
+
+              <p>
+                2. ระบบจะบันทึกชื่อร้านค้า ชื่อผู้ติดต่อ เบอร์โทร รายการรถ และราคาที่เสนอ
+                เพื่อใช้ในการจัดการเสนอราคาและการติดต่อกลับ
+              </p>
+
+              <p>
+                3. ก่อนส่งราคา ผู้ใช้งานต้องตรวจสอบรายการรถและราคาให้ถูกต้อง
+              </p>
+
+              <p>
+                4. เมื่อกดยืนยันส่งราคา ระบบจะถือว่าราคานั้นเป็นราคาที่ร้านค้าส่งผ่านระบบ
+              </p>
+
+              <p>
+                5. บริษัทมีสิทธิ์ตรวจสอบ ยกเลิก หรือปฏิเสธราคา หากพบข้อผิดพลาด
+                การใช้งานผิดปกติ หรือเหตุจำเป็นทางธุรกิจ
+              </p>
+
+              <p>
+                6. หากมีผู้เสนอราคาสูงสุดเท่ากัน บริษัทจะเป็นผู้พิจารณาขั้นตอนต่อไป
+              </p>
+
+              <p>
+                7. ข้อมูลรถ รูปภาพ และรายละเอียดในระบบใช้เพื่อประกอบการเสนอราคา
+                ผู้ใช้งานควรตรวจสอบข้อมูลกับบริษัทอีกครั้งก่อนตัดสินใจซื้อ
+              </p>
+
+              <p>
+                8. บริษัทจะดูแลข้อมูลตามความเหมาะสม แต่ระบบออนไลน์อาจมีเหตุขัดข้อง
+                หรือปัญหาทางเทคนิคได้
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAcceptedPolicy(true);
+                  localStorage.setItem("merchantAcceptedPolicy", "yes");
+                  setShowPolicy(false);
+                }}
+                className="rounded-2xl bg-black px-5 py-3 font-semibold text-white"
+              >
+                ยอมรับ
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPolicy(false)}
+                className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
+              >
+                ปิด
+              </button>
             </div>
           </div>
         </div>
-      </section>
+      )}
     </main>
   );
 }

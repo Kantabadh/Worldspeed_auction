@@ -12,6 +12,18 @@ type Motorcycle = {
   id: number;
   lot_number: string;
   motorcycle_name: string;
+  brand: string | null;
+  model: string | null;
+  year: string | null;
+  color: string | null;
+  license_plate: string | null;
+  mileage: string | null;
+  frame_number: string | null;
+  engine_number: string | null;
+  registration_status: string | null;
+  tax_expiry: string | null;
+  condition: string | null;
+  notes: string | null;
   motorcycle_photos: MotorcyclePhoto[];
 };
 
@@ -19,6 +31,18 @@ type Offer = {
   motorcycle_id: number;
   lot: string;
   motorcycle: string;
+  brand: string;
+  model: string;
+  year: string;
+  color: string;
+  license_plate: string;
+  mileage: string;
+  frame_number: string;
+  engine_number: string;
+  registration_status: string;
+  tax_expiry: string;
+  condition: string;
+  notes: string;
   photos: MotorcyclePhoto[];
   price: string;
 };
@@ -35,7 +59,12 @@ type MerchantSession = {
 type ExistingSubmissionOffer = {
   id: number;
   offer_price: number;
-  motorcycle_id: number;
+  motorcycle_id: number | string;
+};
+
+type LotEditPermission = {
+  motorcycle_id: number | string;
+  can_edit: boolean;
 };
 
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
@@ -50,13 +79,14 @@ export default function MerchantPage() {
 
   const [offers, setOffers] = useState<Offer[]>([]);
   const [starredLotIds, setStarredLotIds] = useState<number[]>([]);
+  const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
+  const [editableLotIds, setEditableLotIds] = useState<number[]>([]);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [canEditSubmission, setCanEditSubmission] = useState(false);
   const [submittedMerchantId, setSubmittedMerchantId] = useState<number | null>(
     null
   );
@@ -92,9 +122,11 @@ export default function MerchantPage() {
   }
 
   function toggleStarLot(motorcycleId: number) {
-    const updatedStarredLotIds = starredLotIds.includes(motorcycleId)
-      ? starredLotIds.filter((id) => id !== motorcycleId)
-      : [...starredLotIds, motorcycleId];
+    const id = Number(motorcycleId);
+
+    const updatedStarredLotIds = starredLotIds.includes(id)
+      ? starredLotIds.filter((savedId) => Number(savedId) !== id)
+      : [...starredLotIds, id];
 
     setStarredLotIds(updatedStarredLotIds);
 
@@ -104,25 +136,21 @@ export default function MerchantPage() {
     );
   }
 
+  function toggleDetail(motorcycleId: number) {
+    const id = Number(motorcycleId);
+
+    setOpenDetailIds((currentIds) =>
+      currentIds.map(Number).includes(id)
+        ? currentIds.filter((savedId) => Number(savedId) !== id)
+        : [...currentIds, id]
+    );
+  }
+
   async function checkExistingSubmission(accountId: number) {
-    const { data: accountData, error: accountError } = await supabase
-      .from("merchant_accounts")
-      .select("can_edit_submission")
-      .eq("id", accountId)
-      .limit(1);
-
-    if (accountError) {
-      setErrorMessage(accountError.message);
-      return;
-    }
-
-    const canEdit = accountData?.[0]?.can_edit_submission || false;
-    setCanEditSubmission(canEdit);
-
     const { data: merchantRows, error: merchantError } = await supabase
       .from("merchants")
       .select("id")
-      .eq("merchant_account_id", accountId)
+      .eq("merchant_account_id", Number(accountId))
       .limit(1);
 
     if (merchantError) {
@@ -133,10 +161,11 @@ export default function MerchantPage() {
     if (!merchantRows || merchantRows.length === 0) {
       setHasSubmitted(false);
       setSubmittedMerchantId(null);
+      setEditableLotIds([]);
       return;
     }
 
-    const merchantRowId = merchantRows[0].id;
+    const merchantRowId = Number(merchantRows[0].id);
 
     setHasSubmitted(true);
     setSubmittedMerchantId(merchantRowId);
@@ -151,10 +180,28 @@ export default function MerchantPage() {
       return;
     }
 
+    const { data: permissionData, error: permissionError } = await supabase
+      .from("merchant_lot_edit_permissions")
+      .select("motorcycle_id, can_edit")
+      .eq("merchant_account_id", Number(accountId))
+      .eq("can_edit", true);
+
+    if (permissionError) {
+      setErrorMessage(permissionError.message);
+      return;
+    }
+
+    const allowedLotIds =
+      (permissionData as LotEditPermission[] | null)?.map((permission) =>
+        Number(permission.motorcycle_id)
+      ) || [];
+
+    setEditableLotIds(allowedLotIds);
+
     const submittedPrices: Record<number, string> = {};
 
     (existingOffers as ExistingSubmissionOffer[] | null)?.forEach((offer) => {
-      submittedPrices[offer.motorcycle_id] = String(offer.offer_price);
+      submittedPrices[Number(offer.motorcycle_id)] = String(offer.offer_price);
     });
 
     localStorage.setItem("merchantOfferPrices", JSON.stringify(submittedPrices));
@@ -162,7 +209,8 @@ export default function MerchantPage() {
     setOffers((currentOffers) =>
       currentOffers.map((offer) => ({
         ...offer,
-        price: submittedPrices[offer.motorcycle_id] || offer.price || "",
+        price:
+          submittedPrices[Number(offer.motorcycle_id)] || offer.price || "",
       }))
     );
   }
@@ -185,17 +233,19 @@ export default function MerchantPage() {
     const savedStarredLots = localStorage.getItem("merchantStarredLotIds");
 
     if (savedStarredLots) {
-      setStarredLotIds(JSON.parse(savedStarredLots));
+      setStarredLotIds(
+        JSON.parse(savedStarredLots).map((id: number | string) => Number(id))
+      );
     }
 
     setMerchantName(session.merchantName || "");
     setShopName(session.shopName || "");
     setPhone(session.phone || "");
-    setMerchantAccountId(session.merchantAccountId);
+    setMerchantAccountId(Number(session.merchantAccountId));
     setIsMerchantLoggedIn(true);
 
     saveMerchantSession(session);
-    checkExistingSubmission(session.merchantAccountId);
+    checkExistingSubmission(Number(session.merchantAccountId));
   }, []);
 
   useEffect(() => {
@@ -245,7 +295,7 @@ export default function MerchantPage() {
       }
 
       if (!data || data.length === 0) {
-        setErrorMessage("No auction setting found.");
+        setErrorMessage("ไม่พบสถานะการเสนอราคา");
         return;
       }
 
@@ -259,6 +309,18 @@ export default function MerchantPage() {
           id,
           lot_number,
           motorcycle_name,
+          brand,
+          model,
+          year,
+          color,
+          license_plate,
+          mileage,
+          frame_number,
+          engine_number,
+          registration_status,
+          tax_expiry,
+          condition,
+          notes,
           motorcycle_photos (
             id,
             image_url
@@ -274,9 +336,21 @@ export default function MerchantPage() {
 
       const motorcycleOffers =
         data?.map((bike: Motorcycle) => ({
-          motorcycle_id: bike.id,
+          motorcycle_id: Number(bike.id),
           lot: bike.lot_number,
           motorcycle: bike.motorcycle_name,
+          brand: bike.brand || "",
+          model: bike.model || "",
+          year: bike.year || "",
+          color: bike.color || "",
+          license_plate: bike.license_plate || "",
+          mileage: bike.mileage || "",
+          frame_number: bike.frame_number || "",
+          engine_number: bike.engine_number || "",
+          registration_status: bike.registration_status || "",
+          tax_expiry: bike.tax_expiry || "",
+          condition: bike.condition || "",
+          notes: bike.notes || "",
           photos: bike.motorcycle_photos || [],
           price: "",
         })) || [];
@@ -286,7 +360,7 @@ export default function MerchantPage() {
 
       const motorcycleOffersWithSavedPrices = motorcycleOffers.map((offer) => ({
         ...offer,
-        price: savedPrices[offer.motorcycle_id] || "",
+        price: savedPrices[Number(offer.motorcycle_id)] || "",
       }));
 
       setOffers(motorcycleOffersWithSavedPrices);
@@ -298,9 +372,34 @@ export default function MerchantPage() {
 
   useEffect(() => {
     if (merchantAccountId) {
-      checkExistingSubmission(merchantAccountId);
+      checkExistingSubmission(Number(merchantAccountId));
     }
   }, [offers.length, merchantAccountId]);
+
+  useEffect(() => {
+    if (!merchantAccountId) return;
+
+    function refreshPermission() {
+      checkExistingSubmission(Number(merchantAccountId));
+    }
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") {
+        refreshPermission();
+      }
+    }
+
+    window.addEventListener("focus", refreshPermission);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    const interval = setInterval(refreshPermission, 10000);
+
+    return () => {
+      window.removeEventListener("focus", refreshPermission);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      clearInterval(interval);
+    };
+  }, [merchantAccountId]);
 
   function updatePrice(index: number, value: string) {
     const cleanValue = value.replace(/[^\d]/g, "");
@@ -312,7 +411,7 @@ export default function MerchantPage() {
     const pricesToSave: Record<number, string> = {};
 
     newOffers.forEach((offer) => {
-      pricesToSave[offer.motorcycle_id] = offer.price;
+      pricesToSave[Number(offer.motorcycle_id)] = offer.price;
     });
 
     localStorage.setItem("merchantOfferPrices", JSON.stringify(pricesToSave));
@@ -340,27 +439,45 @@ export default function MerchantPage() {
     );
   }
 
+  function canEditThisLot(motorcycleId: number) {
+    if (!hasSubmitted) return true;
+
+    return editableLotIds.map(Number).includes(Number(motorcycleId));
+  }
+
   function handleSubmit() {
-    if (hasSubmitted && !canEditSubmission) {
-      alert("You have already submitted offers for this auction.");
-      return;
-    }
-
     if (auctionStatus === "closed") {
-      alert("Auction is closed. You cannot submit offers anymore.");
+      alert("ปิดรับราคาแล้ว");
       return;
     }
-
-    const submittedOffers = offers.filter((offer) => offer.price !== "");
 
     if (!merchantName || !shopName || !phone || !merchantAccountId) {
-      alert("Merchant information is missing. Please log in again.");
+      alert("ไม่พบข้อมูลร้านค้า กรุณาเข้าสู่ระบบใหม่");
       window.location.href = "/merchant-login";
       return;
     }
 
+    if (hasSubmitted && editableLotIds.length === 0) {
+      alert("ส่งราคาแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแลให้เปิด Lot ที่ต้องการแก้");
+      return;
+    }
+
+    const editableLotIdNumbers = editableLotIds.map(Number);
+
+    const submittedOffers = hasSubmitted
+      ? offers.filter(
+          (offer) =>
+            editableLotIdNumbers.includes(Number(offer.motorcycle_id)) &&
+            offer.price !== ""
+        )
+      : offers.filter((offer) => offer.price !== "");
+
     if (submittedOffers.length === 0) {
-      alert("Please enter at least one offer price.");
+      alert(
+        hasSubmitted
+          ? "กรุณาใส่ราคาใน Lot ที่ได้รับอนุญาตให้แก้ไข"
+          : "กรุณาใส่ราคาอย่างน้อย 1 รายการ"
+      );
       return;
     }
 
@@ -369,9 +486,10 @@ export default function MerchantPage() {
       shopName,
       phone,
       offers: submittedOffers,
-      isEditingSubmission: hasSubmitted && canEditSubmission,
+      isEditingSubmission: hasSubmitted,
       submittedMerchantId,
       merchantAccountId,
+      editableLotIds: editableLotIdNumbers,
     };
 
     localStorage.setItem("draftSubmission", JSON.stringify(data));
@@ -379,12 +497,15 @@ export default function MerchantPage() {
   }
 
   const enteredOfferCount = offers.filter((offer) => offer.price !== "").length;
-  const isLockedAfterSubmission = hasSubmitted && !canEditSubmission;
-  const canTypeOffer = auctionStatus === "open" && !isLockedAfterSubmission;
+  const editableLotCount = editableLotIds.length;
+
+  const isLockedAfterSubmission = hasSubmitted && editableLotCount === 0;
+  const canSubmit =
+    auctionStatus === "open" && (!hasSubmitted || editableLotCount > 0);
 
   const sortedOffers = [...offers].sort((a, b) => {
-    const aStarred = starredLotIds.includes(a.motorcycle_id);
-    const bStarred = starredLotIds.includes(b.motorcycle_id);
+    const aStarred = starredLotIds.map(Number).includes(Number(a.motorcycle_id));
+    const bStarred = starredLotIds.map(Number).includes(Number(b.motorcycle_id));
 
     if (aStarred && !bStarred) return -1;
     if (!aStarred && bStarred) return 1;
@@ -396,7 +517,7 @@ export default function MerchantPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <p className="text-sm text-gray-600">Opening merchant page...</p>
+          <p className="text-sm text-gray-600">กำลังเปิดหน้า...</p>
         </div>
       </main>
     );
@@ -408,11 +529,11 @@ export default function MerchantPage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
-              Motorcycle Offer System
+              เสนอราคารถจักรยานยนต์
             </h1>
 
             <p className="mt-0.5 truncate text-xs text-gray-600 sm:text-sm">
-              {merchantName} • {shopName}
+              ร้าน: {shopName}
             </p>
           </div>
 
@@ -420,7 +541,7 @@ export default function MerchantPage() {
             onClick={logoutMerchant}
             className="shrink-0 rounded-xl border bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-100 sm:px-4 sm:text-sm"
           >
-            Logout
+            ออกจากระบบ
           </button>
         </div>
       </header>
@@ -428,38 +549,33 @@ export default function MerchantPage() {
       <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
         {auctionStatus === "open" ? (
           <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
-            <p className="font-semibold">Auction is OPEN</p>
-            <p className="text-sm">You can enter and submit offers.</p>
+            <p className="font-semibold">เปิดรับราคา</p>
           </div>
         ) : (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
-            <p className="font-semibold">Auction is CLOSED</p>
-            <p className="text-sm">Offer submission is currently blocked.</p>
+            <p className="font-semibold">ปิดรับราคา</p>
           </div>
         )}
 
-        {hasSubmitted && !canEditSubmission && (
+        {hasSubmitted && editableLotCount === 0 && (
           <div className="mt-3 rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
-            <p className="font-semibold">Already Submitted</p>
-            <p className="text-sm">
-              Your submitted offer prices are shown below. Editing is currently
-              locked.
-            </p>
+            <p className="font-semibold">ส่งราคาแล้ว</p>
+            <p className="text-sm">ดูราคาที่ส่งไว้ได้ แต่แก้ไขไม่ได้</p>
           </div>
         )}
 
-        {hasSubmitted && canEditSubmission && (
+        {hasSubmitted && editableLotCount > 0 && (
           <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-800 sm:p-4">
-            <p className="font-semibold">Editing Allowed</p>
+            <p className="font-semibold">แก้ไขราคาได้บาง Lot</p>
             <p className="text-sm">
-              Auction staff has allowed you to edit your submitted offers.
+              แก้ไขได้เฉพาะ Lot ที่ผู้ดูแลเปิดสิทธิ์ให้
             </p>
           </div>
         )}
 
         {errorMessage && (
           <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700 sm:p-4">
-            <p className="font-semibold">Error</p>
+            <p className="font-semibold">เกิดข้อผิดพลาด</p>
             <p className="text-sm">{errorMessage}</p>
           </div>
         )}
@@ -467,16 +583,13 @@ export default function MerchantPage() {
         <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">
-                Merchant Info
-              </h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {merchantName} • {phone}
-              </p>
+              <p className="text-sm text-gray-500">ร้านค้า</p>
+              <h2 className="text-lg font-bold text-gray-900">{shopName}</h2>
             </div>
 
-            <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
-              {shopName}
+            <div className="text-right text-xs text-gray-500">
+              <p>{merchantName}</p>
+              <p>{phone}</p>
             </div>
           </div>
         </section>
@@ -484,14 +597,7 @@ export default function MerchantPage() {
         <section className="mt-5">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">
-                Motorcycle Lots
-              </h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {hasSubmitted
-                  ? "Your submitted prices are shown below."
-                  : "Enter offer prices for lots you want."}
-              </p>
+              <h2 className="text-xl font-bold text-gray-900">รายการรถ</h2>
             </div>
 
             <div className="shrink-0 rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
@@ -499,26 +605,28 @@ export default function MerchantPage() {
             </div>
           </div>
 
-          {starredLotIds.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800">
-              <p className="text-sm font-semibold">Starred lots are shown first.</p>
-            </div>
-          )}
-
           {offers.length === 0 && !errorMessage && (
             <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
-              <p className="text-gray-600">Loading motorcycles...</p>
+              <p className="text-gray-600">กำลังโหลด...</p>
             </div>
           )}
 
           <div className="mt-4 space-y-4">
             {sortedOffers.map((offer) => {
               const originalIndex = offers.findIndex(
-                (item) => item.motorcycle_id === offer.motorcycle_id
+                (item) => Number(item.motorcycle_id) === Number(offer.motorcycle_id)
               );
 
-              const isStarred = starredLotIds.includes(offer.motorcycle_id);
+              const isStarred = starredLotIds
+                .map(Number)
+                .includes(Number(offer.motorcycle_id));
+              const isDetailOpen = openDetailIds
+                .map(Number)
+                .includes(Number(offer.motorcycle_id));
               const firstPhoto = offer.photos[0];
+
+              const lotCanEdit = canEditThisLot(Number(offer.motorcycle_id));
+              const inputDisabled = auctionStatus !== "open" || !lotCanEdit;
 
               return (
                 <article
@@ -543,17 +651,17 @@ export default function MerchantPage() {
 
                       {offer.photos.length > 1 && (
                         <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                          {offer.photos.length} photos
+                          {offer.photos.length} รูป
                         </span>
                       )}
 
                       <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                        Tap to view
+                        ดูรูป
                       </span>
                     </button>
                   ) : (
                     <div className="flex h-32 items-center justify-center bg-gray-100 text-sm text-gray-500">
-                      No photo
+                      ไม่มีรูป
                     </div>
                   )}
 
@@ -572,7 +680,7 @@ export default function MerchantPage() {
 
                       <button
                         type="button"
-                        onClick={() => toggleStarLot(offer.motorcycle_id)}
+                        onClick={() => toggleStarLot(Number(offer.motorcycle_id))}
                         className={
                           isStarred
                             ? "shrink-0 rounded-full bg-yellow-200 px-3 py-2 text-sm font-semibold text-yellow-800"
@@ -586,30 +694,140 @@ export default function MerchantPage() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       {offer.price && (
                         <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                          {hasSubmitted
-                            ? "Submitted price"
-                            : "Offer entered"}
+                          {hasSubmitted ? "ราคาที่ส่ง" : "ใส่ราคาแล้ว"}
+                        </span>
+                      )}
+
+                      {hasSubmitted && lotCanEdit && (
+                        <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                          แก้ไข Lot นี้ได้
+                        </span>
+                      )}
+
+                      {hasSubmitted && !lotCanEdit && (
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                          ล็อก
                         </span>
                       )}
 
                       {isStarred && (
                         <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
-                          Starred
+                          ปักดาว
                         </span>
                       )}
                     </div>
 
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleDetail(Number(offer.motorcycle_id))}
+                        className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        {isDetailOpen ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
+                      </button>
+
+                      {offer.photos.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openGallery(offer.photos, 0)}
+                          className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          ดูรูปทั้งหมด
+                        </button>
+                      )}
+                    </div>
+
+                    {isDetailOpen && (
+                      <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <p className="font-semibold text-gray-900">Lot</p>
+                            <p>{offer.lot || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">รายการ</p>
+                            <p>{offer.motorcycle || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">ยี่ห้อ</p>
+                            <p>{offer.brand || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">รุ่น</p>
+                            <p>{offer.model || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">ปี</p>
+                            <p>{offer.year || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">สี</p>
+                            <p>{offer.color || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">ทะเบียน</p>
+                            <p>{offer.license_plate || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">เลขไมล์</p>
+                            <p>{offer.mileage || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">เลขตัวถัง</p>
+                            <p>{offer.frame_number || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">เลขเครื่อง</p>
+                            <p>{offer.engine_number || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">สถานะเล่ม</p>
+                            <p>{offer.registration_status || "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-gray-900">ภาษีหมดอายุ</p>
+                            <p>{offer.tax_expiry || "-"}</p>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <p className="font-semibold text-gray-900">สภาพรถ</p>
+                            <p className="whitespace-pre-line">
+                              {offer.condition || "-"}
+                            </p>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <p className="font-semibold text-gray-900">หมายเหตุ</p>
+                            <p className="whitespace-pre-line">
+                              {offer.notes || "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4">
                       <label className="text-sm font-medium text-gray-700">
-                        Offer Price
+                        ราคา
                       </label>
 
                       <div className="mt-2 flex items-center overflow-hidden rounded-2xl border bg-white focus-within:ring-2 focus-within:ring-black">
                         <input
                           inputMode="numeric"
-                          disabled={!canTypeOffer}
+                          disabled={inputDisabled}
                           className="w-full p-4 text-xl font-semibold outline-none disabled:bg-gray-100 disabled:text-gray-700"
-                          placeholder="Enter price"
+                          placeholder="ใส่ราคา"
                           value={
                             offer.price
                               ? Number(offer.price).toLocaleString()
@@ -621,9 +839,15 @@ export default function MerchantPage() {
                         />
 
                         <span className="border-l bg-gray-50 px-4 py-4 text-sm font-medium text-gray-600">
-                          baht
+                          บาท
                         </span>
                       </div>
+
+                      {hasSubmitted && !lotCanEdit && (
+                        <p className="mt-2 text-xs text-gray-500">
+                          หากต้องการแก้ Lot นี้ กรุณาติดต่อผู้ดูแล
+                        </p>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -637,34 +861,30 @@ export default function MerchantPage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
-              {enteredOfferCount} offer(s) entered
+              ใส่ราคาแล้ว {enteredOfferCount} รายการ
             </p>
 
             {isLockedAfterSubmission ? (
-              <p className="text-xs text-yellow-700">
-                Already submitted. Editing locked.
-              </p>
-            ) : hasSubmitted && canEditSubmission ? (
+              <p className="text-xs text-yellow-700">ส่งแล้ว แก้ไขไม่ได้</p>
+            ) : hasSubmitted && editableLotCount > 0 ? (
               <p className="text-xs text-orange-700">
-                Editing allowed. Submit again to update.
+                แก้ไขได้ {editableLotCount} Lot
               </p>
             ) : (
-              <p className="text-xs text-gray-500">
-                Review before final submission.
-              </p>
+              <p className="text-xs text-gray-500">ตรวจสอบก่อนส่ง</p>
             )}
           </div>
 
           <button
             onClick={handleSubmit}
-            disabled={auctionStatus === "closed" || isLockedAfterSubmission}
+            disabled={!canSubmit}
             className="shrink-0 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow disabled:bg-gray-400 sm:px-6 sm:text-base"
           >
             {isLockedAfterSubmission
-              ? "Submitted"
-              : hasSubmitted && canEditSubmission
-              ? "Review Update"
-              : "Review"}
+              ? "ส่งแล้ว"
+              : hasSubmitted && editableLotCount > 0
+              ? "ตรวจสอบราคาใหม่"
+              : "ตรวจสอบราคา"}
           </button>
         </div>
       </div>

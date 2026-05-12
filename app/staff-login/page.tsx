@@ -11,9 +11,13 @@ export default function StaffLoginPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  async function handleLogin() {
-    if (!email || !password) {
-      setErrorMessage("Please enter email and password.");
+  async function handleLogin(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+
+    if (isLoading) return;
+
+    if (!email.trim() || !password) {
+      setErrorMessage("กรุณากรอกอีเมลและรหัสผ่าน");
       return;
     }
 
@@ -27,7 +31,7 @@ export default function StaffLoginPage() {
       });
 
     if (loginError || !loginData.user) {
-      setErrorMessage(loginError?.message || "Invalid email or password.");
+      setErrorMessage("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
       setIsLoading(false);
       return;
     }
@@ -41,10 +45,12 @@ export default function StaffLoginPage() {
 
     if (profileError || !profileData || profileData.length === 0) {
       await supabase.auth.signOut();
+
       setErrorMessage(
         profileError?.message ||
-          "This account is not registered as an active admin or owner."
+          "บัญชีนี้ยังไม่ได้รับสิทธิ์แอดมินหรือ Owner"
       );
+
       setIsLoading(false);
       return;
     }
@@ -62,7 +68,6 @@ export default function StaffLoginPage() {
       })
     );
 
-    setIsLoading(false);
     window.location.href = "/admin";
   }
 
@@ -72,28 +77,27 @@ export default function StaffLoginPage() {
         <div className="w-full overflow-hidden rounded-[32px] bg-white shadow-2xl ring-1 ring-black/5">
           <div className="bg-black px-6 py-8 text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-400">
-              Staff Access
+              ผู้ดูแลระบบ
             </p>
 
-            <h1 className="mt-3 text-3xl font-bold">Admin / Owner Login</h1>
+            <h1 className="mt-3 text-3xl font-bold">เข้าสู่ระบบ</h1>
 
             <p className="mt-3 text-sm leading-6 text-gray-300">
-              Use your assigned email and password. Owner and admin access are
-              separated automatically by account role.
+              สำหรับ Admin และ Owner เท่านั้น
             </p>
           </div>
 
-          <div className="p-6">
+          <form onSubmit={handleLogin} className="p-6">
             {errorMessage && (
               <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-                <p className="font-semibold">Login failed</p>
+                <p className="font-semibold">เข้าสู่ระบบไม่ได้</p>
                 <p className="text-sm">{errorMessage}</p>
               </div>
             )}
 
             <div>
               <label className="text-sm font-medium text-gray-700">
-                Email
+                อีเมล
               </label>
 
               <input
@@ -102,55 +106,46 @@ export default function StaffLoginPage() {
                 placeholder="admin@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
               />
             </div>
 
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
-                Password
+                รหัสผ่าน
               </label>
 
               <input
                 type="password"
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
-                placeholder="Enter password"
+                placeholder="รหัสผ่าน"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleLogin();
-                }}
+                disabled={isLoading}
               />
             </div>
 
             <button
-              onClick={handleLogin}
+              type="submit"
               disabled={isLoading}
               className="mt-6 w-full rounded-2xl bg-black px-4 py-3 font-semibold text-white shadow disabled:bg-gray-400"
             >
-              {isLoading ? "Checking account..." : "Login"}
+              {isLoading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
             </button>
 
-            <div className="mt-5 rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm font-semibold text-gray-900">
-                Account role
-              </p>
-              <p className="mt-1 text-sm leading-6 text-gray-600">
-                Owner accounts can access Owner Settings. Admin accounts can
-                access normal auction management pages only.
-              </p>
-            </div>
+           
 
             <div className="mt-5 flex items-center justify-between gap-3">
               <Link
                 href="/"
                 className="text-sm font-medium text-gray-500 underline underline-offset-4 hover:text-black"
               >
-                Back to home
+                กลับหน้าแรก
               </Link>
 
-              <p className="text-xs text-gray-400">10-minute idle timeout</p>
+              <p className="text-xs text-gray-400">หมดเวลาเมื่อไม่ใช้งาน 10 นาที</p>
             </div>
-          </div>
+          </form>
         </div>
       </section>
     </main>

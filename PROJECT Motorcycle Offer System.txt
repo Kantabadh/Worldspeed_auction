@@ -1,0 +1,191 @@
+PROJECT: Motorcycle Offer System
+
+Goal:
+Build a web app for a motorcycle auction / sealed-offer workflow. Merchants submit one-time offers for motorcycle lots. Admin/owner can manage lots, merchants, offers, approvals, and results.
+
+Tech Stack:
+- Next.js App Router
+- TypeScript / TSX
+- Tailwind CSS
+- Supabase database, auth, and storage
+- Vercel deployment
+
+Main public routes:
+- / = landing page
+- /merchant-signup = merchant registration
+- /merchant-pending = pending approval page after merchant signs up
+- /merchant-login = merchant login using phone number + merchant code
+- /merchant = merchant offer page
+- /summary = offer review page
+- /success = submission success page
+- /staff-login = shared login for admin and owner
+- /admin = admin dashboard
+- /admin/merchants = merchant account management
+- /admin/motorcycles = motorcycle lot management
+- /admin/lots/[id] = lot-specific offer ranking
+- /admin/staff = owner-only admin/staff access management
+
+Current features:
+- Merchant registration with pending approval
+- Pending page shows username = phone number and login code = merchant code
+- Admin can approve or reject merchant registrations
+- Admin dashboard shows pending merchant request count and red badge
+- Merchant login only works if approval_status = approved and active = true
+- Merchant can submit offers once
+- Merchant can see submitted prices after submitting
+- Admin can Allow Edit / Lock Edit for individual merchant submissions
+- If Allow Edit is enabled, merchant can update submitted offers
+- Summary page replaces old offers with updated offers and locks edit again
+- Admin can clear one merchant’s submission without resetting the whole auction
+- Owner-only reset auction data with owner password + exact phrase RESET AUCTION
+- Admin dashboard Total Value = sum of highest offer per lot only
+- Admin can view all offers lot-by-lot ranked highest to lowest
+- Admin can export highest offers CSV
+- Lot page can export lot-specific offers CSV
+- Merchant accounts can be starred / unstarred by admin
+- Starred merchant accounts appear at the top
+- Merchants can star motorcycle lots on the merchant page
+- Starred lots move to the top and are saved in localStorage
+- Multiple motorcycle photos per lot with gallery view
+- Staff/owner login uses one page: /staff-login
+- Role is classified by staff_profiles.role: owner or admin
+- Owner sees Owner Settings; admin does not
+- Owner Settings is /admin/staff
+
+Supabase tables:
+1. merchant_accounts
+Important columns:
+- id
+- merchant_code
+- merchant_name
+- shop_name
+- phone
+- active
+- created_at
+- can_edit_submission
+- approval_status
+- is_starred
+
+Purpose:
+Controls merchant login, approval, edit permission, and starred important merchants.
+
+2. merchants
+Important columns:
+- id
+- name
+- shop_name
+- phone
+- created_at
+- merchant_account_id
+
+Purpose:
+Represents one merchant’s submitted auction entry.
+
+3. motorcycles
+Important columns:
+- id
+- lot_number
+- motorcycle_name
+- created_at
+- active
+- image_url
+
+Purpose:
+Stores motorcycle lots.
+
+4. motorcycle_photos
+Important columns:
+- id
+- motorcycle_id
+- image_url
+- created_at
+
+Purpose:
+Stores multiple photos per motorcycle lot.
+
+5. offers
+Important columns:
+- id
+- merchant_id
+- motorcycle_id
+- offer_price
+- submitted_at
+
+Purpose:
+Stores submitted offer prices.
+
+6. auction_settings
+Important columns:
+- id
+- auction_name
+- status
+- created_at
+
+Purpose:
+Controls open/closed auction status.
+
+7. staff_profiles
+Important columns:
+- id
+- email
+- role
+- active
+- created_at
+
+Purpose:
+Controls admin/owner role access.
+
+Important SQL migrations already added:
+- merchant_accounts.can_edit_submission boolean default false
+- merchant_accounts.approval_status text default approved
+- merchant_accounts.is_starred boolean default false
+- merchants.merchant_account_id references merchant_accounts(id)
+- motorcycles.active boolean default true
+- motorcycles.image_url text
+
+Current recommended database check SQL:
+
+select
+  id,
+  merchant_code,
+  merchant_name,
+  shop_name,
+  phone,
+  active,
+  approval_status,
+  can_edit_submission,
+  is_starred
+from merchant_accounts
+order by is_starred desc, created_at desc;
+
+Important warning:
+Do not rerun the full setup SQL unless rebuilding a fresh database. For new features, only run small migration SQL like alter table add column if not exists.
+
+Current hosting setup:
+- Vercel hosts the website
+- Supabase stores database, auth, and photos
+- Do not buy a server computer
+- Recommended real-use budget: Supabase Pro first, Vercel Hobby unless traffic/features require Vercel Pro
+
+Cost estimate:
+- Testing: $0/month
+- Real small auction: around $25/month for Supabase Pro + Vercel Hobby
+- More professional setup: around $45/month for Supabase Pro + Vercel Pro
+
+Known limitations:
+- Security/RLS is still prototype-level
+- Merchant code is convenient but not as secure as real password/OTP
+- No real push/email/LINE notification yet, only in-app pending request badge
+- Reset deletes offer records instead of archiving auction rounds
+- No multi-auction history yet
+- Merchant starred lots are saved in localStorage, not database
+- No audit log for admin actions
+- UI needs full testing across mobile Safari, Android Chrome, desktop Chrome/Edge
+
+Next recommended upgrades:
+1. Fix Tailwind/local styling stability if raw HTML appears
+2. Add auction rounds/history instead of deleting old data
+3. Add audit logs for approve/reject/reset/clear/edit actions
+4. Store merchant starred lots in Supabase per merchant
+5. Add real notifications, maybe email or LINE notify
+6. Improve RLS/security with server-side API routes

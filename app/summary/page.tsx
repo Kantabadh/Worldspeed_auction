@@ -23,6 +23,7 @@ type DraftSubmission = {
   isEditingSubmission?: boolean;
   submittedMerchantId?: number | null;
   merchantAccountId?: number | null;
+  editableLotIds?: number[];
 };
 
 type MerchantSession = {
@@ -34,10 +35,18 @@ type MerchantSession = {
   expiresAt?: number;
 };
 
+type LotEditPermission = {
+  motorcycle_id: number;
+  can_edit: boolean;
+};
+
 export default function SummaryPage() {
   const [draft, setDraft] = useState<DraftSubmission | null>(null);
   const [merchantSession, setMerchantSession] =
     useState<MerchantSession | null>(null);
+
+  const [acceptedSubmitPolicy, setAcceptedSubmitPolicy] = useState(false);
+  const [showSubmitPolicy, setShowSubmitPolicy] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -58,23 +67,49 @@ export default function SummaryPage() {
   async function confirmSubmit() {
     if (!draft) return;
 
+    if (!acceptedSubmitPolicy) {
+      setErrorMessage("กรุณายืนยันเงื่อนไขก่อนส่งราคา");
+      return;
+    }
+
     const accountId =
       draft.merchantAccountId || merchantSession?.merchantAccountId;
 
     if (!accountId) {
-      setErrorMessage("Merchant login session not found. Please log in again.");
+      setErrorMessage("ไม่พบข้อมูลเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่");
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage("");
 
-    const offersToInsert = draft.offers.map((offer) => ({
+    const offersToSave = draft.offers.map((offer) => ({
       motorcycle_id: offer.motorcycle_id,
       offer_price: Number(offer.price),
     }));
 
     if (draft.isEditingSubmission && draft.submittedMerchantId) {
+      const editableLotIds = draft.editableLotIds || [];
+      const submittedMotorcycleIds = offersToSave.map(
+        (offer) => offer.motorcycle_id
+      );
+
+      if (submittedMotorcycleIds.length === 0) {
+        setErrorMessage("ไม่พบ Lot ที่ต้องการแก้ไข");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const notAllowedLots = submittedMotorcycleIds.filter(
+        (motorcycleId) => !editableLotIds.includes(motorcycleId)
+      );
+
+      if (notAllowedLots.length > 0) {
+        setErrorMessage("มีบาง Lot ที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่");
+        setIsSubmitting(false);
+        return;
+      }
+
       const { data: merchantRows, error: merchantCheckError } = await supabase
         .from("merchants")
         .select("id, merchant_account_id")
@@ -89,63 +124,85 @@ export default function SummaryPage() {
       }
 
       if (!merchantRows || merchantRows.length === 0) {
+        setErrorMessage("ตรวจสอบรายการเดิมไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const { data: permissionData, error: permissionError } = await supabase
+        .from("merchant_lot_edit_permissions")
+        .select("motorcycle_id, can_edit")
+        .eq("merchant_account_id", accountId)
+        .eq("can_edit", true)
+        .in("motorcycle_id", submittedMotorcycleIds);
+
+      if (permissionError) {
+        setErrorMessage(permissionError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const allowedPermissionIds = (
+        (permissionData as LotEditPermission[] | null) || []
+      ).map((permission) => permission.motorcycle_id);
+
+      const missingPermissionIds = submittedMotorcycleIds.filter(
+        (motorcycleId) => !allowedPermissionIds.includes(motorcycleId)
+      );
+
+      if (missingPermissionIds.length > 0) {
         setErrorMessage(
-          "Could not verify your existing submission. Please log in again."
+          "สิทธิ์แก้ไข Lot นี้หมดแล้วหรือไม่ได้รับอนุญาต กรุณาติดต่อผู้ดูแล"
         );
         setIsSubmitting(false);
         return;
       }
 
-      const { error: deleteOldOffersError } = await supabase
-        .from("offers")
-        .delete()
-        .eq("merchant_id", draft.submittedMerchantId);
+      for (const offer of offersToSave) {
+        const { error: updateOfferError } = await supabase
+          .from("offers")
+          .update({
+            offer_price: offer.offer_price,
+          })
+          .eq("merchant_id", draft.submittedMerchantId)
+          .eq("motorcycle_id", offer.motorcycle_id);
 
-      if (deleteOldOffersError) {
-        setErrorMessage(deleteOldOffersError.message);
+        if (updateOfferError) {
+          setErrorMessage(updateOfferError.message);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const { error: lockLotError } = await supabase
+        .from("merchant_lot_edit_permissions")
+        .update({
+          can_edit: false,
+        })
+        .eq("merchant_account_id", accountId)
+        .in("motorcycle_id", submittedMotorcycleIds);
+
+      if (lockLotError) {
+        setErrorMessage(lockLotError.message);
         setIsSubmitting(false);
         return;
       }
 
-      const updatedOffersToInsert = offersToInsert.map((offer) => ({
-        ...offer,
-        merchant_id: draft.submittedMerchantId,
-      }));
-
-      const { error: insertUpdatedOffersError } = await supabase
-        .from("offers")
-        .insert(updatedOffersToInsert);
-
-      if (insertUpdatedOffersError) {
-        setErrorMessage(insertUpdatedOffersError.message);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const { error: lockEditError } = await supabase
+      await supabase
         .from("merchant_accounts")
         .update({
           can_edit_submission: false,
         })
         .eq("id", accountId);
 
-      if (lockEditError) {
-        setErrorMessage(lockEditError.message);
-        setIsSubmitting(false);
-        return;
-      }
-
       const finalSubmission = {
         ...draft,
-        submittedAt: new Date().toLocaleString(),
+        submittedAt: new Date().toLocaleString("th-TH"),
         receiptNo: "S-" + Date.now(),
         isUpdatedSubmission: true,
       };
 
-      localStorage.setItem(
-        "latestSubmission",
-        JSON.stringify(finalSubmission)
-      );
+      localStorage.setItem("latestSubmission", JSON.stringify(finalSubmission));
 
       localStorage.removeItem("draftSubmission");
       localStorage.removeItem("merchantPageDraft");
@@ -170,7 +227,7 @@ export default function SummaryPage() {
 
     if (existingMerchant && existingMerchant.length > 0) {
       setErrorMessage(
-        "This merchant account has already submitted offers for this auction. Please contact auction staff if you need changes."
+        "บัญชีร้านค้านี้ส่งราคาไปแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแล"
       );
       setIsSubmitting(false);
       return;
@@ -194,14 +251,14 @@ export default function SummaryPage() {
     }
 
     if (!merchantData || merchantData.length === 0) {
-      setErrorMessage("Could not create merchant submission record.");
+      setErrorMessage("สร้างรายการเสนอราคาไม่สำเร็จ");
       setIsSubmitting(false);
       return;
     }
 
     const newMerchantId = merchantData[0].id;
 
-    const newOffersToInsert = offersToInsert.map((offer) => ({
+    const newOffersToInsert = offersToSave.map((offer) => ({
       ...offer,
       merchant_id: newMerchantId,
     }));
@@ -218,7 +275,7 @@ export default function SummaryPage() {
 
     const finalSubmission = {
       ...draft,
-      submittedAt: new Date().toLocaleString(),
+      submittedAt: new Date().toLocaleString("th-TH"),
       receiptNo: "S-" + Date.now(),
       isUpdatedSubmission: false,
     };
@@ -239,18 +296,19 @@ export default function SummaryPage() {
           <BackButton />
 
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-            <h1 className="text-2xl font-bold text-gray-900">No Offer Found</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              ไม่พบรายการราคา
+            </h1>
 
             <p className="mt-3 text-gray-600">
-              No offer data was found. Please return to the merchant page and
-              enter your offers again.
+              กรุณากลับไปหน้าเสนอราคา แล้วใส่ราคาอีกครั้ง
             </p>
 
             <a
               href="/merchant"
               className="mt-6 inline-block rounded-2xl bg-black px-5 py-3 font-semibold text-white"
             >
-              Back to Merchant Page
+              กลับไปหน้าเสนอราคา
             </a>
           </div>
         </section>
@@ -263,60 +321,55 @@ export default function SummaryPage() {
   }, 0);
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-28">
+    <main className="min-h-screen bg-gray-50 pb-32">
       <section className="mx-auto max-w-4xl px-4 py-6">
         <BackButton />
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-            Final Review
-          </p>
+          <p className="text-sm font-medium text-gray-500">ตรวจสอบก่อนส่ง</p>
 
           <h1 className="mt-1 text-2xl font-bold text-gray-900">
-            {draft.isEditingSubmission
-              ? "Review Updated Offers"
-              : "Review Your Offers"}
+            {draft.isEditingSubmission ? "ตรวจสอบราคาที่แก้ไข" : "ตรวจสอบราคา"}
           </h1>
 
           <p className="mt-2 text-sm text-gray-600">
             {draft.isEditingSubmission
-              ? "Please check your updated offers carefully. After submitting, editing will be locked again."
-              : "Please check carefully before final submission. After submitting, your offers will be saved to the auction system."}
+              ? "หน้านี้แสดงเฉพาะ Lot ที่ได้รับอนุญาตให้แก้ไข"
+              : "กรุณาตรวจสอบราคาให้ถูกต้องก่อนกดยืนยัน"}
           </p>
         </div>
 
         {errorMessage && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-            <p className="font-semibold">Submission Blocked</p>
+            <p className="font-semibold">ส่งราคาไม่ได้</p>
             <p className="text-sm">{errorMessage}</p>
           </div>
         )}
 
         {draft.isEditingSubmission && (
           <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
-            <p className="font-semibold">Editing Existing Submission</p>
+            <p className="font-semibold">แก้ไขเฉพาะ Lot ที่ได้รับอนุญาต</p>
             <p className="text-sm">
-              This will replace your previous submitted offers. After
-              confirmation, editing will be locked again.
+              เมื่อยืนยันแล้ว ระบบจะบันทึกราคาใหม่เฉพาะ Lot นี้ และล็อกการแก้ไขอีกครั้ง
             </p>
           </div>
         )}
 
         <section className="mt-5 grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Merchant</p>
+            <p className="text-sm font-medium text-gray-500">ร้านค้า</p>
+            <p className="mt-2 font-bold text-gray-900">{draft.shopName}</p>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm font-medium text-gray-500">ผู้ติดต่อ</p>
             <p className="mt-2 font-bold text-gray-900">
               {draft.merchantName}
             </p>
           </div>
 
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Shop</p>
-            <p className="mt-2 font-bold text-gray-900">{draft.shopName}</p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Phone</p>
+            <p className="text-sm font-medium text-gray-500">โทร</p>
             <p className="mt-2 font-bold text-gray-900">{draft.phone}</p>
           </div>
         </section>
@@ -325,16 +378,16 @@ export default function SummaryPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
-                {draft.isEditingSubmission ? "Updated Offers" : "Your Offers"}
+                {draft.isEditingSubmission ? "รายการที่แก้ไข" : "รายการที่จะส่ง"}
               </h2>
 
               <p className="mt-1 text-sm text-gray-600">
-                {draft.offers.length} offer(s) ready to submit.
+                ทั้งหมด {draft.offers.length} รายการ
               </p>
             </div>
 
             <div className="rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
-              Total {total.toLocaleString()} baht
+              รวม {total.toLocaleString()} บาท
             </div>
           </div>
 
@@ -356,12 +409,36 @@ export default function SummaryPage() {
                   </div>
 
                   <p className="text-lg font-bold text-green-700">
-                    {Number(offer.price).toLocaleString()} baht
+                    {Number(offer.price).toLocaleString()} บาท
                   </p>
                 </div>
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="mt-6 rounded-3xl border bg-white p-5 shadow-sm">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={acceptedSubmitPolicy}
+              onChange={(e) => setAcceptedSubmitPolicy(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+
+            <span className="text-sm leading-6 text-gray-700">
+              ข้าพเจ้ายืนยันว่าได้ตรวจสอบรายการรถและราคาเสนอเรียบร้อยแล้ว
+              และยอมรับว่าราคาที่กดยืนยันเป็นราคาที่ส่งผ่านระบบ
+            </span>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => setShowSubmitPolicy(true)}
+            className="mt-3 text-sm font-semibold text-gray-900 underline underline-offset-4"
+          >
+            อ่านเงื่อนไขการส่งราคา
+          </button>
         </section>
       </section>
 
@@ -371,7 +448,7 @@ export default function SummaryPage() {
             href="/merchant"
             className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
           >
-            Back to Edit
+            กลับไปแก้ไข
           </a>
 
           <button
@@ -380,13 +457,86 @@ export default function SummaryPage() {
             className="rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
           >
             {isSubmitting
-              ? "Submitting..."
+              ? "กำลังส่ง..."
               : draft.isEditingSubmission
-              ? "Confirm Updated Offers"
-              : "Confirm Submit"}
+              ? "ยืนยันราคาใหม่"
+              : "ยืนยันส่งราคา"}
           </button>
         </div>
       </div>
+
+      {showSubmitPolicy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  เงื่อนไขการส่งราคา
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  กรุณาอ่านก่อนกดยืนยัน
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowSubmitPolicy(false)}
+                className="rounded-full bg-gray-100 px-3 py-1 text-xl font-bold text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4 text-sm leading-7 text-gray-700">
+              <p>
+                1. ผู้ใช้งานต้องตรวจสอบรายการรถ รายละเอียดรถ และราคาให้ถูกต้องก่อนกดยืนยัน
+              </p>
+
+              <p>
+                2. เมื่อกดยืนยัน ระบบจะบันทึกราคาตามที่แสดงในหน้านี้
+              </p>
+
+              <p>
+                3. หลังส่งราคาแล้ว อาจไม่สามารถแก้ไขได้ เว้นแต่ผู้ดูแลระบบเปิดสิทธิ์ให้แก้ไข
+              </p>
+
+              <p>
+                4. บริษัทมีสิทธิ์ตรวจสอบ ยกเลิก หรือปฏิเสธราคา หากพบข้อผิดพลาด การใช้งานผิดปกติ หรือเหตุจำเป็นทางธุรกิจ
+              </p>
+
+              <p>
+                5. หากมีผู้เสนอราคาสูงสุดเท่ากัน บริษัทจะเป็นผู้พิจารณาขั้นตอนต่อไป
+              </p>
+
+              <p>
+                6. การแสดงราคาสูงสุดในระบบไม่ได้หมายความว่าการซื้อขายเสร็จสมบูรณ์ทันที
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAcceptedSubmitPolicy(true);
+                  setShowSubmitPolicy(false);
+                }}
+                className="rounded-2xl bg-black px-5 py-3 font-semibold text-white"
+              >
+                ยอมรับ
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSubmitPolicy(false)}
+                className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -38,7 +38,7 @@ export default function AdminStaffPage() {
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
     if (userError || !userData.user) {
-      setErrorMessage("Staff login not found.");
+      setErrorMessage("ไม่พบข้อมูลเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่");
       setIsLoading(false);
       return;
     }
@@ -54,7 +54,7 @@ export default function AdminStaffPage() {
       !currentProfile ||
       currentProfile.length === 0
     ) {
-      setErrorMessage("Current staff profile not found.");
+      setErrorMessage("ไม่พบข้อมูลผู้ดูแลระบบของบัญชีนี้");
       setIsLoading(false);
       return;
     }
@@ -63,7 +63,7 @@ export default function AdminStaffPage() {
     setCurrentStaff(currentProfileData);
 
     if (currentProfileData.role !== "owner") {
-      setErrorMessage("Owner access only.");
+      setErrorMessage("หน้านี้สำหรับ Owner เท่านั้น");
       setIsLoading(false);
       return;
     }
@@ -85,7 +85,7 @@ export default function AdminStaffPage() {
 
   async function addStaffProfile() {
     if (!newStaffId || !newStaffEmail || !newStaffRole) {
-      alert("Please fill Auth User UID, email, and role.");
+      alert("กรุณากรอก UID, อีเมล และสิทธิ์ผู้ใช้งาน");
       return;
     }
 
@@ -126,12 +126,12 @@ export default function AdminStaffPage() {
 
   async function saveEdit(staff: StaffProfile) {
     if (!editEmail || !editRole) {
-      alert("Please fill email and role.");
+      alert("กรุณากรอกอีเมลและสิทธิ์ผู้ใช้งาน");
       return;
     }
 
     if (currentStaff?.id === staff.id && editRole !== "owner") {
-      alert("You cannot remove owner role from your own account.");
+      alert("ไม่สามารถถอดสิทธิ์ Owner ของบัญชีตัวเองได้");
       return;
     }
 
@@ -156,7 +156,7 @@ export default function AdminStaffPage() {
 
   async function toggleStaffActive(staff: StaffProfile) {
     if (currentStaff?.id === staff.id) {
-      alert("You cannot deactivate your own account.");
+      alert("ไม่สามารถปิดใช้งานบัญชีตัวเองได้");
       return;
     }
 
@@ -198,16 +198,15 @@ export default function AdminStaffPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Owner Settings
+                Owner
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                Admin & Staff Access
+                จัดการผู้ดูแลระบบ
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Owner-only page for managing admin accounts, roles, and access
-                status.
+                เพิ่มบัญชีผู้ดูแล แก้ไขสิทธิ์ และเปิด/ปิดการใช้งาน
               </p>
             </div>
 
@@ -215,49 +214,48 @@ export default function AdminStaffPage() {
               onClick={loadStaffProfiles}
               className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
             >
-              Refresh
+              โหลดใหม่
             </button>
           </div>
 
           {errorMessage && (
             <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-              <p className="font-semibold">Notice</p>
+              <p className="font-semibold">แจ้งเตือน</p>
               <p className="text-sm">{errorMessage}</p>
             </div>
           )}
 
           <section className="mt-5 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Total Accounts</p>
+              <p className="text-sm font-medium text-gray-500">บัญชีทั้งหมด</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {staffProfiles.length}
               </p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Active Accounts</p>
+              <p className="text-sm font-medium text-gray-500">ใช้งานอยู่</p>
               <p className="mt-2 text-3xl font-bold text-green-600">
                 {activeCount}
               </p>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Roles</p>
+              <p className="text-sm font-medium text-gray-500">สิทธิ์</p>
               <p className="mt-2 text-lg font-bold text-gray-900">
-                Owners: {ownerCount}
+                Owner: {ownerCount}
               </p>
-              <p className="text-sm text-gray-600">Admins: {adminCount}</p>
+              <p className="text-sm text-gray-600">Admin: {adminCount}</p>
             </div>
           </section>
 
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
-              Add Admin Profile
+              เพิ่มผู้ดูแลระบบ
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              First create the staff user in Supabase Authentication, then copy
-              the Auth User UID here.
+              ต้องสร้างบัญชีใน Supabase Authentication ก่อน แล้วนำ UID มาใส่ที่นี่
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -276,7 +274,7 @@ export default function AdminStaffPage() {
 
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  Staff Email
+                  อีเมล
                 </label>
 
                 <input
@@ -289,7 +287,9 @@ export default function AdminStaffPage() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Role</label>
+                <label className="text-sm font-medium text-gray-700">
+                  สิทธิ์
+                </label>
 
                 <select
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
@@ -307,29 +307,28 @@ export default function AdminStaffPage() {
               disabled={isAdding}
               className="mt-5 rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
             >
-              {isAdding ? "Adding..." : "Add Admin Profile"}
+              {isAdding ? "กำลังเพิ่ม..." : "เพิ่มผู้ดูแล"}
             </button>
           </section>
 
           <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
-              Admin Account List
+              รายชื่อผู้ดูแลระบบ
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Staff login accounts are created in Supabase Auth. This page
-              controls whether those accounts can access admin pages.
+              ควบคุมสิทธิ์การเข้าหน้าจัดการระบบ
             </p>
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">Loading admin profiles...</p>
+                <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
               </div>
             )}
 
             {!isLoading && staffProfiles.length === 0 && !errorMessage && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="text-gray-600">No admin profiles found.</p>
+                <p className="text-gray-600">ยังไม่มีบัญชีผู้ดูแล</p>
               </div>
             )}
 
@@ -355,17 +354,18 @@ export default function AdminStaffPage() {
                         </p>
 
                         <p className="mt-1 text-sm text-gray-600">
-                          Created: {new Date(staff.created_at).toLocaleString()}
+                          สร้างเมื่อ:{" "}
+                          {new Date(staff.created_at).toLocaleString("th-TH")}
                         </p>
                       </div>
 
                       {staff.active ? (
                         <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                          Active
+                          ใช้งาน
                         </span>
                       ) : (
                         <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                          Inactive
+                          ปิดใช้งาน
                         </span>
                       )}
                     </div>
@@ -373,13 +373,13 @@ export default function AdminStaffPage() {
                     {editingId === staff.id ? (
                       <div className="mt-5 rounded-2xl bg-gray-50 p-4">
                         <h4 className="font-semibold text-gray-900">
-                          Edit Admin Profile
+                          แก้ไขผู้ดูแล
                         </h4>
 
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
                           <div>
                             <label className="text-sm font-medium text-gray-700">
-                              Email
+                              อีเมล
                             </label>
 
                             <input
@@ -392,7 +392,7 @@ export default function AdminStaffPage() {
 
                           <div>
                             <label className="text-sm font-medium text-gray-700">
-                              Role
+                              สิทธิ์
                             </label>
 
                             <select
@@ -413,14 +413,14 @@ export default function AdminStaffPage() {
                             onClick={() => saveEdit(staff)}
                             className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
                           >
-                            Save
+                            บันทึก
                           </button>
 
                           <button
                             onClick={cancelEditing}
                             className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
                           >
-                            Cancel
+                            ยกเลิก
                           </button>
                         </div>
                       </div>
@@ -430,7 +430,7 @@ export default function AdminStaffPage() {
                           onClick={() => startEditing(staff)}
                           className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
                         >
-                          Edit
+                          แก้ไข
                         </button>
 
                         <button
@@ -442,12 +442,12 @@ export default function AdminStaffPage() {
                               : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700 disabled:bg-gray-400"
                           }
                         >
-                          {staff.active ? "Deactivate" : "Activate"}
+                          {staff.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                         </button>
 
                         {currentStaff?.id === staff.id && (
                           <span className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium text-gray-600">
-                            Current account
+                            บัญชีปัจจุบัน
                           </span>
                         )}
                       </div>
