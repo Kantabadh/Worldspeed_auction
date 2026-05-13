@@ -36,6 +36,37 @@ export default function SuccessPage() {
     window.location.href = "/merchant-login";
   }
 
+  function getSubmissionDateTime(submittedAt: string) {
+    const date = new Date(submittedAt);
+
+    if (Number.isNaN(date.getTime())) {
+      return {
+        dateText: submittedAt || "-",
+        timeText: "-",
+        fullText: submittedAt || "-",
+      };
+    }
+
+    const dateText = date.toLocaleDateString("th-TH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const timeText = date.toLocaleTimeString("th-TH", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    return {
+      dateText,
+      timeText,
+      fullText: `วันที่ ${dateText} เวลา ${timeText}`,
+    };
+  }
+
   if (!submission) {
     return (
       <main className="min-h-screen bg-gray-50 px-4 py-8">
@@ -62,6 +93,8 @@ export default function SuccessPage() {
       </main>
     );
   }
+
+  const submittedDateTime = getSubmissionDateTime(submission.submittedAt);
 
   const total = submission.offers.reduce((sum, offer) => {
     return sum + Number(offer.price || 0);
@@ -139,6 +172,10 @@ export default function SuccessPage() {
               <p className="mt-2 text-sm text-green-50">
                 ระบบบันทึกราคาของร้านแล้ว
               </p>
+
+              <p className="mt-3 rounded-2xl bg-white/15 px-4 py-3 text-sm font-semibold text-white">
+                ส่งราคาเมื่อ: {submittedDateTime.fullText}
+              </p>
             </div>
 
             <div className="p-6">
@@ -167,10 +204,19 @@ export default function SuccessPage() {
 
                   <div>
                     <p className="text-sm font-medium text-gray-500 print:text-black">
-                      เวลาส่ง
+                      วันที่ส่งราคา
                     </p>
                     <p className="mt-1 font-bold text-gray-900 print:text-black">
-                      {submission.submittedAt}
+                      {submittedDateTime.dateText}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 print:text-black">
+                      เวลาส่งราคา
+                    </p>
+                    <p className="mt-1 font-bold text-gray-900 print:text-black">
+                      {submittedDateTime.timeText}
                     </p>
                   </div>
 
