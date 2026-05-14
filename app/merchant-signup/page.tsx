@@ -12,6 +12,45 @@ function isValidPhone(value: string) {
   return /^\d{9,10}$/.test(value);
 }
 
+function EyeIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-7 w-7"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"
+      />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-7 w-7"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 3l18 18M10.58 10.58A2 2 0 0012 14a2 2 0 001.42-.58M9.88 4.24A9.77 9.77 0 0112 4c5 0 9 4.5 10 8a11.2 11.2 0 01-2.1 3.7M6.1 6.1C4.1 7.4 2.7 9.5 2 12c1 3.5 5 8 10 8a9.7 9.7 0 004.1-.9"
+      />
+    </svg>
+  );
+}
+
 export default function MerchantSignupPage() {
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
@@ -20,6 +59,7 @@ export default function MerchantSignupPage() {
 
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -28,9 +68,14 @@ export default function MerchantSignupPage() {
     const cleanMerchantName = merchantName.trim();
     const cleanShopName = shopName.trim();
     const cleanPhoneNumber = cleanPhone(phone);
-    const cleanCode = merchantCode.trim().toUpperCase();
+    const cleanPassword = merchantCode.trim();
 
-    if (!cleanMerchantName || !cleanShopName || !cleanPhoneNumber || !cleanCode) {
+    if (
+      !cleanMerchantName ||
+      !cleanShopName ||
+      !cleanPhoneNumber ||
+      !cleanPassword
+    ) {
       setErrorMessage("กรุณากรอกข้อมูลให้ครบ");
       return;
     }
@@ -40,8 +85,8 @@ export default function MerchantSignupPage() {
       return;
     }
 
-    if (cleanCode.length < 4) {
-      setErrorMessage("รหัสร้านค้าต้องมีอย่างน้อย 4 ตัวอักษร");
+    if (cleanPassword.length < 4) {
+      setErrorMessage("รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร");
       return;
     }
 
@@ -55,8 +100,8 @@ export default function MerchantSignupPage() {
 
     const { data: existingAccounts, error: existingError } = await supabase
       .from("merchant_accounts")
-      .select("id, merchant_code, phone")
-      .or(`phone.eq.${cleanPhoneNumber},merchant_code.eq.${cleanCode}`)
+      .select("id, phone")
+      .eq("phone", cleanPhoneNumber)
       .limit(1);
 
     if (existingError) {
@@ -66,15 +111,13 @@ export default function MerchantSignupPage() {
     }
 
     if (existingAccounts && existingAccounts.length > 0) {
-      setErrorMessage(
-        "เบอร์โทรหรือรหัสร้านค้านี้ถูกใช้แล้ว กรุณาติดต่อผู้ดูแล"
-      );
+      setErrorMessage("เบอร์โทรนี้ถูกใช้แล้ว กรุณาติดต่อผู้ดูแล");
       setIsSubmitting(false);
       return;
     }
 
     const { error } = await supabase.from("merchant_accounts").insert({
-      merchant_code: cleanCode,
+      merchant_code: cleanPassword,
       merchant_name: cleanMerchantName,
       shop_name: cleanShopName,
       phone: cleanPhoneNumber,
@@ -95,7 +138,7 @@ export default function MerchantSignupPage() {
         merchantName: cleanMerchantName,
         shopName: cleanShopName,
         phone: cleanPhoneNumber,
-        merchantCode: cleanCode,
+        merchantCode: cleanPassword,
       })
     );
 
@@ -136,7 +179,7 @@ export default function MerchantSignupPage() {
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
                 placeholder="เช่น สมชาย"
                 value={merchantName}
-                onChange={(e) => setMerchantName(e.target.value)}
+                onChange={(event) => setMerchantName(event.target.value)}
               />
             </div>
 
@@ -149,7 +192,7 @@ export default function MerchantSignupPage() {
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
                 placeholder="เช่น สมชายมอเตอร์"
                 value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
+                onChange={(event) => setShopName(event.target.value)}
               />
             </div>
 
@@ -163,7 +206,7 @@ export default function MerchantSignupPage() {
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
                 placeholder="9 หรือ 10 หลัก"
                 value={phone}
-                onChange={(e) => setPhone(cleanPhone(e.target.value))}
+                onChange={(event) => setPhone(cleanPhone(event.target.value))}
               />
 
               <p className="mt-1 text-xs text-gray-500">
@@ -173,18 +216,30 @@ export default function MerchantSignupPage() {
 
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
-                รหัสร้านค้า
+                รหัสผ่าน
               </label>
 
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 text-lg uppercase outline-none focus:ring-2 focus:ring-black"
-                placeholder="เช่น M001"
-                value={merchantCode}
-                onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
-              />
+              <div className="relative mt-2">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="w-full rounded-2xl border px-4 py-3 pr-14 text-lg outline-none focus:ring-2 focus:ring-black"
+                  placeholder="ตั้งรหัสผ่าน"
+                  value={merchantCode}
+                  onChange={(event) => setMerchantCode(event.target.value)}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                  aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                >
+                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+              </div>
 
               <p className="mt-2 text-xs text-gray-500">
-                ใช้รหัสนี้สำหรับเข้าสู่ระบบ
+                ใช้รหัสผ่านนี้สำหรับเข้าสู่ระบบ รหัสผ่านสามารถซ้ำกับร้านค้าอื่นได้
               </p>
             </div>
 
@@ -193,7 +248,9 @@ export default function MerchantSignupPage() {
                 <input
                   type="checkbox"
                   checked={acceptedPolicy}
-                  onChange={(e) => setAcceptedPolicy(e.target.checked)}
+                  onChange={(event) =>
+                    setAcceptedPolicy(event.target.checked)
+                  }
                   className="mt-1 h-4 w-4"
                 />
 
@@ -248,7 +305,7 @@ export default function MerchantSignupPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  กรุณาอ่านก่อนสมัครร้านค้า
+                  กรุณาอ่านก่อนสมัครใช้งาน
                 </p>
               </div>
 
@@ -263,43 +320,37 @@ export default function MerchantSignupPage() {
 
             <div className="mt-5 space-y-4 text-sm leading-7 text-gray-700">
               <p>
-                1. ผู้สมัครต้องกรอกข้อมูลจริงและถูกต้อง เช่น ชื่อร้าน
-                ชื่อผู้ติดต่อ และเบอร์โทร
+                1. ผู้สมัครต้องกรอกข้อมูลจริง และใช้เบอร์โทรที่สามารถติดต่อได้
               </p>
 
               <p>
-                2. ระบบจะบันทึกข้อมูลร้านค้า เบอร์โทร รายการรถ และราคาที่เสนอ
-                เพื่อใช้ในการจัดการเสนอราคาและติดต่อกลับ
+                2. ระบบจะบันทึกชื่อร้านค้า ชื่อผู้ติดต่อ เบอร์โทร และรหัสผ่าน
+                เพื่อใช้สำหรับเข้าสู่ระบบเสนอราคา
               </p>
 
               <p>
-                3. ผู้ใช้งานต้องรักษารหัสร้านค้าของตนเอง
-                หากมีผู้อื่นใช้รหัสร้านค้า ระบบอาจถือว่าเป็นการใช้งานจากร้านค้านั้น
+                3. หลังสมัครแล้ว บัญชีจะยังไม่สามารถใช้งานได้ทันที
+                ต้องรอผู้ดูแลระบบตรวจสอบและอนุมัติก่อน
               </p>
 
               <p>
-                4. ก่อนส่งราคา ผู้ใช้งานต้องตรวจสอบรายการรถและราคาให้ถูกต้อง
-                เมื่อกดยืนยัน ระบบจะบันทึกราคาตามที่แสดง
+                4. ผู้ใช้งานต้องรักษารหัสผ่านของตนเอง
+                และไม่ควรให้ผู้อื่นใช้งานบัญชีแทน
               </p>
 
               <p>
-                5. บริษัทมีสิทธิ์ตรวจสอบ ยกเลิก หรือปฏิเสธราคา
-                หากพบข้อผิดพลาด การใช้งานผิดปกติ หรือเหตุจำเป็นทางธุรกิจ
+                5. เมื่อบัญชีได้รับอนุมัติ ร้านค้าสามารถเข้าสู่ระบบเพื่อดูรายการรถ
+                และส่งราคาผ่านระบบได้
               </p>
 
               <p>
-                6. หากมีผู้เสนอราคาสูงสุดเท่ากัน บริษัทจะเป็นผู้พิจารณาขั้นตอนต่อไป
-                และการแสดงราคาสูงสุดไม่ได้หมายความว่าการซื้อขายเสร็จสมบูรณ์ทันที
+                6. บริษัทมีสิทธิ์ปฏิเสธ ระงับ หรือปิดการใช้งานบัญชี
+                หากพบข้อมูลไม่ถูกต้องหรือมีการใช้งานผิดปกติ
               </p>
 
               <p>
-                7. ข้อมูลรถ รูปภาพ และรายละเอียดในระบบใช้เพื่อประกอบการเสนอราคา
-                ผู้ใช้งานควรตรวจสอบข้อมูลกับบริษัทอีกครั้งก่อนตัดสินใจซื้อ
-              </p>
-
-              <p>
-                8. บริษัทจะดูแลข้อมูลตามความเหมาะสม
-                แต่ระบบออนไลน์อาจมีความเสี่ยงจากเหตุขัดข้องหรือปัญหาทางเทคนิค
+                7. ข้อมูลที่กรอกในระบบจะถูกใช้เพื่อการจัดการเสนอราคา
+                การติดต่อกลับ และการตรวจสอบภายในบริษัท
               </p>
             </div>
 

@@ -54,12 +54,79 @@ type LotEditPermission = {
   can_edit: boolean;
 };
 
+type StaffProfile = {
+  id: string;
+  email: string;
+  role: string;
+  active: boolean;
+  expiresAt?: number;
+};
+
+type AuditLogInput = {
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  details?: Record<string, unknown>;
+};
+
 function cleanPhone(value: string) {
   return value.replace(/\D/g, "").slice(0, 10);
 }
 
 function isValidPhone(value: string) {
   return /^\d{9,10}$/.test(value);
+}
+
+function getSavedStaffProfile() {
+  const savedProfileText = localStorage.getItem("staffProfile");
+
+  if (!savedProfileText) return null;
+
+  try {
+    return JSON.parse(savedProfileText) as StaffProfile;
+  } catch {
+    return null;
+  }
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"
+      />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 3l18 18M10.58 10.58A2 2 0 0012 14a2 2 0 001.42-.58M9.88 4.24A9.77 9.77 0 0112 4c5 0 9 4.5 10 8a11.2 11.2 0 01-2.1 3.7M6.1 6.1C4.1 7.4 2.7 9.5 2 12c1 3.5 5 8 10 8a9.7 9.7 0 004.1-.9"
+      />
+    </svg>
+  );
 }
 
 export default function AdminMerchantsPage() {
@@ -69,6 +136,10 @@ export default function AdminMerchantsPage() {
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
   const [phone, setPhone] = useState("");
+
+  const [showMerchantPassword, setShowMerchantPassword] = useState(false);
+  const [showEditMerchantPassword, setShowEditMerchantPassword] =
+    useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editMerchantCode, setEditMerchantCode] = useState("");
@@ -89,6 +160,31 @@ export default function AdminMerchantsPage() {
         ? currentIds.filter((id) => id !== merchantId)
         : [...currentIds, merchantId]
     );
+  }
+
+  async function createAuditLog({
+    action,
+    targetType,
+    targetId,
+    targetName,
+    details,
+  }: AuditLogInput) {
+    const staffProfile = getSavedStaffProfile();
+
+    const { error } = await supabase.from("admin_audit_logs").insert({
+      staff_id: staffProfile?.id || null,
+      staff_email: staffProfile?.email || null,
+      staff_role: staffProfile?.role || null,
+      action,
+      target_type: targetType || null,
+      target_id: targetId || null,
+      target_name: targetName || null,
+      details: details || {},
+    });
+
+    if (error) {
+      console.error("Audit log error:", error.message);
+    }
   }
 
   async function loadMerchants() {
@@ -169,7 +265,7 @@ export default function AdminMerchantsPage() {
           currentLots.push({
             offer_id: offer.id,
             merchant_row_id: merchantRow.id,
-            motorcycle_id: offer.motorcycle_id,
+            motorcycle_id: Number(offer.motorcycle_id),
             lot_number: motorcycle?.lot_number || "-",
             motorcycle_name: motorcycle?.motorcycle_name || "-",
             offer_price: Number(offer.offer_price || 0),
@@ -207,9 +303,15 @@ export default function AdminMerchantsPage() {
 
   async function addMerchant() {
     const cleanedPhone = cleanPhone(phone);
+    const cleanPassword = merchantCode.trim();
 
-    if (!merchantCode || !merchantName || !shopName || !cleanedPhone) {
-      alert("กรุณากรอกรหัสร้านค้า ชื่อผู้ติดต่อ ชื่อร้าน และเบอร์โทร");
+    if (!cleanPassword || !merchantName || !shopName || !cleanedPhone) {
+      alert("กรุณากรอกรหัสผ่าน ชื่อผู้ติดต่อ ชื่อร้าน และเบอร์โทร");
+      return;
+    }
+
+    if (cleanPassword.length < 4) {
+      alert("รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร");
       return;
     }
 
@@ -221,8 +323,26 @@ export default function AdminMerchantsPage() {
     setIsAdding(true);
     setErrorMessage("");
 
+    const { data: existingAccounts, error: existingError } = await supabase
+      .from("merchant_accounts")
+      .select("id")
+      .eq("phone", cleanedPhone)
+      .limit(1);
+
+    if (existingError) {
+      setErrorMessage(existingError.message);
+      setIsAdding(false);
+      return;
+    }
+
+    if (existingAccounts && existingAccounts.length > 0) {
+      setErrorMessage("เบอร์โทรนี้ถูกใช้แล้ว กรุณาใช้เบอร์อื่น");
+      setIsAdding(false);
+      return;
+    }
+
     const { error } = await supabase.from("merchant_accounts").insert({
-      merchant_code: merchantCode.trim().toUpperCase(),
+      merchant_code: cleanPassword,
       merchant_name: merchantName.trim(),
       shop_name: shopName.trim(),
       phone: cleanedPhone,
@@ -242,12 +362,16 @@ export default function AdminMerchantsPage() {
     setMerchantName("");
     setShopName("");
     setPhone("");
+    setShowMerchantPassword(false);
     setIsAdding(false);
     loadMerchants();
   }
 
   async function approveMerchant(merchant: MerchantAccount) {
     setErrorMessage("");
+
+    const oldApprovalStatus = merchant.approval_status;
+    const oldActive = merchant.active;
 
     const { error } = await supabase
       .from("merchant_accounts")
@@ -262,6 +386,23 @@ export default function AdminMerchantsPage() {
       return;
     }
 
+    await createAuditLog({
+      action: "merchant_approved",
+      targetType: "merchant",
+      targetId: String(merchant.id),
+      targetName: merchant.shop_name,
+      details: {
+        merchant_account_id: merchant.id,
+        merchant_name: merchant.merchant_name,
+        shop_name: merchant.shop_name,
+        phone: merchant.phone,
+        old_approval_status: oldApprovalStatus,
+        new_approval_status: "approved",
+        old_active: oldActive,
+        new_active: true,
+      },
+    });
+
     loadMerchants();
   }
 
@@ -273,6 +414,9 @@ export default function AdminMerchantsPage() {
     if (!confirmReject) return;
 
     setErrorMessage("");
+
+    const oldApprovalStatus = merchant.approval_status;
+    const oldActive = merchant.active;
 
     const { error } = await supabase
       .from("merchant_accounts")
@@ -286,6 +430,23 @@ export default function AdminMerchantsPage() {
       setErrorMessage(error.message);
       return;
     }
+
+    await createAuditLog({
+      action: "merchant_rejected",
+      targetType: "merchant",
+      targetId: String(merchant.id),
+      targetName: merchant.shop_name,
+      details: {
+        merchant_account_id: merchant.id,
+        merchant_name: merchant.merchant_name,
+        shop_name: merchant.shop_name,
+        phone: merchant.phone,
+        old_approval_status: oldApprovalStatus,
+        new_approval_status: "rejected",
+        old_active: oldActive,
+        new_active: false,
+      },
+    });
 
     loadMerchants();
   }
@@ -314,6 +475,7 @@ export default function AdminMerchantsPage() {
     setEditMerchantName(merchant.merchant_name);
     setEditShopName(merchant.shop_name);
     setEditPhone(merchant.phone);
+    setShowEditMerchantPassword(false);
   }
 
   function cancelEditing() {
@@ -322,18 +484,20 @@ export default function AdminMerchantsPage() {
     setEditMerchantName("");
     setEditShopName("");
     setEditPhone("");
+    setShowEditMerchantPassword(false);
   }
 
   async function saveEdit(id: number) {
     const cleanedPhone = cleanPhone(editPhone);
+    const cleanPassword = editMerchantCode.trim();
 
-    if (
-      !editMerchantCode ||
-      !editMerchantName ||
-      !editShopName ||
-      !cleanedPhone
-    ) {
-      alert("กรุณากรอกรหัสร้านค้า ชื่อผู้ติดต่อ ชื่อร้าน และเบอร์โทร");
+    if (!cleanPassword || !editMerchantName || !editShopName || !cleanedPhone) {
+      alert("กรุณากรอกรหัสผ่าน ชื่อผู้ติดต่อ ชื่อร้าน และเบอร์โทร");
+      return;
+    }
+
+    if (cleanPassword.length < 4) {
+      alert("รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร");
       return;
     }
 
@@ -344,10 +508,27 @@ export default function AdminMerchantsPage() {
 
     setErrorMessage("");
 
+    const { data: existingAccounts, error: existingError } = await supabase
+      .from("merchant_accounts")
+      .select("id")
+      .eq("phone", cleanedPhone)
+      .neq("id", id)
+      .limit(1);
+
+    if (existingError) {
+      setErrorMessage(existingError.message);
+      return;
+    }
+
+    if (existingAccounts && existingAccounts.length > 0) {
+      setErrorMessage("เบอร์โทรนี้ถูกใช้แล้ว กรุณาใช้เบอร์อื่น");
+      return;
+    }
+
     const { error } = await supabase
       .from("merchant_accounts")
       .update({
-        merchant_code: editMerchantCode.trim().toUpperCase(),
+        merchant_code: cleanPassword,
         merchant_name: editMerchantName.trim(),
         shop_name: editShopName.trim(),
         phone: cleanedPhone,
@@ -413,6 +594,25 @@ export default function AdminMerchantsPage() {
         return;
       }
 
+      await createAuditLog({
+        action: "lot_edit_locked",
+        targetType: "lot",
+        targetId: `${merchant.id}-${lot.motorcycle_id}`,
+        targetName: `Lot ${lot.lot_number} • ${merchant.shop_name}`,
+        details: {
+          merchant_account_id: merchant.id,
+          merchant_name: merchant.merchant_name,
+          shop_name: merchant.shop_name,
+          phone: merchant.phone,
+          motorcycle_id: lot.motorcycle_id,
+          lot_number: lot.lot_number,
+          motorcycle_name: lot.motorcycle_name,
+          offer_price: lot.offer_price,
+          old_can_edit: true,
+          new_can_edit: false,
+        },
+      });
+
       setUpdatingLotKey(null);
       loadMerchants();
       return;
@@ -453,6 +653,25 @@ export default function AdminMerchantsPage() {
       })
       .eq("id", merchant.id);
 
+    await createAuditLog({
+      action: "lot_edit_unlocked",
+      targetType: "lot",
+      targetId: `${merchant.id}-${lot.motorcycle_id}`,
+      targetName: `Lot ${lot.lot_number} • ${merchant.shop_name}`,
+      details: {
+        merchant_account_id: merchant.id,
+        merchant_name: merchant.merchant_name,
+        shop_name: merchant.shop_name,
+        phone: merchant.phone,
+        motorcycle_id: lot.motorcycle_id,
+        lot_number: lot.lot_number,
+        motorcycle_name: lot.motorcycle_name,
+        offer_price: lot.offer_price,
+        old_can_edit: false,
+        new_can_edit: true,
+      },
+    });
+
     setUpdatingLotKey(null);
     loadMerchants();
   }
@@ -492,6 +711,12 @@ export default function AdminMerchantsPage() {
 
     setClearingId(merchant.id);
     setErrorMessage("");
+
+    const submittedLotsBeforeClear = merchant.submitted_lots || [];
+    const totalOfferValueBeforeClear = submittedLotsBeforeClear.reduce(
+      (sum, lot) => sum + Number(lot.offer_price || 0),
+      0
+    );
 
     const { data: submittedMerchantRows, error: merchantRowsError } =
       await supabase
@@ -547,6 +772,33 @@ export default function AdminMerchantsPage() {
         can_edit_submission: false,
       })
       .eq("id", merchant.id);
+
+    await createAuditLog({
+      action: "merchant_submission_cleared",
+      targetType: "merchant",
+      targetId: String(merchant.id),
+      targetName: merchant.shop_name,
+      details: {
+        merchant_account_id: merchant.id,
+        merchant_name: merchant.merchant_name,
+        shop_name: merchant.shop_name,
+        phone: merchant.phone,
+        submitted_merchant_row_ids: submittedMerchantIds,
+        cleared_lot_count: submittedLotsBeforeClear.length,
+        cleared_total_offer_value: totalOfferValueBeforeClear,
+        cleared_lots: submittedLotsBeforeClear.map((lot) => ({
+          motorcycle_id: lot.motorcycle_id,
+          lot_number: lot.lot_number,
+          motorcycle_name: lot.motorcycle_name,
+          offer_price: lot.offer_price,
+          was_editable: lot.can_edit_lot,
+        })),
+        deleted_offers: true,
+        deleted_merchant_submission_rows: true,
+        deleted_lot_edit_permissions: true,
+        can_edit_submission_after_clear: false,
+      },
+    });
 
     setClearingId(null);
     loadMerchants();
@@ -687,26 +939,47 @@ export default function AdminMerchantsPage() {
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  รหัสร้านค้า
+                  รหัสผ่าน
                 </label>
 
                 <div className="mt-2 flex gap-2">
-                  <input
-                    className="w-full rounded-2xl border p-3 uppercase outline-none focus:ring-2 focus:ring-black"
-                    placeholder="เช่น M001"
-                    value={merchantCode}
-                    onChange={(e) =>
-                      setMerchantCode(e.target.value.toUpperCase())
-                    }
-                  />
+                  <div className="relative w-full">
+                    <input
+                      type={showMerchantPassword ? "text" : "password"}
+                      className="w-full rounded-2xl border px-4 py-3 pr-12 outline-none focus:ring-2 focus:ring-black"
+                      placeholder="ตั้งรหัสผ่าน"
+                      value={merchantCode}
+                      onChange={(event) => setMerchantCode(event.target.value)}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowMerchantPassword((current) => !current)
+                      }
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                      aria-label={
+                        showMerchantPassword
+                          ? "ซ่อนรหัสผ่าน"
+                          : "แสดงรหัสผ่าน"
+                      }
+                    >
+                      {showMerchantPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </div>
 
                   <button
+                    type="button"
                     onClick={generateNextCode}
                     className="rounded-2xl border px-4 py-2 font-medium hover:bg-gray-100"
                   >
                     อัตโนมัติ
                   </button>
                 </div>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  รหัสผ่านสามารถซ้ำกับร้านค้าอื่นได้ แต่เบอร์โทรต้องไม่ซ้ำ
+                </p>
               </div>
 
               <div>
@@ -718,7 +991,7 @@ export default function AdminMerchantsPage() {
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                   placeholder="เช่น สมชาย"
                   value={merchantName}
-                  onChange={(e) => setMerchantName(e.target.value)}
+                  onChange={(event) => setMerchantName(event.target.value)}
                 />
               </div>
 
@@ -731,7 +1004,7 @@ export default function AdminMerchantsPage() {
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                   placeholder="เช่น สมชายมอเตอร์"
                   value={shopName}
-                  onChange={(e) => setShopName(e.target.value)}
+                  onChange={(event) => setShopName(event.target.value)}
                 />
               </div>
 
@@ -745,7 +1018,7 @@ export default function AdminMerchantsPage() {
                   placeholder="9 หรือ 10 หลัก"
                   inputMode="numeric"
                   value={phone}
-                  onChange={(e) => setPhone(cleanPhone(e.target.value))}
+                  onChange={(event) => setPhone(cleanPhone(event.target.value))}
                 />
 
                 <p className="mt-1 text-xs text-gray-500">
@@ -806,7 +1079,7 @@ export default function AdminMerchantsPage() {
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                             {merchant.is_starred ? "⭐ " : ""}
-                            {merchant.merchant_code}
+                            บัญชีร้านค้า #{merchant.id}
                           </p>
 
                           <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -937,7 +1210,10 @@ export default function AdminMerchantsPage() {
 
                                         <button
                                           onClick={() =>
-                                            toggleLotEditPermission(merchant, lot)
+                                            toggleLotEditPermission(
+                                              merchant,
+                                              lot
+                                            )
                                           }
                                           disabled={updatingLotKey === lotKey}
                                           className={
@@ -949,8 +1225,8 @@ export default function AdminMerchantsPage() {
                                           {updatingLotKey === lotKey
                                             ? "กำลังอัปเดต..."
                                             : lot.can_edit_lot
-                                            ? "ล็อก Lot นี้"
-                                            : "ให้แก้ Lot นี้"}
+                                              ? "ล็อก Lot นี้"
+                                              : "ให้แก้ Lot นี้"}
                                         </button>
                                       </div>
                                     </div>
@@ -969,36 +1245,91 @@ export default function AdminMerchantsPage() {
                           </h4>
 
                           <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            <input
-                              className="rounded-xl border p-3 uppercase"
-                              value={editMerchantCode}
-                              onChange={(e) =>
-                                setEditMerchantCode(e.target.value.toUpperCase())
-                              }
-                            />
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">
+                                รหัสผ่าน
+                              </label>
 
-                            <input
-                              className="rounded-xl border p-3"
-                              value={editMerchantName}
-                              onChange={(e) =>
-                                setEditMerchantName(e.target.value)
-                              }
-                            />
+                              <div className="relative mt-1">
+                                <input
+                                  type={
+                                    showEditMerchantPassword
+                                      ? "text"
+                                      : "password"
+                                  }
+                                  className="w-full rounded-xl border px-4 py-3 pr-12"
+                                  placeholder="รหัสผ่าน"
+                                  value={editMerchantCode}
+                                  onChange={(event) =>
+                                    setEditMerchantCode(event.target.value)
+                                  }
+                                />
 
-                            <input
-                              className="rounded-xl border p-3"
-                              value={editShopName}
-                              onChange={(e) => setEditShopName(e.target.value)}
-                            />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowEditMerchantPassword(
+                                      (current) => !current
+                                    )
+                                  }
+                                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                                  aria-label={
+                                    showEditMerchantPassword
+                                      ? "ซ่อนรหัสผ่าน"
+                                      : "แสดงรหัสผ่าน"
+                                  }
+                                >
+                                  {showEditMerchantPassword ? (
+                                    <EyeOffIcon />
+                                  ) : (
+                                    <EyeIcon />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
 
-                            <input
-                              className="rounded-xl border p-3"
-                              inputMode="numeric"
-                              value={editPhone}
-                              onChange={(e) =>
-                                setEditPhone(cleanPhone(e.target.value))
-                              }
-                            />
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">
+                                ชื่อผู้ติดต่อ
+                              </label>
+
+                              <input
+                                className="mt-1 w-full rounded-xl border p-3"
+                                value={editMerchantName}
+                                onChange={(event) =>
+                                  setEditMerchantName(event.target.value)
+                                }
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">
+                                ชื่อร้าน
+                              </label>
+
+                              <input
+                                className="mt-1 w-full rounded-xl border p-3"
+                                value={editShopName}
+                                onChange={(event) =>
+                                  setEditShopName(event.target.value)
+                                }
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">
+                                เบอร์โทร
+                              </label>
+
+                              <input
+                                className="mt-1 w-full rounded-xl border p-3"
+                                inputMode="numeric"
+                                value={editPhone}
+                                onChange={(event) =>
+                                  setEditPhone(cleanPhone(event.target.value))
+                                }
+                              />
+                            </div>
                           </div>
 
                           <div className="mt-4 flex flex-wrap gap-3">
@@ -1024,10 +1355,10 @@ export default function AdminMerchantsPage() {
                             className={
                               merchant.is_starred
                                 ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
-                                : "rounded-xl border px-4 py-2 font-medium hover:bg-yellow-50"
+                                : "rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
                             }
                           >
-                            {merchant.is_starred ? "ยกเลิกดาว" : "⭐ ปักดาว"}
+                            {merchant.is_starred ? "เอาดาวออก" : "ปักดาว"}
                           </button>
 
                           {merchant.approval_status === "pending" && (

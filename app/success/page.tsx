@@ -7,6 +7,7 @@ type Offer = {
   lot: string;
   motorcycle: string;
   price: string;
+  wasEdited?: boolean;
 };
 
 type FinalSubmission = {
@@ -100,6 +101,9 @@ export default function SuccessPage() {
     return sum + Number(offer.price || 0);
   }, 0);
 
+  const editedCount = submission.offers.filter((offer) => offer.wasEdited)
+    .length;
+
   return (
     <>
       <style jsx global>{`
@@ -176,6 +180,12 @@ export default function SuccessPage() {
               <p className="mt-3 rounded-2xl bg-white/15 px-4 py-3 text-sm font-semibold text-white">
                 ส่งราคาเมื่อ: {submittedDateTime.fullText}
               </p>
+
+              {submission.isUpdatedSubmission && editedCount > 0 && (
+                <p className="mt-3 rounded-2xl bg-white/15 px-4 py-3 text-sm font-semibold text-white">
+                  มีรายการที่แก้ไข {editedCount} Lot
+                </p>
+              )}
             </div>
 
             <div className="p-6">
@@ -255,6 +265,17 @@ export default function SuccessPage() {
                       {total.toLocaleString()} บาท
                     </p>
                   </div>
+
+                  {submission.isUpdatedSubmission && editedCount > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 print:text-black">
+                        รายการที่แก้ไข
+                      </p>
+                      <p className="mt-1 font-bold text-orange-700 print:text-black">
+                        {editedCount} Lot
+                      </p>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -287,6 +308,9 @@ export default function SuccessPage() {
                         <th className="border border-black p-2 text-right">
                           ราคาเสนอ
                         </th>
+                        <th className="border border-black p-2 text-left">
+                          หมายเหตุ
+                        </th>
                       </tr>
                     </thead>
 
@@ -305,6 +329,9 @@ export default function SuccessPage() {
                           <td className="border border-black p-2 text-right font-bold">
                             {Number(offer.price).toLocaleString()} บาท
                           </td>
+                          <td className="border border-black p-2">
+                            {offer.wasEdited ? "แก้ไขแล้ว" : ""}
+                          </td>
                         </tr>
                       ))}
 
@@ -318,6 +345,7 @@ export default function SuccessPage() {
                         <td className="border border-black p-2 text-right font-bold">
                           {total.toLocaleString()} บาท
                         </td>
+                        <td className="border border-black p-2"></td>
                       </tr>
                     </tbody>
                   </table>
@@ -327,13 +355,25 @@ export default function SuccessPage() {
                   {submission.offers.map((offer) => (
                     <div
                       key={offer.motorcycle_id}
-                      className="rounded-2xl border bg-white p-4"
+                      className={
+                        offer.wasEdited
+                          ? "rounded-2xl border border-orange-300 bg-orange-50 p-4"
+                          : "rounded-2xl border bg-white p-4"
+                      }
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                            Lot {offer.lot}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                              Lot {offer.lot}
+                            </p>
+
+                            {offer.wasEdited && (
+                              <span className="rounded-full bg-orange-600 px-3 py-1 text-xs font-bold text-white">
+                              แก้ไขแล้ว
+                            </span>
+                            )}
+                          </div>
 
                           <h3 className="mt-1 font-bold text-gray-900">
                             {offer.motorcycle}

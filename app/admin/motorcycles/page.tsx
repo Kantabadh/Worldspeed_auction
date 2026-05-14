@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -36,6 +36,26 @@ type Motorcycle = MotorcycleDetails & {
   created_at: string;
   motorcycle_photos: MotorcyclePhoto[];
 };
+
+type StaffProfile = {
+  id: string;
+  email: string;
+  role: string;
+  active: boolean;
+  expiresAt?: number;
+};
+
+type AuditLogInput = {
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  details?: Record<string, unknown>;
+};
+
+type StatusFilter = "all" | "active" | "hidden";
+
+const ITEMS_PER_PAGE = 5;
 
 const detailFields: {
   key: DetailKey;
@@ -133,7 +153,20 @@ function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
   };
 }
 
+function getSavedStaffProfile() {
+  const savedProfileText = localStorage.getItem("staffProfile");
+
+  if (!savedProfileText) return null;
+
+  try {
+    return JSON.parse(savedProfileText) as StaffProfile;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminMotorcyclesPage() {
+  const listSectionRef = useRef<HTMLElement | null>(null);
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
 
   const [lotNumber, setLotNumber] = useState("");
@@ -153,9 +186,69 @@ export default function AdminMotorcyclesPage() {
   );
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
 
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function createAuditLog({
+    action,
+    targetType,
+    targetId,
+    targetName,
+    details,
+  }: AuditLogInput) {
+    const staffProfile = getSavedStaffProfile();
+
+    const { error } = await supabase.from("admin_audit_logs").insert({
+      staff_id: staffProfile?.id || null,
+      staff_email: staffProfile?.email || null,
+      staff_role: staffProfile?.role || null,
+      action,
+      target_type: targetType || null,
+      target_id: targetId || null,
+      target_name: targetName || null,
+      details: details || {},
+    });
+
+    if (error) {
+      console.error("Audit log error:", error.message);
+    }
+  }
+
+  function getMotorcycleTargetName(bike: {
+    lot_number: string;
+    motorcycle_name: string;
+  }) {
+    return `Lot ${bike.lot_number} • ${bike.motorcycle_name}`;
+  }
+
+  function getMotorcycleDetailPayload(bike: Motorcycle) {
+    return {
+      motorcycle_id: bike.id,
+      lot_number: bike.lot_number,
+      motorcycle_name: bike.motorcycle_name,
+      cost_price: Number(bike.cost_price || 0),
+      brand: bike.brand || "",
+      model: bike.model || "",
+      year: bike.year || "",
+      color: bike.color || "",
+      license_plate: bike.license_plate || "",
+      mileage: bike.mileage || "",
+      frame_number: bike.frame_number || "",
+      engine_number: bike.engine_number || "",
+      registration_status: bike.registration_status || "",
+      tax_expiry: bike.tax_expiry || "",
+      condition: bike.condition || "",
+      notes: bike.notes || "",
+      active: bike.active,
+      photo_count: bike.motorcycle_photos?.length || 0,
+    };
+  }
 
   async function uploadPhoto(file: File, lot: string) {
     const fileExtension = file.name.split(".").pop();
@@ -188,7 +281,7 @@ export default function AdminMotorcyclesPage() {
     motorcycleId: number,
     lot: string
   ) {
-    if (files.length === 0) return;
+    if (files.length === 0) return 0;
 
     const photoRows = [];
 
@@ -206,6 +299,8 @@ export default function AdminMotorcyclesPage() {
     if (error) {
       throw error;
     }
+
+    return photoRows.length;
   }
 
   async function loadMotorcycles() {
@@ -260,15 +355,17 @@ export default function AdminMotorcyclesPage() {
     setErrorMessage("");
 
     try {
+      const newMotorcycleInput = {
+        lot_number: lotNumber.trim(),
+        motorcycle_name: motorcycleName.trim(),
+        cost_price: cleanMoney(costPrice),
+        ...cleanDetails(details),
+        active: true,
+      };
+
       const { data: motorcycleData, error: motorcycleError } = await supabase
         .from("motorcycles")
-        .insert({
-          lot_number: lotNumber.trim(),
-          motorcycle_name: motorcycleName.trim(),
-          cost_price: cleanMoney(costPrice),
-          ...cleanDetails(details),
-          active: true,
-        })
+        .insert(newMotorcycleInput)
         .select()
         .single();
 
@@ -276,7 +373,38 @@ export default function AdminMotorcyclesPage() {
         throw motorcycleError;
       }
 
-      await uploadMultiplePhotos(photoFiles, motorcycleData.id, lotNumber);
+      const uploadedPhotoCount = await uploadMultiplePhotos(
+        photoFiles,
+        motorcycleData.id,
+        lotNumber
+      );
+
+      await createAuditLog({
+        action: "motorcycle_created",
+        targetType: "motorcycle",
+        targetId: String(motorcycleData.id),
+        targetName: `Lot ${motorcycleData.lot_number} • ${motorcycleData.motorcycle_name}`,
+        details: {
+          motorcycle_id: motorcycleData.id,
+          lot_number: motorcycleData.lot_number,
+          motorcycle_name: motorcycleData.motorcycle_name,
+          cost_price: Number(motorcycleData.cost_price || 0),
+          brand: motorcycleData.brand || "",
+          model: motorcycleData.model || "",
+          year: motorcycleData.year || "",
+          color: motorcycleData.color || "",
+          license_plate: motorcycleData.license_plate || "",
+          mileage: motorcycleData.mileage || "",
+          frame_number: motorcycleData.frame_number || "",
+          engine_number: motorcycleData.engine_number || "",
+          registration_status: motorcycleData.registration_status || "",
+          tax_expiry: motorcycleData.tax_expiry || "",
+          condition: motorcycleData.condition || "",
+          notes: motorcycleData.notes || "",
+          active: motorcycleData.active,
+          uploaded_photo_count: uploadedPhotoCount,
+        },
+      });
 
       setLotNumber("");
       setMotorcycleName("");
@@ -300,6 +428,10 @@ export default function AdminMotorcyclesPage() {
     setEditCostPrice(formatMoneyInput(bike.cost_price));
     setEditDetails(getDetailsFromBike(bike));
     setEditPhotoFiles([]);
+
+    setOpenDetailIds((current) =>
+      current.includes(bike.id) ? current : [...current, bike.id]
+    );
   }
 
   function cancelEditing() {
@@ -320,21 +452,48 @@ export default function AdminMotorcyclesPage() {
     setErrorMessage("");
 
     try {
+      const oldBikeData = getMotorcycleDetailPayload(bike);
+
+      const updatedMotorcycleInput = {
+        lot_number: editLotNumber.trim(),
+        motorcycle_name: editMotorcycleName.trim(),
+        cost_price: cleanMoney(editCostPrice),
+        ...cleanDetails(editDetails),
+      };
+
       const { error } = await supabase
         .from("motorcycles")
-        .update({
-          lot_number: editLotNumber.trim(),
-          motorcycle_name: editMotorcycleName.trim(),
-          cost_price: cleanMoney(editCostPrice),
-          ...cleanDetails(editDetails),
-        })
+        .update(updatedMotorcycleInput)
         .eq("id", bike.id);
 
       if (error) {
         throw error;
       }
 
-      await uploadMultiplePhotos(editPhotoFiles, bike.id, editLotNumber);
+      const uploadedPhotoCount = await uploadMultiplePhotos(
+        editPhotoFiles,
+        bike.id,
+        editLotNumber
+      );
+
+      await createAuditLog({
+        action: "motorcycle_updated",
+        targetType: "motorcycle",
+        targetId: String(bike.id),
+        targetName: `Lot ${editLotNumber.trim()} • ${editMotorcycleName.trim()}`,
+        details: {
+          old_data: oldBikeData,
+          new_data: {
+            motorcycle_id: bike.id,
+            lot_number: editLotNumber.trim(),
+            motorcycle_name: editMotorcycleName.trim(),
+            cost_price: cleanMoney(editCostPrice),
+            ...cleanDetails(editDetails),
+            active: bike.active,
+          },
+          uploaded_photo_count: uploadedPhotoCount,
+        },
+      });
 
       cancelEditing();
       loadMotorcycles();
@@ -345,7 +504,7 @@ export default function AdminMotorcyclesPage() {
     }
   }
 
-  async function deletePhoto(photoId: number) {
+  async function deletePhoto(photo: MotorcyclePhoto, bike: Motorcycle) {
     const confirmDelete = confirm("ต้องการลบรูปนี้ใช่หรือไม่?");
 
     if (!confirmDelete) return;
@@ -355,12 +514,27 @@ export default function AdminMotorcyclesPage() {
     const { error } = await supabase
       .from("motorcycle_photos")
       .delete()
-      .eq("id", photoId);
+      .eq("id", photo.id);
 
     if (error) {
       setErrorMessage(error.message);
       return;
     }
+
+    await createAuditLog({
+      action: "motorcycle_photo_deleted",
+      targetType: "motorcycle",
+      targetId: String(bike.id),
+      targetName: getMotorcycleTargetName(bike),
+      details: {
+        motorcycle_id: bike.id,
+        lot_number: bike.lot_number,
+        motorcycle_name: bike.motorcycle_name,
+        photo_id: photo.id,
+        photo_url: photo.image_url,
+        photo_count_before_delete: bike.motorcycle_photos?.length || 0,
+      },
+    });
 
     loadMotorcycles();
   }
@@ -368,10 +542,21 @@ export default function AdminMotorcyclesPage() {
   async function toggleActive(bike: Motorcycle) {
     setErrorMessage("");
 
+    const oldActive = bike.active;
+    const newActive = !bike.active;
+
+    const confirmToggle = confirm(
+      newActive
+        ? `ต้องการแสดง Lot ${bike.lot_number} ให้ร้านค้าเห็นใช่หรือไม่?`
+        : `ต้องการซ่อน Lot ${bike.lot_number} จากร้านค้าใช่หรือไม่?`
+    );
+
+    if (!confirmToggle) return;
+
     const { error } = await supabase
       .from("motorcycles")
       .update({
-        active: !bike.active,
+        active: newActive,
       })
       .eq("id", bike.id);
 
@@ -380,19 +565,46 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
+    await createAuditLog({
+      action: "motorcycle_active_changed",
+      targetType: "motorcycle",
+      targetId: String(bike.id),
+      targetName: getMotorcycleTargetName(bike),
+      details: {
+        motorcycle_id: bike.id,
+        lot_number: bike.lot_number,
+        motorcycle_name: bike.motorcycle_name,
+        old_active: oldActive,
+        new_active: newActive,
+        old_status_thai: oldActive ? "แสดงอยู่" : "ซ่อนอยู่",
+        new_status_thai: newActive ? "แสดงอยู่" : "ซ่อนอยู่",
+      },
+    });
+
     loadMotorcycles();
   }
 
-  async function deleteMotorcycle(id: number) {
+  async function deleteMotorcycle(bike: Motorcycle) {
     const confirmDelete = confirm(
-      "ต้องการลบรายการนี้ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน"
+      `ต้องการลบ Lot ${bike.lot_number} ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน`
     );
 
     if (!confirmDelete) return;
 
+    const secondConfirm = confirm(
+      "ยืนยันอีกครั้ง: การลบรายการรถอาจกระทบข้อมูลเดิม ต้องการทำต่อหรือไม่?"
+    );
+
+    if (!secondConfirm) return;
+
     setErrorMessage("");
 
-    const { error } = await supabase.from("motorcycles").delete().eq("id", id);
+    const oldBikeData = getMotorcycleDetailPayload(bike);
+
+    const { error } = await supabase
+      .from("motorcycles")
+      .delete()
+      .eq("id", bike.id);
 
     if (error) {
       setErrorMessage(
@@ -401,7 +613,25 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
+    await createAuditLog({
+      action: "motorcycle_deleted",
+      targetType: "motorcycle",
+      targetId: String(bike.id),
+      targetName: getMotorcycleTargetName(bike),
+      details: {
+        deleted_data: oldBikeData,
+      },
+    });
+
     loadMotorcycles();
+  }
+
+  function toggleDetail(bikeId: number) {
+    setOpenDetailIds((current) =>
+      current.includes(bikeId)
+        ? current.filter((id) => id !== bikeId)
+        : [...current, bikeId]
+    );
   }
 
   function renderDetailInputs(
@@ -452,7 +682,10 @@ export default function AdminMotorcyclesPage() {
 
   function renderBikeDetails(bike: Motorcycle) {
     const displayItems = [
-      ["ต้นทุน", bike.cost_price ? `${Number(bike.cost_price).toLocaleString()} บาท` : "-"],
+      [
+        "ต้นทุน",
+        bike.cost_price ? `${Number(bike.cost_price).toLocaleString()} บาท` : "-",
+      ],
       ["ยี่ห้อ", bike.brand],
       ["รุ่น", bike.model],
       ["ปี", bike.year],
@@ -487,12 +720,83 @@ export default function AdminMotorcyclesPage() {
     );
   }
 
+  function goToPage(page: number) {
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  setCurrentPage(safePage);
+
+  setTimeout(() => {
+    listSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, 0);
+}
+
+  function renderPaginationControls() {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gray-50 p-4">
+        <p className="text-sm text-gray-600">
+          หน้า {safeCurrentPage} / {totalPages} • แสดงทีละ {ITEMS_PER_PAGE}{" "}
+          รายการ
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => goToPage(safeCurrentPage - 1)}
+            disabled={safeCurrentPage === 1}
+            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ก่อนหน้า
+          </button>
+
+          {pageNumbers.map((page, index) => {
+            const previousPage = pageNumbers[index - 1];
+            const showDots =
+              previousPage !== undefined && page - previousPage > 1;
+
+            return (
+              <div key={page} className="flex items-center gap-2">
+                {showDots && (
+                  <span className="px-1 text-sm text-gray-400">...</span>
+                )}
+
+                <button
+                  onClick={() => goToPage(page)}
+                  className={
+                    page === safeCurrentPage
+                      ? "rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
+                      : "rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100"
+                  }
+                >
+                  {page}
+                </button>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={() => goToPage(safeCurrentPage + 1)}
+            disabled={safeCurrentPage === totalPages}
+            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ถัดไป
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
     loadMotorcycles();
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, statusFilter]);
+
   const activeCount = motorcycles.filter((bike) => bike.active).length;
   const hiddenCount = motorcycles.filter((bike) => !bike.active).length;
+
   const totalPhotos = motorcycles.reduce((sum, bike) => {
     return sum + (bike.motorcycle_photos?.length || 0);
   }, 0);
@@ -500,6 +804,62 @@ export default function AdminMotorcyclesPage() {
   const totalCost = motorcycles.reduce((sum, bike) => {
     return sum + Number(bike.cost_price || 0);
   }, 0);
+
+  const filteredMotorcycles = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+
+    return motorcycles.filter((bike) => {
+      const matchStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && bike.active) ||
+        (statusFilter === "hidden" && !bike.active);
+
+      const searchableText = [
+        bike.lot_number,
+        bike.motorcycle_name,
+        bike.brand,
+        bike.model,
+        bike.year,
+        bike.color,
+        bike.license_plate,
+        bike.mileage,
+        bike.frame_number,
+        bike.engine_number,
+        bike.registration_status,
+        bike.tax_expiry,
+        bike.condition,
+        bike.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchSearch = !keyword || searchableText.includes(keyword);
+
+      return matchStatus && matchSearch;
+    });
+  }, [motorcycles, searchText, statusFilter]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredMotorcycles.length / ITEMS_PER_PAGE)
+  );
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedMotorcycles = filteredMotorcycles.slice(
+    (safeCurrentPage - 1) * ITEMS_PER_PAGE,
+    safeCurrentPage * ITEMS_PER_PAGE
+  );
+
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((page) => {
+      return (
+        page === 1 ||
+        page === totalPages ||
+        Math.abs(page - safeCurrentPage) <= 2
+      );
+    });
 
   return (
     <StaffGuard>
@@ -655,12 +1015,73 @@ export default function AdminMotorcyclesPage() {
             </button>
           </section>
 
-          <section className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">รายการรถทั้งหมด</h2>
+          <section
+            ref={listSectionRef}
+           className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200"
+            >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  รายการรถทั้งหมด
+                </h2>
 
-            <p className="mt-1 text-sm text-gray-600">
-              จัดการรายการรถที่จะแสดงให้ร้านค้าเห็น
-            </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  ค้นหา กรองสถานะ แบ่งหน้า และกดเปิดรายละเอียดเฉพาะรายการที่ต้องการ
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                แสดง {paginatedMotorcycles.length} จาก{" "}
+                {filteredMotorcycles.length} รายการ
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1fr_220px]">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  ค้นหา
+                </label>
+
+                <input
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  สถานะ
+                </label>
+
+                <select
+                  value={statusFilter}
+                  onChange={(e) =>
+                    setStatusFilter(e.target.value as StatusFilter)
+                  }
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                >
+                  <option value="all">ทั้งหมด</option>
+                  <option value="active">แสดงอยู่</option>
+                  <option value="hidden">ซ่อนอยู่</option>
+                </select>
+              </div>
+            </div>
+
+            {(searchText || statusFilter !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchText("");
+                  setStatusFilter("all");
+                  setCurrentPage(1);
+                }}
+                className="mt-3 rounded-xl border px-4 py-2 text-sm font-medium hover:bg-gray-100"
+              >
+                ล้างตัวกรอง
+              </button>
+            )}
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
@@ -674,204 +1095,246 @@ export default function AdminMotorcyclesPage() {
               </div>
             )}
 
-            {!isLoading && motorcycles.length > 0 && (
-              <div className="mt-5 space-y-5">
-                {motorcycles.map((bike) => (
-                  <article
-                    key={bike.id}
-                    className="overflow-hidden rounded-2xl border bg-white shadow-sm"
-                  >
-                    <div className="border-b bg-gray-50 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                            Lot {bike.lot_number}
-                          </p>
+            {!isLoading &&
+              motorcycles.length > 0 &&
+              filteredMotorcycles.length === 0 && (
+                <div className="mt-4 rounded-2xl bg-gray-50 p-5">
+                  <p className="font-semibold text-gray-900">
+                    ไม่พบรายการที่ค้นหา
+                  </p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    ลองเปลี่ยนคำค้นหาหรือสถานะตัวกรอง
+                  </p>
+                </div>
+              )}
 
-                          <h3 className="mt-1 text-lg font-bold text-gray-900">
-                            {bike.motorcycle_name}
-                          </h3>
+            {!isLoading && paginatedMotorcycles.length > 0 && (
+              <>
+                <div className="mt-5">{renderPaginationControls()}</div>
 
-                          <p className="mt-2 text-sm font-semibold text-orange-700">
-                            ต้นทุน:{" "}
-                            {bike.cost_price
-                              ? `${Number(bike.cost_price).toLocaleString()} บาท`
-                              : "-"}
-                          </p>
-                        </div>
+                <div className="mt-5 space-y-4">
+                  {paginatedMotorcycles.map((bike) => {
+                    const isDetailOpen = openDetailIds.includes(bike.id);
 
-                        {bike.active ? (
-                          <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                            แสดงอยู่
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                            ซ่อนอยู่
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    return (
+                      <article
+                        key={bike.id}
+                        className="overflow-hidden rounded-2xl border bg-white shadow-sm"
+                      >
+                        <div className="bg-gray-50 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                                Lot {bike.lot_number}
+                              </p>
 
-                    <div className="p-4">
-                      {bike.motorcycle_photos?.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-                          {bike.motorcycle_photos.map((photo) => (
-                            <div
-                              key={photo.id}
-                              className="overflow-hidden rounded-2xl border bg-gray-50"
-                            >
-                              <img
-                                src={photo.image_url}
-                                alt={bike.motorcycle_name}
-                                className="h-28 w-full object-cover"
-                              />
+                              <h3 className="mt-1 text-lg font-bold text-gray-900">
+                                {bike.motorcycle_name}
+                              </h3>
+
+                              <p className="mt-2 text-sm font-semibold text-orange-700">
+                                ต้นทุน:{" "}
+                                {bike.cost_price
+                                  ? `${Number(
+                                      bike.cost_price
+                                    ).toLocaleString()} บาท`
+                                  : "-"}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {bike.active ? (
+                                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                                  แสดงอยู่
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
+                                  ซ่อนอยู่
+                                </span>
+                              )}
 
                               <button
-                                onClick={() => deletePhoto(photo.id)}
-                                className="w-full bg-red-600 px-2 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                                type="button"
+                                onClick={() => toggleDetail(bike.id)}
+                                className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
                               >
-                                ลบรูป
+                                {isDetailOpen
+                                  ? "ซ่อนรายละเอียด ▲"
+                                  : "ดูรายละเอียด ▼"}
                               </button>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
-                          ยังไม่มีรูป
-                        </div>
-                      )}
-
-                      {renderBikeDetails(bike)}
-
-                      {editingId === bike.id ? (
-                        <div className="mt-5 rounded-2xl border bg-gray-50 p-4">
-                          <h4 className="font-semibold text-gray-900">
-                            แก้ไขรายการรถ
-                          </h4>
-
-                          <div className="mt-3 grid gap-3 md:grid-cols-3">
-                            <div>
-                              <label className="text-sm font-medium text-gray-700">
-                                เลข Lot
-                              </label>
-
-                              <input
-                                className="mt-1 w-full rounded-xl border p-3"
-                                value={editLotNumber}
-                                onChange={(e) =>
-                                  setEditLotNumber(e.target.value)
-                                }
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-sm font-medium text-gray-700">
-                                ชื่อรถ
-                              </label>
-
-                              <input
-                                className="mt-1 w-full rounded-xl border p-3"
-                                value={editMotorcycleName}
-                                onChange={(e) =>
-                                  setEditMotorcycleName(e.target.value)
-                                }
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-sm font-medium text-gray-700">
-                                ต้นทุน / ราคาทุน
-                              </label>
-
-                              <input
-                                inputMode="decimal"
-                                className="mt-1 w-full rounded-xl border p-3"
-                                value={editCostPrice}
-                                onChange={(e) =>
-                                  setEditCostPrice(
-                                    e.target.value.replace(/[^\d.]/g, "")
-                                  )
-                                }
-                              />
-                            </div>
                           </div>
+                        </div>
 
-                          <div className="mt-5">
-                            {renderDetailInputs(editDetails, setEditDetails)}
-                          </div>
+                        {isDetailOpen && (
+                          <div className="border-t p-4">
+                            {bike.motorcycle_photos?.length > 0 ? (
+                              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                                {bike.motorcycle_photos.map((photo) => (
+                                  <div
+                                    key={photo.id}
+                                    className="overflow-hidden rounded-2xl border bg-gray-50"
+                                  >
+                                    <img
+                                      src={photo.image_url}
+                                      alt={bike.motorcycle_name}
+                                      className="h-28 w-full object-cover"
+                                    />
 
-                          <div className="mt-3">
-                            <label className="text-sm font-medium text-gray-700">
-                              เพิ่มรูป
-                            </label>
+                                    <button
+                                      onClick={() => deletePhoto(photo, bike)}
+                                      className="w-full bg-red-600 px-2 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                                    >
+                                      ลบรูป
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
+                                ยังไม่มีรูป
+                              </div>
+                            )}
 
-                            <input
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              className="mt-1 w-full rounded-xl border bg-white p-3"
-                              onChange={(e) =>
-                                setEditPhotoFiles(
-                                  Array.from(e.target.files || [])
-                                )
-                              }
-                            />
+                            {renderBikeDetails(bike)}
 
-                            {editPhotoFiles.length > 0 && (
-                              <p className="mt-2 text-sm text-gray-600">
-                                เลือกเพิ่ม {editPhotoFiles.length} รูป
-                              </p>
+                            {editingId === bike.id ? (
+                              <div className="mt-5 rounded-2xl border bg-gray-50 p-4">
+                                <h4 className="font-semibold text-gray-900">
+                                  แก้ไขรายการรถ
+                                </h4>
+
+                                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700">
+                                      เลข Lot
+                                    </label>
+
+                                    <input
+                                      className="mt-1 w-full rounded-xl border p-3"
+                                      value={editLotNumber}
+                                      onChange={(e) =>
+                                        setEditLotNumber(e.target.value)
+                                      }
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700">
+                                      ชื่อรถ
+                                    </label>
+
+                                    <input
+                                      className="mt-1 w-full rounded-xl border p-3"
+                                      value={editMotorcycleName}
+                                      onChange={(e) =>
+                                        setEditMotorcycleName(e.target.value)
+                                      }
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700">
+                                      ต้นทุน / ราคาทุน
+                                    </label>
+
+                                    <input
+                                      inputMode="decimal"
+                                      className="mt-1 w-full rounded-xl border p-3"
+                                      value={editCostPrice}
+                                      onChange={(e) =>
+                                        setEditCostPrice(
+                                          e.target.value.replace(/[^\d.]/g, "")
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="mt-5">
+                                  {renderDetailInputs(
+                                    editDetails,
+                                    setEditDetails
+                                  )}
+                                </div>
+
+                                <div className="mt-3">
+                                  <label className="text-sm font-medium text-gray-700">
+                                    เพิ่มรูป
+                                  </label>
+
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="mt-1 w-full rounded-xl border bg-white p-3"
+                                    onChange={(e) =>
+                                      setEditPhotoFiles(
+                                        Array.from(e.target.files || [])
+                                      )
+                                    }
+                                  />
+
+                                  {editPhotoFiles.length > 0 && (
+                                    <p className="mt-2 text-sm text-gray-600">
+                                      เลือกเพิ่ม {editPhotoFiles.length} รูป
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap gap-3">
+                                  <button
+                                    onClick={() => saveEdit(bike)}
+                                    className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
+                                  >
+                                    บันทึก
+                                  </button>
+
+                                  <button
+                                    onClick={cancelEditing}
+                                    className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-5 flex flex-wrap gap-3">
+                                <button
+                                  onClick={() => startEditing(bike)}
+                                  className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+                                >
+                                  แก้ไข
+                                </button>
+
+                                <button
+                                  onClick={() => toggleActive(bike)}
+                                  className={
+                                    bike.active
+                                      ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
+                                      : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+                                  }
+                                >
+                                  {bike.active ? "ซ่อน" : "แสดง"}
+                                </button>
+
+                                <button
+                                  onClick={() => deleteMotorcycle(bike)}
+                                  className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+                                >
+                                  ลบรายการ
+                                </button>
+                              </div>
                             )}
                           </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
 
-                          <div className="mt-4 flex flex-wrap gap-3">
-                            <button
-                              onClick={() => saveEdit(bike)}
-                              className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
-                            >
-                              บันทึก
-                            </button>
-
-                            <button
-                              onClick={cancelEditing}
-                              className="rounded-xl border bg-white px-4 py-2 font-semibold hover:bg-gray-100"
-                            >
-                              ยกเลิก
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-5 flex flex-wrap gap-3">
-                          <button
-                            onClick={() => startEditing(bike)}
-                            className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-                          >
-                            แก้ไข
-                          </button>
-
-                          <button
-                            onClick={() => toggleActive(bike)}
-                            className={
-                              bike.active
-                                ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
-                                : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-                            }
-                          >
-                            {bike.active ? "ซ่อน" : "แสดง"}
-                          </button>
-
-                          <button
-                            onClick={() => deleteMotorcycle(bike.id)}
-                            className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-                          >
-                            ลบรายการ
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
+                <div className="mt-6">{renderPaginationControls()}</div>
+              </>
             )}
           </section>
         </section>

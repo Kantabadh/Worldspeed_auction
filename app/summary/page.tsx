@@ -13,6 +13,7 @@ type Offer = {
     image_url: string;
   }[];
   price: string;
+  wasEdited?: boolean;
 };
 
 type DraftSubmission = {
@@ -40,6 +41,20 @@ type LotEditPermission = {
   can_edit: boolean;
 };
 
+type FinalOfferRow = {
+  motorcycle_id: number;
+  offer_price: number;
+  motorcycles: {
+    id: number;
+    lot_number: string;
+    motorcycle_name: string;
+    motorcycle_photos?: {
+      id: number;
+      image_url: string;
+    }[];
+  } | null;
+};
+
 export default function SummaryPage() {
   const [draft, setDraft] = useState<DraftSubmission | null>(null);
   const [merchantSession, setMerchantSession] =
@@ -64,6 +79,56 @@ export default function SummaryPage() {
     }
   }, []);
 
+  function buildFinalOfferList(
+    rows: FinalOfferRow[],
+    editedMotorcycleIds: number[]
+  ): Offer[] {
+    return rows
+      .map((row) => {
+        const motorcycle = row.motorcycles;
+        const motorcycleId = Number(row.motorcycle_id);
+
+        return {
+          motorcycle_id: motorcycleId,
+          lot: motorcycle?.lot_number || "-",
+          motorcycle: motorcycle?.motorcycle_name || "-",
+          photos: motorcycle?.motorcycle_photos || [],
+          price: String(Number(row.offer_price || 0)),
+          wasEdited: editedMotorcycleIds.includes(motorcycleId),
+        };
+      })
+      .sort((a, b) => a.lot.localeCompare(b.lot));
+  }
+
+  async function fetchFinalSubmittedOffers(
+    submittedMerchantId: number,
+    editedMotorcycleIds: number[]
+  ) {
+    const { data, error } = await supabase
+      .from("offers")
+      .select(`
+        motorcycle_id,
+        offer_price,
+        motorcycles (
+          id,
+          lot_number,
+          motorcycle_name,
+          motorcycle_photos (
+            id,
+            image_url
+          )
+        )
+      `)
+      .eq("merchant_id", submittedMerchantId)
+      .order("motorcycle_id", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return buildFinalOfferList((data as unknown as FinalOfferRow[]) || [], editedMotorcycleIds);
+  }
+
   async function confirmSubmit() {
     if (!draft) return;
 
@@ -84,14 +149,17 @@ export default function SummaryPage() {
     setErrorMessage("");
 
     const offersToSave = draft.offers.map((offer) => ({
-      motorcycle_id: offer.motorcycle_id,
+      motorcycle_id: Number(offer.motorcycle_id),
       offer_price: Number(offer.price),
     }));
 
     if (draft.isEditingSubmission && draft.submittedMerchantId) {
-      const editableLotIds = draft.editableLotIds || [];
-      const submittedMotorcycleIds = offersToSave.map(
-        (offer) => offer.motorcycle_id
+      const editableLotIds = (draft.editableLotIds || []).map((id) =>
+        Number(id)
+      );
+
+      const submittedMotorcycleIds = offersToSave.map((offer) =>
+        Number(offer.motorcycle_id)
       );
 
       if (submittedMotorcycleIds.length === 0) {
@@ -101,11 +169,13 @@ export default function SummaryPage() {
       }
 
       const notAllowedLots = submittedMotorcycleIds.filter(
-        (motorcycleId) => !editableLotIds.includes(motorcycleId)
+        (motorcycleId) => !editableLotIds.includes(Number(motorcycleId))
       );
 
       if (notAllowedLots.length > 0) {
-        setErrorMessage("มีบาง Lot ที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่");
+        setErrorMessage(
+          "มีบาง Lot ที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่"
+        );
         setIsSubmitting(false);
         return;
       }
@@ -144,10 +214,10 @@ export default function SummaryPage() {
 
       const allowedPermissionIds = (
         (permissionData as LotEditPermission[] | null) || []
-      ).map((permission) => permission.motorcycle_id);
+      ).map((permission) => Number(permission.motorcycle_id));
 
       const missingPermissionIds = submittedMotorcycleIds.filter(
-        (motorcycleId) => !allowedPermissionIds.includes(motorcycleId)
+        (motorcycleId) => !allowedPermissionIds.includes(Number(motorcycleId))
       );
 
       if (missingPermissionIds.length > 0) {
@@ -195,8 +265,26 @@ export default function SummaryPage() {
         })
         .eq("id", accountId);
 
+      let finalOffers: Offer[] = [];
+
+      try {
+        finalOffers = await fetchFinalSubmittedOffers(
+          Number(draft.submittedMerchantId),
+          submittedMotorcycleIds
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "บันทึกราคาแล้ว แต่ดึงใบยืนยันไม่สำเร็จ กรุณาติดต่อผู้ดูแล"
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       const finalSubmission = {
         ...draft,
+        offers: finalOffers,
         submittedAt: new Date().toLocaleString("th-TH"),
         receiptNo: "S-" + Date.now(),
         isUpdatedSubmission: true,
@@ -275,6 +363,10 @@ export default function SummaryPage() {
 
     const finalSubmission = {
       ...draft,
+      offers: draft.offers.map((offer) => ({
+        ...offer,
+        wasEdited: false,
+      })),
       submittedAt: new Date().toLocaleString("th-TH"),
       receiptNo: "S-" + Date.now(),
       isUpdatedSubmission: false,
@@ -334,7 +426,7 @@ export default function SummaryPage() {
 
           <p className="mt-2 text-sm text-gray-600">
             {draft.isEditingSubmission
-              ? "หน้านี้แสดงเฉพาะ Lot ที่ได้รับอนุญาตให้แก้ไข"
+              ? "หน้านี้แสดงเฉพาะ Lot ที่ได้รับอนุญาตให้แก้ไข หลังยืนยันแล้ว ใบยืนยันจะแสดงราคาสุดท้ายทั้งหมดของร้าน"
               : "กรุณาตรวจสอบราคาให้ถูกต้องก่อนกดยืนยัน"}
           </p>
         </div>

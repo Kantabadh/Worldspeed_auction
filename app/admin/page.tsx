@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 
 type AdminOffer = {
   id: number;
+  merchant_id: number;
+  motorcycle_id: number;
   offer_price: number;
   submitted_at: string;
   merchants: {
@@ -37,6 +39,26 @@ type LotResult = {
   highestPrice: number;
 };
 
+type StockMotorcycleSummary = {
+  id: number;
+  cost_price: number | null;
+  stock_status: string;
+};
+
+type AuditLogInput = {
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  details?: Record<string, unknown>;
+};
+
+type ArchiveResult = {
+  roundId: number;
+  roundName: string;
+  archivedOfferCount: number;
+} | null;
+
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
 
 export default function AdminPage() {
@@ -47,6 +69,12 @@ export default function AdminPage() {
   const [totalMotorcycles, setTotalMotorcycles] = useState(0);
   const [activeMotorcycles, setActiveMotorcycles] = useState(0);
   const [pendingMerchantRequests, setPendingMerchantRequests] = useState(0);
+
+  const [totalStockMotorcycles, setTotalStockMotorcycles] = useState(0);
+  const [readyStockMotorcycles, setReadyStockMotorcycles] = useState(0);
+  const [inAuctionStockMotorcycles, setInAuctionStockMotorcycles] = useState(0);
+  const [soldStockMotorcycles, setSoldStockMotorcycles] = useState(0);
+  const [totalStockCost, setTotalStockCost] = useState(0);
 
   const [auctionStatus, setAuctionStatus] = useState("open");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -166,6 +194,29 @@ export default function AdminPage() {
     };
   }, [staffProfile]);
 
+  async function createAuditLog({
+    action,
+    targetType,
+    targetId,
+    targetName,
+    details,
+  }: AuditLogInput) {
+    const { error } = await supabase.from("admin_audit_logs").insert({
+      staff_id: staffProfile?.id || null,
+      staff_email: staffProfile?.email || null,
+      staff_role: staffProfile?.role || null,
+      action,
+      target_type: targetType || null,
+      target_id: targetId || null,
+      target_name: targetName || null,
+      details: details || {},
+    });
+
+    if (error) {
+      console.error("Audit log error:", error.message);
+    }
+  }
+
   async function loadAuctionStatus() {
     const { data, error } = await supabase
       .from("auction_settings")
@@ -191,6 +242,7 @@ export default function AdminPage() {
     setIsUpdatingStatus(true);
     setErrorMessage("");
 
+    const oldStatus = auctionStatus;
     const newStatus = auctionStatus === "open" ? "closed" : "open";
 
     const { error } = await supabase
@@ -204,6 +256,19 @@ export default function AdminPage() {
       return;
     }
 
+    await createAuditLog({
+      action: "auction_status_changed",
+      targetType: "auction",
+      targetId: "Main Motorcycle Auction",
+      targetName: "Main Motorcycle Auction",
+      details: {
+        old_status: oldStatus,
+        new_status: newStatus,
+        old_status_thai: getThaiAuctionStatus(oldStatus),
+        new_status_thai: getThaiAuctionStatus(newStatus),
+      },
+    });
+
     setAuctionStatus(newStatus);
     setIsUpdatingStatus(false);
   }
@@ -216,6 +281,8 @@ export default function AdminPage() {
       .from("offers")
       .select(`
         id,
+        merchant_id,
+        motorcycle_id,
         offer_price,
         submitted_at,
         merchants (
@@ -274,12 +341,51 @@ export default function AdminPage() {
     setPendingMerchantRequests(data?.length || 0);
   }
 
+  async function loadStockSummary() {
+    const { data, error } = await supabase
+      .from("stock_motorcycles")
+      .select("id, cost_price, stock_status");
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    const stockMotorcycles = (data as StockMotorcycleSummary[]) || [];
+
+    setTotalStockMotorcycles(stockMotorcycles.length);
+
+    setReadyStockMotorcycles(
+      stockMotorcycles.filter(
+        (motorcycle) => motorcycle.stock_status === "ready_to_sell"
+      ).length
+    );
+
+    setInAuctionStockMotorcycles(
+      stockMotorcycles.filter(
+        (motorcycle) => motorcycle.stock_status === "in_auction"
+      ).length
+    );
+
+    setSoldStockMotorcycles(
+      stockMotorcycles.filter((motorcycle) => motorcycle.stock_status === "sold")
+        .length
+    );
+
+    const totalCost = stockMotorcycles.reduce((sum, motorcycle) => {
+      return sum + Number(motorcycle.cost_price || 0);
+    }, 0);
+
+    setTotalStockCost(totalCost);
+  }
+
   async function loadDashboardData() {
     await Promise.all([
       loadAuctionStatus(),
       loadOffers(),
       loadMotorcycleCounts(),
       loadPendingMerchantRequests(),
+      loadStockSummary(),
     ]);
   }
 
@@ -460,6 +566,100 @@ export default function AdminPage() {
     return `${buddhistYear}-${month}-${day}_${hour}-${minute}`;
   }
 
+  function chunkArray<T>(items: T[], size: number) {
+    const chunks: T[][] = [];
+
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size));
+    }
+
+    return chunks;
+  }
+
+  async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
+    if (offers.length === 0) {
+      return null;
+    }
+
+    const archiveDate = new Date();
+    const roundName = `รอบวันที่ ${formatThaiDate(
+      archiveDate
+    )} เวลา ${formatThaiTime(archiveDate)}`;
+
+    const { data: roundData, error: roundError } = await supabase
+      .from("auction_rounds")
+      .insert({
+        round_name: roundName,
+        auction_status: auctionStatus,
+        exported_by_email: staffProfile?.email || null,
+        created_by_email: staffProfile?.email || null,
+        total_lots_with_offers: uniqueMotorcycles.size,
+        total_merchants: uniqueMerchants.size,
+        total_offers: offers.length,
+        total_highest_value: totalHighestOfferValue,
+        total_cost: totalCostForSubmittedLots,
+        total_gross_profit: totalGrossProfit,
+      })
+      .select("id")
+      .single();
+
+    if (roundError || !roundData) {
+      throw new Error(
+        roundError?.message || "ไม่สามารถสร้างประวัติรอบการเสนอราคาได้"
+      );
+    }
+
+    const archiveRows = lotResults.flatMap((lot) => {
+      const groups = getOfferGroupsByPrice(lot.offers);
+      const cost = Number(lot.motorcycle?.cost_price || 0);
+
+      return groups.flatMap((group, groupIndex) => {
+        const rankNumber = groupIndex + 1;
+        const isTied = group.length >= 2;
+
+        return group.map((offer) => ({
+          auction_round_id: roundData.id,
+
+          original_offer_id: Number(offer.id),
+          original_merchant_id: Number(offer.merchant_id),
+          original_motorcycle_id: Number(offer.motorcycle_id),
+
+          lot_number: lot.motorcycle?.lot_number || "",
+          motorcycle_name: lot.motorcycle?.motorcycle_name || "",
+          cost_price: cost,
+
+          merchant_name: offer.merchants?.name || "",
+          shop_name: offer.merchants?.shop_name || "",
+          phone: offer.merchants?.phone || "",
+
+          offer_price: Number(offer.offer_price || 0),
+          submitted_at: offer.submitted_at,
+          rank_number: rankNumber,
+          is_tied: isTied,
+          gross_profit: Number(offer.offer_price || 0) - cost,
+        }));
+      });
+    });
+
+    const chunks = chunkArray(archiveRows, 500);
+
+    for (const chunk of chunks) {
+      const { error: archiveOffersError } = await supabase
+        .from("auction_round_offers")
+        .insert(chunk);
+
+      if (archiveOffersError) {
+        throw new Error(archiveOffersError.message);
+      }
+    }
+
+    return {
+      roundId: Number(roundData.id),
+      roundName,
+      archivedOfferCount: archiveRows.length,
+    };
+  }
+
   async function resetAuctionData() {
     if (staffProfile?.role !== "owner") {
       setErrorMessage("เฉพาะบัญชี Owner เท่านั้นที่ล้างข้อมูลได้");
@@ -482,7 +682,7 @@ export default function AdminPage() {
     }
 
     const confirmReset = confirm(
-      "ต้องการล้างข้อมูลการเสนอราคาทั้งหมดใช่หรือไม่? ระบบจะลบราคาและรายการส่งราคาของร้านค้า แต่จะไม่ลบรายการรถ รูปภาพ บัญชีร้านค้า และบัญชีแอดมิน"
+      "ต้องการบันทึกประวัติรอบนี้ แล้วล้างข้อมูลการเสนอราคาปัจจุบันใช่หรือไม่? ระบบจะเก็บประวัติราคาไว้ก่อน จากนั้นจะลบราคาและรายการส่งราคาปัจจุบัน แต่จะไม่ลบรายการรถ รูปภาพ บัญชีร้านค้า และบัญชีแอดมิน"
     );
 
     if (!confirmReset) return;
@@ -499,7 +699,7 @@ export default function AdminPage() {
     }
 
     const secondConfirm = confirm(
-      "ยืนยันครั้งสุดท้าย: การล้างข้อมูลนี้ย้อนกลับไม่ได้ ต้องการทำต่อหรือไม่?"
+      "ยืนยันครั้งสุดท้าย: ระบบจะบันทึกประวัติรอบนี้ก่อน แล้วจึงล้างข้อมูลปัจจุบัน ต้องการทำต่อหรือไม่?"
     );
 
     if (!secondConfirm) return;
@@ -507,36 +707,78 @@ export default function AdminPage() {
     setIsLoading(true);
     setErrorMessage("");
 
-    const { error: offersError } = await supabase
-      .from("offers")
-      .delete()
-      .neq("id", 0);
+    try {
+      const archiveResult = await archiveCurrentAuctionBeforeReset();
 
-    if (offersError) {
-      setErrorMessage(offersError.message);
+      const { error: offersError } = await supabase
+        .from("offers")
+        .delete()
+        .neq("id", 0);
+
+      if (offersError) {
+        throw new Error(offersError.message);
+      }
+
+      const { error: merchantsError } = await supabase
+        .from("merchants")
+        .delete()
+        .neq("id", 0);
+
+      if (merchantsError) {
+        throw new Error(merchantsError.message);
+      }
+
+      const { error: permissionsError } = await supabase
+        .from("merchant_lot_edit_permissions")
+        .delete()
+        .neq("id", 0);
+
+      if (permissionsError) {
+        throw new Error(permissionsError.message);
+      }
+
+      await createAuditLog({
+        action: archiveResult
+          ? "auction_reset_archived"
+          : "auction_reset_empty",
+        targetType: archiveResult ? "auction_round" : "auction",
+        targetId: archiveResult
+          ? String(archiveResult.roundId)
+          : "Main Motorcycle Auction",
+        targetName: archiveResult
+          ? archiveResult.roundName
+          : "Main Motorcycle Auction",
+        details: {
+          archived_round_id: archiveResult?.roundId || null,
+          archived_round_name: archiveResult?.roundName || null,
+          archived_offer_count: archiveResult?.archivedOfferCount || 0,
+          total_lots_with_offers_before_reset: uniqueMotorcycles.size,
+          total_merchants_before_reset: uniqueMerchants.size,
+          total_offers_before_reset: offers.length,
+          total_highest_value_before_reset: totalHighestOfferValue,
+          total_cost_before_reset: totalCostForSubmittedLots,
+          total_gross_profit_before_reset: totalGrossProfit,
+          deleted_current_offers: true,
+          deleted_current_merchant_submissions: true,
+          deleted_current_lot_edit_permissions: true,
+        },
+      });
+
+      setResetPassword("");
+      setResetPhrase("");
+
+      alert("บันทึกประวัติรอบนี้และล้างข้อมูลปัจจุบันเรียบร้อยแล้ว");
+
+      await loadDashboardData();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "เกิดข้อผิดพลาดระหว่างบันทึกประวัติและล้างข้อมูล";
+
+      setErrorMessage(message);
       setIsLoading(false);
-      return;
     }
-
-    const { error: merchantsError } = await supabase
-      .from("merchants")
-      .delete()
-      .neq("id", 0);
-
-    if (merchantsError) {
-      setErrorMessage(merchantsError.message);
-      setIsLoading(false);
-      return;
-    }
-
-    await supabase
-      .from("merchant_lot_edit_permissions")
-      .delete()
-      .neq("id", 0);
-
-    setResetPassword("");
-    setResetPhrase("");
-    await loadDashboardData();
   }
 
   function exportAuctionExcel() {
@@ -558,8 +800,8 @@ export default function AdminPage() {
 
       return {
         Lot: lot.motorcycle?.lot_number || "",
-        "รายการรถ": lot.motorcycle?.motorcycle_name || "",
-        "ต้นทุน": cost || "",
+        รายการรถ: lot.motorcycle?.motorcycle_name || "",
+        ต้นทุน: cost || "",
         "อันดับ 1 ร้านค้า": getGroupText(rank1),
         "อันดับ 1 ราคา": rank1Price,
         "กำไรขั้นต้น อันดับ 1": getGrossProfit(rank1Price, cost),
@@ -569,7 +811,7 @@ export default function AdminPage() {
         "อันดับ 3 ร้านค้า": getGroupText(rank3),
         "อันดับ 3 ราคา": rank3Price,
         "กำไรขั้นต้น อันดับ 3": getGrossProfit(rank3Price, cost),
-        "หมายเหตุ": getTieNote(groups),
+        หมายเหตุ: getTieNote(groups),
       };
     });
 
@@ -585,65 +827,35 @@ export default function AdminPage() {
 
         return group.map((offer) => ({
           Lot: lot.motorcycle?.lot_number || "",
-          "รายการรถ": lot.motorcycle?.motorcycle_name || "",
-          "ต้นทุน": cost || "",
-          "อันดับ": rankText,
-          "ร้านค้า": offer.merchants?.shop_name || "",
-          "ผู้ติดต่อ": offer.merchants?.name || "",
-          "โทร": offer.merchants?.phone || "",
-          "ราคาเสนอ": Number(offer.offer_price || 0),
-          "กำไรขั้นต้น": Number(offer.offer_price || 0) - cost,
-          "วันที่ส่งราคา": formatThaiDate(offer.submitted_at),
-          "เวลาส่งราคา": formatThaiTime(offer.submitted_at),
+          รายการรถ: lot.motorcycle?.motorcycle_name || "",
+          ต้นทุน: cost || "",
+          อันดับ: rankText,
+          ร้านค้า: offer.merchants?.shop_name || "",
+          ผู้ติดต่อ: offer.merchants?.name || "",
+          โทร: offer.merchants?.phone || "",
+          ราคาเสนอ: Number(offer.offer_price || 0),
+          กำไรขั้นต้น: Number(offer.offer_price || 0) - cost,
+          วันที่ส่งราคา: formatThaiDate(offer.submitted_at),
+          เวลาส่งราคา: formatThaiTime(offer.submitted_at),
         }));
       });
     });
 
     const exportInfoRows = [
-      {
-        รายการ: "วันที่ Export",
-        ข้อมูล: formatThaiDate(exportDate),
-      },
-      {
-        รายการ: "เวลา Export",
-        ข้อมูล: formatThaiTime(exportDate),
-      },
-      {
-        รายการ: "ผู้ Export",
-        ข้อมูล: staffProfile?.email || "-",
-      },
-      {
-        รายการ: "สิทธิ์ผู้ Export",
-        ข้อมูล: staffProfile?.role || "-",
-      },
+      { รายการ: "วันที่ Export", ข้อมูล: formatThaiDate(exportDate) },
+      { รายการ: "เวลา Export", ข้อมูล: formatThaiTime(exportDate) },
+      { รายการ: "ผู้ Export", ข้อมูล: staffProfile?.email || "-" },
+      { รายการ: "สิทธิ์ผู้ Export", ข้อมูล: staffProfile?.role || "-" },
       {
         รายการ: "สถานะการเสนอราคา",
         ข้อมูล: getThaiAuctionStatus(auctionStatus),
       },
-      {
-        รายการ: "จำนวน Lot ที่มีราคา",
-        ข้อมูล: uniqueMotorcycles.size,
-      },
-      {
-        รายการ: "จำนวนร้านค้าที่ส่งราคา",
-        ข้อมูล: uniqueMerchants.size,
-      },
-      {
-        รายการ: "จำนวนราคาที่ส่งทั้งหมด",
-        ข้อมูล: offers.length,
-      },
-      {
-        รายการ: "มูลค่าสูงสุดรวม",
-        ข้อมูล: totalHighestOfferValue,
-      },
-      {
-        รายการ: "ต้นทุนรวม",
-        ข้อมูล: totalCostForSubmittedLots,
-      },
-      {
-        รายการ: "กำไรขั้นต้นรวม",
-        ข้อมูล: totalGrossProfit,
-      },
+      { รายการ: "จำนวน Lot ที่มีราคา", ข้อมูล: uniqueMotorcycles.size },
+      { รายการ: "จำนวนร้านค้าที่ส่งราคา", ข้อมูล: uniqueMerchants.size },
+      { รายการ: "จำนวนราคาที่ส่งทั้งหมด", ข้อมูล: offers.length },
+      { รายการ: "มูลค่าสูงสุดรวม", ข้อมูล: totalHighestOfferValue },
+      { รายการ: "ต้นทุนรวม", ข้อมูล: totalCostForSubmittedLots },
+      { รายการ: "กำไรขั้นต้นรวม", ข้อมูล: totalGrossProfit },
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -809,8 +1021,8 @@ export default function AdminPage() {
               {isUpdatingStatus
                 ? "กำลังอัปเดต..."
                 : auctionStatus === "open"
-                ? "ปิดรับราคา"
-                : "เปิดรับราคา"}
+                  ? "ปิดรับราคา"
+                  : "เปิดรับราคา"}
             </button>
           </div>
         </section>
@@ -882,13 +1094,80 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <section className="mt-5 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+              Stock Summary
+            </p>
+
+            <h2 className="mt-1 text-xl font-bold text-gray-900">
+              สรุปคลังรถบริษัท
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-600">
+              ภาพรวมรถทั้งหมดในคลังก่อนเลือกนำเข้า Auction
+            </p>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-5">
+            <div className="rounded-2xl bg-gray-50 p-4 ring-1 ring-gray-200">
+              <p className="text-sm font-medium text-gray-500">รถในคลังทั้งหมด</p>
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {totalStockMotorcycles}
+              </p>
+              <p className="text-sm text-gray-500">คัน</p>
+            </div>
+
+            <div className="rounded-2xl bg-green-50 p-4 ring-1 ring-green-200">
+              <p className="text-sm font-medium text-green-700">พร้อมขาย</p>
+              <p className="mt-2 text-3xl font-bold text-green-700">
+                {readyStockMotorcycles}
+              </p>
+              <p className="text-sm text-green-700">คัน</p>
+            </div>
+
+            <div className="rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-200">
+              <p className="text-sm font-medium text-blue-700">อยู่ในการประมูล</p>
+              <p className="mt-2 text-3xl font-bold text-blue-700">
+                {inAuctionStockMotorcycles}
+              </p>
+              <p className="text-sm text-blue-700">คัน</p>
+            </div>
+
+            <div className="rounded-2xl bg-purple-50 p-4 ring-1 ring-purple-200">
+              <p className="text-sm font-medium text-purple-700">ขายแล้ว</p>
+              <p className="mt-2 text-3xl font-bold text-purple-700">
+                {soldStockMotorcycles}
+              </p>
+              <p className="text-sm text-purple-700">คัน</p>
+            </div>
+
+            <div className="rounded-2xl bg-orange-50 p-4 ring-1 ring-orange-200">
+              <p className="text-sm font-medium text-orange-700">
+                ต้นทุนรวมในคลัง
+              </p>
+              <p className="mt-2 text-2xl font-bold text-orange-700">
+                {totalStockCost.toLocaleString()}
+              </p>
+              <p className="text-sm text-orange-700">บาท</p>
+            </div>
+          </div>
+        </section>
+
         <section className="mt-5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
           <div className="flex flex-wrap gap-3">
+            <a
+              href="/admin/stock"
+              className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+            >
+              คลังรถบริษัท
+            </a>
+
             <a
               href="/admin/motorcycles"
               className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
             >
-              จัดการรถ
+              จัดการรถ Auction
             </a>
 
             <a
@@ -913,6 +1192,20 @@ export default function AdminPage() {
               </a>
             )}
 
+            <a
+              href="/admin/history"
+              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+            >
+              ประวัติการเสนอราคา
+            </a>
+
+            <a
+              href="/admin/audit-logs"
+              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+            >
+              ประวัติการทำงาน
+            </a>
+
             <button
               onClick={loadDashboardData}
               className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
@@ -927,7 +1220,7 @@ export default function AdminPage() {
                   className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
                   placeholder="รหัสผ่าน Owner"
                   value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
+                  onChange={(event) => setResetPassword(event.target.value)}
                 />
 
                 <input
@@ -935,14 +1228,14 @@ export default function AdminPage() {
                   className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
                   placeholder='พิมพ์ "RESET AUCTION"'
                   value={resetPhrase}
-                  onChange={(e) => setResetPhrase(e.target.value)}
+                  onChange={(event) => setResetPhrase(event.target.value)}
                 />
 
                 <button
                   onClick={resetAuctionData}
                   className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
                 >
-                  ล้างข้อมูลการเสนอราคา
+                  บันทึกประวัติและล้างข้อมูล
                 </button>
               </>
             )}
@@ -981,28 +1274,27 @@ export default function AdminPage() {
             </p>
 
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full border-collapse text-left text-sm">
+              <table className="min-w-[950px] w-full border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b bg-green-50 text-green-900">
+                  <tr className="border-b bg-gray-100 text-gray-800">
                     <th className="p-3">Lot</th>
                     <th className="p-3">รายการรถ</th>
                     <th className="p-3">ต้นทุน</th>
                     <th className="p-3">ราคาสูงสุด</th>
                     <th className="p-3">กำไรขั้นต้น</th>
-                    <th className="p-3">ผู้เสนอสูงสุด</th>
-                    <th className="p-3">หมายเหตุ</th>
+                    <th className="p-3">ร้านค้าอันดับ 1</th>
+                    <th className="p-3">จำนวนราคา</th>
                     <th className="p-3">รายละเอียด</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {lotResults.map((lot) => {
-                    const hasTie = lot.topOffers.length >= 2;
                     const cost = Number(lot.motorcycle?.cost_price || 0);
                     const profit = Number(lot.highestPrice || 0) - cost;
 
                     return (
-                      <tr key={lot.lotKey} className="border-b">
+                      <tr key={lot.lotKey} className="border-b align-top">
                         <td className="p-3 font-semibold">
                           {lot.motorcycle?.lot_number || "-"}
                         </td>
@@ -1011,12 +1303,12 @@ export default function AdminPage() {
                           {lot.motorcycle?.motorcycle_name || "-"}
                         </td>
 
-                        <td className="p-3 font-semibold text-orange-700">
+                        <td className="p-3">
                           {cost ? `${cost.toLocaleString()} บาท` : "-"}
                         </td>
 
                         <td className="p-3 font-bold text-green-700">
-                          {Number(lot.highestPrice).toLocaleString()} บาท
+                          {Number(lot.highestPrice || 0).toLocaleString()} บาท
                         </td>
 
                         <td
@@ -1026,56 +1318,32 @@ export default function AdminPage() {
                               : "p-3 font-bold text-red-700"
                           }
                         >
-                          {cost ? `${profit.toLocaleString()} บาท` : "-"}
+                          {profit.toLocaleString()} บาท
                         </td>
 
                         <td className="p-3">
-                          <div className="space-y-2">
-                            {lot.topOffers.map((offer) => (
-                              <div
-                                key={offer.id}
-                                className={
-                                  hasTie
-                                    ? "rounded-xl bg-orange-50 px-3 py-2"
-                                    : ""
-                                }
-                              >
-                                <p className="font-semibold text-gray-900">
-                                  {offer.merchants?.shop_name || "-"}
-                                </p>
-
-                                <p className="text-xs text-gray-500">
-                                  {offer.merchants?.name || "-"} •{" "}
-                                  {offer.merchants?.phone || "-"}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
+                          {lot.topOffers.map((offer) => (
+                            <div key={offer.id} className="mb-1">
+                              <p className="font-semibold">
+                                {offer.merchants?.shop_name || "-"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {offer.merchants?.name || "-"} •{" "}
+                                {offer.merchants?.phone || "-"}
+                              </p>
+                            </div>
+                          ))}
                         </td>
 
-                        <td className="p-3">
-                          {hasTie ? (
-                            <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
-                              สูงสุดเท่ากัน {lot.topOffers.length} ราย
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                              อันดับ 1
-                            </span>
-                          )}
-                        </td>
+                        <td className="p-3">{lot.offers.length}</td>
 
                         <td className="p-3">
-                          {lot.motorcycle?.id ? (
-                            <a
-                              href={`/admin/lots/${lot.motorcycle.id}`}
-                              className="rounded-xl bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
-                            >
-                              ดูราคา
-                            </a>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          <a
+                            href={`/admin/lots/${lot.motorcycle?.id}`}
+                            className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-gray-100"
+                          >
+                            เปิดดู Lot
+                          </a>
                         </td>
                       </tr>
                     );

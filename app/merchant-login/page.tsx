@@ -24,6 +24,45 @@ function isValidPhone(value: string) {
   return /^\d{9,10}$/.test(value);
 }
 
+function EyeIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-7 w-7"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"
+      />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-7 w-7"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 3l18 18M10.58 10.58A2 2 0 0012 14a2 2 0 001.42-.58M9.88 4.24A9.77 9.77 0 0112 4c5 0 9 4.5 10 8a11.2 11.2 0 01-2.1 3.7M6.1 6.1C4.1 7.4 2.7 9.5 2 12c1 3.5 5 8 10 8a9.7 9.7 0 004.1-.9"
+      />
+    </svg>
+  );
+}
+
 export default function MerchantLoginPage() {
   const [phone, setPhone] = useState("");
   const [merchantCode, setMerchantCode] = useState("");
@@ -31,6 +70,7 @@ export default function MerchantLoginPage() {
 
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -56,10 +96,10 @@ export default function MerchantLoginPage() {
     if (isLoading) return;
 
     const cleanPhoneNumber = cleanPhone(phone);
-    const cleanCode = merchantCode.trim().toUpperCase();
+    const cleanCode = merchantCode.trim();
 
     if (!cleanPhoneNumber || !cleanCode) {
-      setErrorMessage("กรุณากรอกเบอร์โทรและรหัสร้านค้า");
+      setErrorMessage("กรุณากรอกเบอร์โทรและรหัสผ่าน");
       return;
     }
 
@@ -90,7 +130,7 @@ export default function MerchantLoginPage() {
     }
 
     if (!data || data.length === 0) {
-      setErrorMessage("เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง");
+      setErrorMessage("เบอร์โทรหรือรหัสผ่านไม่ถูกต้อง");
       setIsLoading(false);
       return;
     }
@@ -153,7 +193,7 @@ export default function MerchantLoginPage() {
             <h1 className="mt-3 text-3xl font-bold">เข้าสู่ระบบ</h1>
 
             <p className="mt-3 text-sm leading-6 text-gray-300">
-              ใช้เบอร์โทรและรหัสร้านค้าเพื่อเสนอราคา
+              ใช้เบอร์โทรและรหัสผ่านเพื่อเสนอราคา
             </p>
           </div>
 
@@ -175,7 +215,7 @@ export default function MerchantLoginPage() {
                 className="mt-2 w-full rounded-2xl border p-3 text-lg outline-none focus:ring-2 focus:ring-black"
                 placeholder="9 หรือ 10 หลัก"
                 value={phone}
-                onChange={(e) => setPhone(cleanPhone(e.target.value))}
+                onChange={(event) => setPhone(cleanPhone(event.target.value))}
               />
 
               <p className="mt-1 text-xs text-gray-500">
@@ -186,7 +226,7 @@ export default function MerchantLoginPage() {
                 <input
                   type="checkbox"
                   checked={rememberPhone}
-                  onChange={(e) => setRememberPhone(e.target.checked)}
+                  onChange={(event) => setRememberPhone(event.target.checked)}
                   className="h-4 w-4"
                 />
                 จำเบอร์โทรไว้
@@ -195,15 +235,27 @@ export default function MerchantLoginPage() {
 
             <div className="mt-4">
               <label className="text-sm font-medium text-gray-700">
-                รหัสร้านค้า
+                รหัสผ่าน
               </label>
 
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 text-lg uppercase outline-none focus:ring-2 focus:ring-black"
-                placeholder="เช่น M001"
-                value={merchantCode}
-                onChange={(e) => setMerchantCode(e.target.value.toUpperCase())}
-              />
+              <div className="relative mt-2">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="w-full rounded-2xl border px-4 py-3 pr-14 text-lg outline-none focus:ring-2 focus:ring-black"
+                  placeholder="กรอกรหัสผ่าน"
+                  value={merchantCode}
+                  onChange={(event) => setMerchantCode(event.target.value)}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                  aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                >
+                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 rounded-2xl border bg-gray-50 p-4">
@@ -211,7 +263,7 @@ export default function MerchantLoginPage() {
                 <input
                   type="checkbox"
                   checked={acceptedPolicy}
-                  onChange={(e) => setAcceptedPolicy(e.target.checked)}
+                  onChange={(event) => setAcceptedPolicy(event.target.checked)}
                   className="mt-1 h-4 w-4"
                 />
 
@@ -281,7 +333,7 @@ export default function MerchantLoginPage() {
 
             <div className="mt-5 space-y-4 text-sm leading-7 text-gray-700">
               <p>
-                1. ผู้ใช้งานต้องใช้บัญชีของตนเอง และรักษารหัสร้านค้าไม่ให้ผู้อื่นใช้งานแทน
+                1. ผู้ใช้งานต้องใช้บัญชีของตนเอง และรักษารหัสผ่านไม่ให้ผู้อื่นใช้งานแทน
               </p>
 
               <p>

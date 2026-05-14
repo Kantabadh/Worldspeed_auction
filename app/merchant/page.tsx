@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type MotorcyclePhoto = {
@@ -67,9 +67,14 @@ type LotEditPermission = {
   can_edit: boolean;
 };
 
+type OfferFilter = "all" | "empty" | "priced" | "editable" | "starred";
+
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const ITEMS_PER_PAGE = 5;
 
 export default function MerchantPage() {
+  const listSectionRef = useRef<HTMLElement | null>(null);
+
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
   const [phone, setPhone] = useState("");
@@ -81,6 +86,10 @@ export default function MerchantPage() {
   const [starredLotIds, setStarredLotIds] = useState<number[]>([]);
   const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
   const [editableLotIds, setEditableLotIds] = useState<number[]>([]);
+
+  const [searchText, setSearchText] = useState("");
+  const [offerFilter, setOfferFilter] = useState<OfferFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [auctionStatus, setAuctionStatus] = useState("open");
@@ -401,7 +410,13 @@ export default function MerchantPage() {
     };
   }, [merchantAccountId]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, offerFilter]);
+
   function updatePrice(index: number, value: string) {
+    if (index < 0) return;
+
     const cleanValue = value.replace(/[^\d]/g, "");
 
     const newOffers = [...offers];
@@ -503,15 +518,188 @@ export default function MerchantPage() {
   const canSubmit =
     auctionStatus === "open" && (!hasSubmitted || editableLotCount > 0);
 
-  const sortedOffers = [...offers].sort((a, b) => {
-    const aStarred = starredLotIds.map(Number).includes(Number(a.motorcycle_id));
-    const bStarred = starredLotIds.map(Number).includes(Number(b.motorcycle_id));
+  const sortedOffers = useMemo(() => {
+    return [...offers].sort((a, b) => a.lot.localeCompare(b.lot));
+  }, [offers]);
 
-    if (aStarred && !bStarred) return -1;
-    if (!aStarred && bStarred) return 1;
+  const starredOffers = useMemo(() => {
+    return sortedOffers.filter((offer) =>
+      starredLotIds.map(Number).includes(Number(offer.motorcycle_id))
+    );
+  }, [sortedOffers, starredLotIds]);
 
-    return a.lot.localeCompare(b.lot);
-  });
+  const filteredOffers = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+
+    return sortedOffers.filter((offer) => {
+      const isStarred = starredLotIds
+        .map(Number)
+        .includes(Number(offer.motorcycle_id));
+
+      const lotCanEdit = canEditThisLot(Number(offer.motorcycle_id));
+
+      const searchableText = [
+        offer.lot,
+        offer.motorcycle,
+        offer.brand,
+        offer.model,
+        offer.year,
+        offer.color,
+        offer.license_plate,
+        offer.mileage,
+        offer.frame_number,
+        offer.engine_number,
+        offer.registration_status,
+        offer.tax_expiry,
+        offer.condition,
+        offer.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchSearch = !keyword || searchableText.includes(keyword);
+
+      const matchFilter =
+        offerFilter === "all" ||
+        (offerFilter === "empty" && offer.price === "") ||
+        (offerFilter === "priced" && offer.price !== "") ||
+        (offerFilter === "editable" && hasSubmitted && lotCanEdit) ||
+        (offerFilter === "starred" && isStarred);
+
+      return matchSearch && matchFilter;
+    });
+  }, [
+    sortedOffers,
+    searchText,
+    offerFilter,
+    starredLotIds,
+    editableLotIds,
+    hasSubmitted,
+  ]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredOffers.length / ITEMS_PER_PAGE)
+  );
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedOffers = filteredOffers.slice(
+    (safeCurrentPage - 1) * ITEMS_PER_PAGE,
+    safeCurrentPage * ITEMS_PER_PAGE
+  );
+
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((page) => {
+      return (
+        page === 1 ||
+        page === totalPages ||
+        Math.abs(page - safeCurrentPage) <= 2
+      );
+    });
+
+  function goToPage(page: number) {
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(safePage);
+
+    setTimeout(() => {
+      listSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
+
+  function showOnlyStarredLots() {
+    setSearchText("");
+    setOfferFilter("starred");
+    setCurrentPage(1);
+
+    setTimeout(() => {
+      listSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
+
+  function jumpToStarredLot(lotNumber: string) {
+    setOfferFilter("all");
+    setSearchText(lotNumber);
+    setCurrentPage(1);
+
+    setTimeout(() => {
+      listSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
+
+  function closeFilterView() {
+    setSearchText("");
+    setOfferFilter("all");
+    setCurrentPage(1);
+  }
+
+  function renderPaginationControls() {
+    if (filteredOffers.length <= ITEMS_PER_PAGE) return null;
+
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gray-100 p-3">
+        <p className="text-sm text-gray-600">
+          หน้า {safeCurrentPage} / {totalPages} • แสดงทีละ {ITEMS_PER_PAGE} รายการ
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => goToPage(safeCurrentPage - 1)}
+            disabled={safeCurrentPage === 1}
+            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ก่อนหน้า
+          </button>
+
+          {pageNumbers.map((page, index) => {
+            const previousPage = pageNumbers[index - 1];
+            const showDots =
+              previousPage !== undefined && page - previousPage > 1;
+
+            return (
+              <div key={page} className="flex items-center gap-2">
+                {showDots && (
+                  <span className="px-1 text-sm text-gray-400">...</span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => goToPage(page)}
+                  className={
+                    page === safeCurrentPage
+                      ? "rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
+                      : "rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100"
+                  }
+                >
+                  {page}
+                </button>
+              </div>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => goToPage(safeCurrentPage + 1)}
+            disabled={safeCurrentPage === totalPages}
+            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ถัดไป
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!isMerchantLoggedIn) {
     return (
@@ -594,10 +782,16 @@ export default function MerchantPage() {
           </div>
         </section>
 
-        <section className="mt-5">
-          <div className="flex items-end justify-between gap-3">
+        <section
+          ref={listSectionRef}
+          className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold text-gray-900">รายการรถ</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                ค้นหา กรองรายการ และแบ่งหน้าเพื่อเสนอราคาได้ง่ายขึ้น
+              </p>
             </div>
 
             <div className="shrink-0 rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
@@ -605,255 +799,432 @@ export default function MerchantPage() {
             </div>
           </div>
 
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_220px]">
+            <div>
+              <label className="text-sm font-medium text-gray-700">ค้นหา</label>
+
+              <input
+                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">
+                ตัวกรอง
+              </label>
+
+              <select
+                value={offerFilter}
+                onChange={(event) =>
+                  setOfferFilter(event.target.value as OfferFilter)
+                }
+                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+              >
+                <option value="all">ทั้งหมด</option>
+                <option value="empty">ยังไม่ใส่ราคา</option>
+                <option value="priced">ใส่ราคาแล้ว</option>
+                <option value="editable">แก้ไขได้</option>
+                <option value="starred">ปักดาว</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-gray-50 p-3">
+              <p className="text-xs text-gray-500">รถทั้งหมด</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">
+                {offers.length}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-green-50 p-3">
+              <p className="text-xs text-green-700">ใส่ราคาแล้ว</p>
+              <p className="mt-1 text-xl font-bold text-green-700">
+                {enteredOfferCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-orange-50 p-3">
+              <p className="text-xs text-orange-700">แก้ไขได้</p>
+              <p className="mt-1 text-xl font-bold text-orange-700">
+                {editableLotCount}
+              </p>
+            </div>
+          </div>
+
+          {starredOffers.length > 0 && (
+            <section className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-yellow-900">
+                    ⭐ รายการที่ปักดาว
+                  </h3>
+
+                  <p className="mt-1 text-sm text-yellow-800">
+                    เก็บ Lot ที่สนใจไว้ตรงนี้ โดยไม่เปลี่ยนลำดับรายการหลัก
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={showOnlyStarredLots}
+                  className="rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-600"
+                >
+                  ดูเฉพาะปักดาว
+                </button>
+              </div>
+
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {starredOffers.map((offer) => (
+                  <button
+                    key={offer.motorcycle_id}
+                    type="button"
+                    onClick={() => jumpToStarredLot(offer.lot)}
+                    className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
+                      Lot {offer.lot}
+                    </p>
+
+                    <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
+                      {offer.motorcycle}
+                    </p>
+
+                    {offer.price ? (
+                      <p className="mt-1 text-xs font-semibold text-green-700">
+                        {Number(offer.price).toLocaleString()} บาท
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        ยังไม่ใส่ราคา
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(searchText || offerFilter !== "all") && (
+            <button
+              type="button"
+              onClick={closeFilterView}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100"
+            >
+              <span className="text-base leading-none">×</span>
+              ปิด
+            </button>
+          )}
+
           {offers.length === 0 && !errorMessage && (
-            <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+            <div className="mt-4 rounded-2xl bg-gray-50 p-5">
               <p className="text-gray-600">กำลังโหลด...</p>
             </div>
           )}
 
-          <div className="mt-4 space-y-4">
-            {sortedOffers.map((offer) => {
-              const originalIndex = offers.findIndex(
-                (item) => Number(item.motorcycle_id) === Number(offer.motorcycle_id)
-              );
+          {offers.length > 0 && filteredOffers.length === 0 && (
+            <div className="mt-4 rounded-2xl bg-gray-50 p-5">
+              <p className="font-semibold text-gray-900">
+                ไม่พบรายการที่ค้นหา
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                ลองเปลี่ยนคำค้นหาหรือตัวกรอง
+              </p>
+            </div>
+          )}
 
-              const isStarred = starredLotIds
-                .map(Number)
-                .includes(Number(offer.motorcycle_id));
-              const isDetailOpen = openDetailIds
-                .map(Number)
-                .includes(Number(offer.motorcycle_id));
-              const firstPhoto = offer.photos[0];
+          {paginatedOffers.length > 0 && (
+            <>
+              <div className="mt-4">{renderPaginationControls()}</div>
 
-              const lotCanEdit = canEditThisLot(Number(offer.motorcycle_id));
-              const inputDisabled = auctionStatus !== "open" || !lotCanEdit;
+              <div className="mt-4 space-y-4">
+                {paginatedOffers.map((offer) => {
+                  const originalIndex = offers.findIndex(
+                    (item) =>
+                      Number(item.motorcycle_id) === Number(offer.motorcycle_id)
+                  );
 
-              return (
-                <article
-                  key={offer.motorcycle_id}
-                  className={
-                    isStarred
-                      ? "overflow-hidden rounded-3xl border border-yellow-300 bg-yellow-50 shadow-sm"
-                      : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
-                  }
-                >
-                  {firstPhoto ? (
-                    <button
-                      type="button"
-                      onClick={() => openGallery(offer.photos, 0)}
-                      className="relative block w-full overflow-hidden bg-gray-100"
+                  const isStarred = starredLotIds
+                    .map(Number)
+                    .includes(Number(offer.motorcycle_id));
+
+                  const isDetailOpen = openDetailIds
+                    .map(Number)
+                    .includes(Number(offer.motorcycle_id));
+
+                  const firstPhoto = offer.photos[0];
+
+                  const lotCanEdit = canEditThisLot(
+                    Number(offer.motorcycle_id)
+                  );
+
+                  const inputDisabled = auctionStatus !== "open" || !lotCanEdit;
+
+                  return (
+                    <article
+                      key={offer.motorcycle_id}
+                      className={
+                        isStarred
+                          ? "overflow-hidden rounded-3xl border border-yellow-300 bg-yellow-50 shadow-sm"
+                          : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
+                      }
                     >
-                      <img
-                        src={firstPhoto.image_url}
-                        alt={`${offer.motorcycle} photo`}
-                        className="h-48 w-full object-cover sm:h-64"
-                      />
-
-                      {offer.photos.length > 1 && (
-                        <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                          {offer.photos.length} รูป
-                        </span>
-                      )}
-
-                      <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                        ดูรูป
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="flex h-32 items-center justify-center bg-gray-100 text-sm text-gray-500">
-                      ไม่มีรูป
-                    </div>
-                  )}
-
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                          {isStarred ? "⭐ " : ""}
-                          Lot {offer.lot}
-                        </p>
-
-                        <h3 className="mt-1 text-lg font-bold text-gray-900">
-                          {offer.motorcycle}
-                        </h3>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleStarLot(Number(offer.motorcycle_id))}
-                        className={
-                          isStarred
-                            ? "shrink-0 rounded-full bg-yellow-200 px-3 py-2 text-sm font-semibold text-yellow-800"
-                            : "shrink-0 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-yellow-50"
-                        }
-                      >
-                        {isStarred ? "⭐" : "☆"}
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {offer.price && (
-                        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                          {hasSubmitted ? "ราคาที่ส่ง" : "ใส่ราคาแล้ว"}
-                        </span>
-                      )}
-
-                      {hasSubmitted && lotCanEdit && (
-                        <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                          แก้ไข Lot นี้ได้
-                        </span>
-                      )}
-
-                      {hasSubmitted && !lotCanEdit && (
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
-                          ล็อก
-                        </span>
-                      )}
-
-                      {isStarred && (
-                        <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
-                          ปักดาว
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleDetail(Number(offer.motorcycle_id))}
-                        className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
-                      >
-                        {isDetailOpen ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
-                      </button>
-
-                      {offer.photos.length > 0 && (
+                      {firstPhoto ? (
                         <button
                           type="button"
                           onClick={() => openGallery(offer.photos, 0)}
-                          className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                          className="relative block w-full overflow-hidden bg-gray-100"
                         >
-                          ดูรูปทั้งหมด
+                          <img
+                            src={firstPhoto.image_url}
+                            alt={`${offer.motorcycle} photo`}
+                            className="h-48 w-full object-cover sm:h-64"
+                          />
+
+                          {offer.photos.length > 1 && (
+                            <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
+                              {offer.photos.length} รูป
+                            </span>
+                          )}
+
+                          <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
+                            ดูรูป
+                          </span>
                         </button>
+                      ) : (
+                        <div className="flex h-32 items-center justify-center bg-gray-100 text-sm text-gray-500">
+                          ไม่มีรูป
+                        </div>
                       )}
-                    </div>
 
-                    {isDetailOpen && (
-                      <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div>
-                            <p className="font-semibold text-gray-900">Lot</p>
-                            <p>{offer.lot || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">รายการ</p>
-                            <p>{offer.motorcycle || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">ยี่ห้อ</p>
-                            <p>{offer.brand || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">รุ่น</p>
-                            <p>{offer.model || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">ปี</p>
-                            <p>{offer.year || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">สี</p>
-                            <p>{offer.color || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">ทะเบียน</p>
-                            <p>{offer.license_plate || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">เลขไมล์</p>
-                            <p>{offer.mileage || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">เลขตัวถัง</p>
-                            <p>{offer.frame_number || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">เลขเครื่อง</p>
-                            <p>{offer.engine_number || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">สถานะเล่ม</p>
-                            <p>{offer.registration_status || "-"}</p>
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-gray-900">ภาษีหมดอายุ</p>
-                            <p>{offer.tax_expiry || "-"}</p>
-                          </div>
-
-                          <div className="sm:col-span-2">
-                            <p className="font-semibold text-gray-900">สภาพรถ</p>
-                            <p className="whitespace-pre-line">
-                              {offer.condition || "-"}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                              {isStarred ? "⭐ " : ""}
+                              Lot {offer.lot}
                             </p>
+
+                            <h3 className="mt-1 text-lg font-bold text-gray-900">
+                              {offer.motorcycle}
+                            </h3>
                           </div>
 
-                          <div className="sm:col-span-2">
-                            <p className="font-semibold text-gray-900">หมายเหตุ</p>
-                            <p className="whitespace-pre-line">
-                              {offer.notes || "-"}
-                            </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleStarLot(Number(offer.motorcycle_id))
+                            }
+                            className={
+                              isStarred
+                                ? "shrink-0 rounded-full bg-yellow-200 px-3 py-2 text-sm font-semibold text-yellow-800"
+                                : "shrink-0 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-yellow-50"
+                            }
+                          >
+                            {isStarred ? "⭐" : "☆"}
+                          </button>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {offer.price && (
+                            <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                              {hasSubmitted ? "ราคาที่ส่ง" : "ใส่ราคาแล้ว"}
+                            </span>
+                          )}
+
+                          {!offer.price && !hasSubmitted && (
+                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                              ยังไม่ใส่ราคา
+                            </span>
+                          )}
+
+                          {hasSubmitted && lotCanEdit && (
+                            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                              แก้ไข Lot นี้ได้
+                            </span>
+                          )}
+
+                          {hasSubmitted && !lotCanEdit && (
+                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                              ล็อก
+                            </span>
+                          )}
+
+                          {isStarred && (
+                            <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                              ปักดาว
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleDetail(Number(offer.motorcycle_id))
+                            }
+                            className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                          >
+                            {isDetailOpen ? "ซ่อนรายละเอียด ▲" : "ดูรายละเอียด ▼"}
+                          </button>
+
+                          {offer.photos.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openGallery(offer.photos, 0)}
+                              className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                            >
+                              ดูรูปทั้งหมด
+                            </button>
+                          )}
+                        </div>
+
+                        {isDetailOpen && (
+                          <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <p className="font-semibold text-gray-900">Lot</p>
+                                <p>{offer.lot || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  รายการ
+                                </p>
+                                <p>{offer.motorcycle || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  ยี่ห้อ
+                                </p>
+                                <p>{offer.brand || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  รุ่น
+                                </p>
+                                <p>{offer.model || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">ปี</p>
+                                <p>{offer.year || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">สี</p>
+                                <p>{offer.color || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  ทะเบียน
+                                </p>
+                                <p>{offer.license_plate || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  เลขไมล์
+                                </p>
+                                <p>{offer.mileage || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  เลขตัวถัง
+                                </p>
+                                <p>{offer.frame_number || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  เลขเครื่อง
+                                </p>
+                                <p>{offer.engine_number || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  สถานะเล่ม
+                                </p>
+                                <p>{offer.registration_status || "-"}</p>
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  ภาษีหมดอายุ
+                                </p>
+                                <p>{offer.tax_expiry || "-"}</p>
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <p className="font-semibold text-gray-900">
+                                  สภาพรถ
+                                </p>
+                                <p className="whitespace-pre-line">
+                                  {offer.condition || "-"}
+                                </p>
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <p className="font-semibold text-gray-900">
+                                  หมายเหตุ
+                                </p>
+                                <p className="whitespace-pre-line">
+                                  {offer.notes || "-"}
+                                </p>
+                              </div>
+                            </div>
                           </div>
+                        )}
+
+                        <div className="mt-4">
+                          <label className="text-sm font-medium text-gray-700">
+                            ราคา
+                          </label>
+
+                          <div className="mt-2 flex items-center overflow-hidden rounded-2xl border bg-white focus-within:ring-2 focus-within:ring-black">
+                            <input
+                              inputMode="numeric"
+                              disabled={inputDisabled}
+                              className="w-full p-4 text-xl font-semibold outline-none disabled:bg-gray-100 disabled:text-gray-700"
+                              placeholder="ใส่ราคา"
+                              value={
+                                offer.price
+                                  ? Number(offer.price).toLocaleString()
+                                  : ""
+                              }
+                              onChange={(event) =>
+                                updatePrice(originalIndex, event.target.value)
+                              }
+                            />
+
+                            <span className="border-l bg-gray-50 px-4 py-4 text-sm font-medium text-gray-600">
+                              บาท
+                            </span>
+                          </div>
+
+                          {hasSubmitted && !lotCanEdit && (
+                            <p className="mt-2 text-xs text-gray-500">
+                              หากต้องการแก้ Lot นี้ กรุณาติดต่อผู้ดูแล
+                            </p>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </article>
+                  );
+                })}
+              </div>
 
-                    <div className="mt-4">
-                      <label className="text-sm font-medium text-gray-700">
-                        ราคา
-                      </label>
-
-                      <div className="mt-2 flex items-center overflow-hidden rounded-2xl border bg-white focus-within:ring-2 focus-within:ring-black">
-                        <input
-                          inputMode="numeric"
-                          disabled={inputDisabled}
-                          className="w-full p-4 text-xl font-semibold outline-none disabled:bg-gray-100 disabled:text-gray-700"
-                          placeholder="ใส่ราคา"
-                          value={
-                            offer.price
-                              ? Number(offer.price).toLocaleString()
-                              : ""
-                          }
-                          onChange={(e) =>
-                            updatePrice(originalIndex, e.target.value)
-                          }
-                        />
-
-                        <span className="border-l bg-gray-50 px-4 py-4 text-sm font-medium text-gray-600">
-                          บาท
-                        </span>
-                      </div>
-
-                      {hasSubmitted && !lotCanEdit && (
-                        <p className="mt-2 text-xs text-gray-500">
-                          หากต้องการแก้ Lot นี้ กรุณาติดต่อผู้ดูแล
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+              <div className="mt-4">{renderPaginationControls()}</div>
+            </>
+          )}
         </section>
       </section>
 
@@ -861,7 +1232,7 @@ export default function MerchantPage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
-              ใส่ราคาแล้ว {enteredOfferCount} รายการ
+              ใส่ราคาแล้ว {enteredOfferCount} / {offers.length} รายการ
             </p>
 
             {isLockedAfterSubmission ? (
@@ -883,8 +1254,8 @@ export default function MerchantPage() {
             {isLockedAfterSubmission
               ? "ส่งแล้ว"
               : hasSubmitted && editableLotCount > 0
-              ? "ตรวจสอบราคาใหม่"
-              : "ตรวจสอบราคา"}
+                ? "ตรวจสอบราคาใหม่"
+                : "ตรวจสอบราคา"}
           </button>
         </div>
       </div>
@@ -894,9 +1265,10 @@ export default function MerchantPage() {
           <button
             type="button"
             onClick={closeGallery}
-            className="fixed right-4 top-4 z-50 rounded-full bg-black/60 px-4 py-2 text-2xl text-white"
+            className="fixed right-4 top-4 z-50 inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-base font-semibold text-white shadow-lg hover:bg-red-700"
           >
-            ×
+            <span className="text-xl leading-none">×</span>
+            ปิด
           </button>
 
           {galleryPhotos.length > 1 && (
