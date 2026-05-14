@@ -625,17 +625,10 @@ export default function MerchantPage() {
   }
 
   function jumpToStarredLot(lotNumber: string) {
-    setOfferFilter("all");
-    setSearchText(lotNumber);
-    setCurrentPage(1);
-
-    setTimeout(() => {
-      listSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 0);
-  }
+  setOfferFilter("all");
+  setSearchText(lotNumber);
+  setCurrentPage(1);
+}
 
   function closeFilterView() {
     setSearchText("");

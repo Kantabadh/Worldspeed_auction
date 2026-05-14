@@ -37,6 +37,10 @@ export default function SuccessPage() {
     window.location.href = "/merchant-login";
   }
 
+  function printOrSavePdf() {
+    window.print();
+  }
+
   function getSubmissionDateTime(submittedAt: string) {
     const date = new Date(submittedAt);
 
@@ -156,13 +160,13 @@ export default function SuccessPage() {
         }
       `}</style>
 
-      <main className="min-h-screen bg-gray-50 px-4 py-8 print-page">
+      <main className="min-h-screen bg-gray-50 px-3 py-4 sm:px-4 sm:py-8 print-page">
         <section className="mx-auto max-w-4xl">
           <div
             id="print-receipt"
             className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
           >
-            <div className="bg-green-600 px-6 py-6 text-white no-print">
+            <div className="bg-green-600 px-5 py-6 text-white no-print sm:px-6">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-3xl font-bold text-green-600">
                 ✓
               </div>
@@ -188,7 +192,7 @@ export default function SuccessPage() {
               )}
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="hidden print:block">
                 <div className="border-b-2 border-black pb-4">
                   <h1 className="text-center text-2xl font-bold text-black">
@@ -320,15 +324,19 @@ export default function SuccessPage() {
                           <td className="border border-black p-2">
                             {index + 1}
                           </td>
+
                           <td className="border border-black p-2">
                             {offer.lot}
                           </td>
+
                           <td className="border border-black p-2">
                             {offer.motorcycle}
                           </td>
+
                           <td className="border border-black p-2 text-right font-bold">
                             {Number(offer.price).toLocaleString()} บาท
                           </td>
+
                           <td className="border border-black p-2">
                             {offer.wasEdited ? "แก้ไขแล้ว" : ""}
                           </td>
@@ -342,9 +350,11 @@ export default function SuccessPage() {
                         >
                           รวม
                         </td>
+
                         <td className="border border-black p-2 text-right font-bold">
                           {total.toLocaleString()} บาท
                         </td>
+
                         <td className="border border-black p-2"></td>
                       </tr>
                     </tbody>
@@ -370,8 +380,8 @@ export default function SuccessPage() {
 
                             {offer.wasEdited && (
                               <span className="rounded-full bg-orange-600 px-3 py-1 text-xs font-bold text-white">
-                              แก้ไขแล้ว
-                            </span>
+                                แก้ไขแล้ว
+                              </span>
                             )}
                           </div>
 
@@ -412,28 +422,33 @@ export default function SuccessPage() {
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-wrap gap-3 no-print">
+              <div className="mt-6 grid gap-3 no-print sm:flex sm:flex-wrap">
+                <button
+                  onClick={printOrSavePdf}
+                  className="order-1 rounded-2xl bg-black px-5 py-4 text-base font-bold text-white shadow hover:bg-gray-800 sm:order-2 sm:py-3"
+                >
+                  <span className="sm:hidden">บันทึก PDF</span>
+                  <span className="hidden sm:inline">พิมพ์ / บันทึก PDF</span>
+                </button>
+
                 <a
                   href="/merchant"
-                  className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
+                  className="order-2 rounded-2xl border px-5 py-4 text-center font-semibold hover:bg-gray-100 sm:order-1 sm:py-3"
                 >
                   กลับไปหน้าเสนอราคา
                 </a>
 
                 <button
-                  onClick={() => window.print()}
-                  className="rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow"
-                >
-                  พิมพ์ / บันทึกใบยืนยัน
-                </button>
-
-                <button
                   onClick={logoutMerchant}
-                  className="rounded-2xl border border-red-200 px-5 py-3 font-semibold text-red-700 hover:bg-red-50"
+                  className="order-3 rounded-2xl border border-red-200 px-5 py-4 font-semibold text-red-700 hover:bg-red-50 sm:py-3"
                 >
                   ออกจากระบบ
                 </button>
               </div>
+
+              <p className="mt-3 text-center text-xs text-gray-500 no-print sm:hidden">
+                เมื่อกดบันทึก PDF โทรศัพท์จะเปิดหน้าพิมพ์/บันทึกของเบราว์เซอร์
+              </p>
             </div>
           </div>
         </section>

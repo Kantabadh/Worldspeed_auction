@@ -903,6 +903,64 @@ export default function AdminPage() {
     XLSX.writeFile(workbook, `สรุปผลเสนอราคา_${exportFileDateTime}.xlsx`);
   }
 
+  function SummaryCard({
+    label,
+    value,
+    subText,
+    valueClassName = "text-gray-900",
+  }: {
+    label: string;
+    value: string | number;
+    subText?: string;
+    valueClassName?: string;
+  }) {
+    return (
+      <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 sm:p-4 xl:p-5">
+        <p className="text-xs font-medium leading-5 text-gray-500 sm:text-sm">
+          {label}
+        </p>
+
+        <p
+          className={`mt-1 break-words text-2xl font-bold leading-tight sm:text-3xl ${valueClassName}`}
+        >
+          {value}
+        </p>
+
+        {subText && (
+          <p className="mt-1 text-xs leading-5 text-gray-500 sm:text-sm">
+            {subText}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  function StockCard({
+    label,
+    value,
+    unit,
+    className,
+    valueClassName,
+  }: {
+    label: string;
+    value: string | number;
+    unit: string;
+    className: string;
+    valueClassName: string;
+  }) {
+    return (
+      <div className={`rounded-2xl p-3 ring-1 sm:p-4 ${className}`}>
+        <p className="text-xs font-medium leading-5 sm:text-sm">{label}</p>
+
+        <p className={`mt-1 break-words text-2xl font-bold sm:text-3xl ${valueClassName}`}>
+          {value}
+        </p>
+
+        <p className="mt-1 text-xs sm:text-sm">{unit}</p>
+      </div>
+    );
+  }
+
   if (isCheckingStaff) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
@@ -925,18 +983,18 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 pb-10">
-      <header className="border-b bg-white px-4 py-5 shadow-sm">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+      <header className="border-b bg-white px-4 py-4 shadow-sm sm:py-5">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 sm:gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
               หน้าจัดการ
             </p>
 
-            <h1 className="mt-1 text-2xl font-bold text-gray-900">
+            <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
               ระบบเสนอราคารถจักรยานยนต์
             </h1>
 
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 truncate text-xs text-gray-600 sm:text-sm">
               เข้าสู่ระบบโดย {staffProfile.email} • {staffProfile.role}
             </p>
           </div>
@@ -950,7 +1008,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 py-6">
+      <section className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
         {errorMessage && (
           <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
             <p className="font-semibold">เกิดข้อผิดพลาด</p>
@@ -959,14 +1017,14 @@ export default function AdminPage() {
         )}
 
         {pendingMerchantRequests > 0 && (
-          <section className="mb-5 rounded-3xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm">
+          <section className="mb-5 rounded-3xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-wide">
+                <p className="text-xs font-semibold uppercase tracking-wide sm:text-sm">
                   ร้านค้ารออนุมัติ
                 </p>
 
-                <h2 className="mt-1 text-2xl font-bold">
+                <h2 className="mt-1 text-xl font-bold sm:text-2xl">
                   มีร้านค้ารออนุมัติ {pendingMerchantRequests} ราย
                 </h2>
 
@@ -985,7 +1043,7 @@ export default function AdminPage() {
           </section>
         )}
 
-        <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-gray-500">
@@ -995,8 +1053,8 @@ export default function AdminPage() {
               <h2
                 className={
                   auctionStatus === "open"
-                    ? "mt-1 text-3xl font-bold text-green-600"
-                    : "mt-1 text-3xl font-bold text-red-600"
+                    ? "mt-1 text-2xl font-bold text-green-600 sm:text-3xl"
+                    : "mt-1 text-2xl font-bold text-red-600 sm:text-3xl"
                 }
               >
                 {auctionStatus === "open" ? "เปิดรับราคา" : "ปิดรับราคา"}
@@ -1014,8 +1072,8 @@ export default function AdminPage() {
               disabled={isUpdatingStatus}
               className={
                 auctionStatus === "open"
-                  ? "rounded-2xl bg-red-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
-                  : "rounded-2xl bg-green-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400"
+                  ? "w-full rounded-2xl bg-red-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
+                  : "w-full rounded-2xl bg-green-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
               }
             >
               {isUpdatingStatus
@@ -1027,80 +1085,43 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-4 md:grid-cols-7">
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">ราคาที่ส่งทั้งหมด</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {offers.length}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">ร้านค้าที่ส่ง</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {uniqueMerchants.size}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Lot ที่มีราคา</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {uniqueMotorcycles.size}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">Lot ทั้งหมด</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {totalMotorcycles}
-            </p>
-            <p className="text-sm text-gray-500">เปิดอยู่: {activeMotorcycles}</p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">รออนุมัติ</p>
-            <p
-              className={
-                pendingMerchantRequests > 0
-                  ? "mt-2 text-3xl font-bold text-red-600"
-                  : "mt-2 text-3xl font-bold text-gray-900"
-              }
-            >
-              {pendingMerchantRequests}
-            </p>
-            <p className="text-sm text-gray-500">ร้านค้า</p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">มูลค่ารวมสูงสุด</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {totalHighestOfferValue.toLocaleString()}
-            </p>
-            <p className="text-sm text-gray-500">บาท</p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <p className="text-sm font-medium text-gray-500">กำไรขั้นต้น</p>
-            <p
-              className={
-                totalGrossProfit >= 0
-                  ? "mt-2 text-2xl font-bold text-green-700"
-                  : "mt-2 text-2xl font-bold text-red-700"
-              }
-            >
-              {totalGrossProfit.toLocaleString()}
-            </p>
-            <p className="text-sm text-gray-500">บาท</p>
-          </div>
+        <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <SummaryCard label="ราคาที่ส่งทั้งหมด" value={offers.length} />
+          <SummaryCard label="ร้านค้าที่ส่ง" value={uniqueMerchants.size} />
+          <SummaryCard label="Lot ที่มีราคา" value={uniqueMotorcycles.size} />
+          <SummaryCard
+            label="Lot ทั้งหมด"
+            value={totalMotorcycles}
+            subText={`เปิดอยู่: ${activeMotorcycles}`}
+          />
+          <SummaryCard
+            label="รออนุมัติ"
+            value={pendingMerchantRequests}
+            subText="ร้านค้า"
+            valueClassName={
+              pendingMerchantRequests > 0 ? "text-red-600" : "text-gray-900"
+            }
+          />
+          <SummaryCard
+            label="มูลค่าสูงสุด"
+            value={totalHighestOfferValue.toLocaleString()}
+            subText="บาท"
+          />
+          <SummaryCard
+            label="กำไรขั้นต้น"
+            value={totalGrossProfit.toLocaleString()}
+            subText="บาท"
+            valueClassName={totalGrossProfit >= 0 ? "text-green-700" : "text-red-700"}
+          />
         </section>
 
-        <section className="mt-5 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
               Stock Summary
             </p>
 
-            <h2 className="mt-1 text-xl font-bold text-gray-900">
+            <h2 className="mt-1 text-lg font-bold text-gray-900 sm:text-xl">
               สรุปคลังรถบริษัท
             </h2>
 
@@ -1109,70 +1130,68 @@ export default function AdminPage() {
             </p>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-5">
-            <div className="rounded-2xl bg-gray-50 p-4 ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">รถในคลังทั้งหมด</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">
-                {totalStockMotorcycles}
-              </p>
-              <p className="text-sm text-gray-500">คัน</p>
-            </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <StockCard
+              label="รถในคลังทั้งหมด"
+              value={totalStockMotorcycles}
+              unit="คัน"
+              className="bg-gray-50 text-gray-700 ring-gray-200"
+              valueClassName="text-gray-900"
+            />
 
-            <div className="rounded-2xl bg-green-50 p-4 ring-1 ring-green-200">
-              <p className="text-sm font-medium text-green-700">พร้อมขาย</p>
-              <p className="mt-2 text-3xl font-bold text-green-700">
-                {readyStockMotorcycles}
-              </p>
-              <p className="text-sm text-green-700">คัน</p>
-            </div>
+            <StockCard
+              label="พร้อมขาย"
+              value={readyStockMotorcycles}
+              unit="คัน"
+              className="bg-green-50 text-green-700 ring-green-200"
+              valueClassName="text-green-700"
+            />
 
-            <div className="rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-200">
-              <p className="text-sm font-medium text-blue-700">อยู่ในการประมูล</p>
-              <p className="mt-2 text-3xl font-bold text-blue-700">
-                {inAuctionStockMotorcycles}
-              </p>
-              <p className="text-sm text-blue-700">คัน</p>
-            </div>
+            <StockCard
+              label="อยู่ในการประมูล"
+              value={inAuctionStockMotorcycles}
+              unit="คัน"
+              className="bg-blue-50 text-blue-700 ring-blue-200"
+              valueClassName="text-blue-700"
+            />
 
-            <div className="rounded-2xl bg-purple-50 p-4 ring-1 ring-purple-200">
-              <p className="text-sm font-medium text-purple-700">ขายแล้ว</p>
-              <p className="mt-2 text-3xl font-bold text-purple-700">
-                {soldStockMotorcycles}
-              </p>
-              <p className="text-sm text-purple-700">คัน</p>
-            </div>
+            <StockCard
+              label="ขายแล้ว"
+              value={soldStockMotorcycles}
+              unit="คัน"
+              className="bg-purple-50 text-purple-700 ring-purple-200"
+              valueClassName="text-purple-700"
+            />
 
-            <div className="rounded-2xl bg-orange-50 p-4 ring-1 ring-orange-200">
-              <p className="text-sm font-medium text-orange-700">
-                ต้นทุนรวมในคลัง
-              </p>
-              <p className="mt-2 text-2xl font-bold text-orange-700">
-                {totalStockCost.toLocaleString()}
-              </p>
-              <p className="text-sm text-orange-700">บาท</p>
-            </div>
+            <StockCard
+              label="ต้นทุนรวมในคลัง"
+              value={totalStockCost.toLocaleString()}
+              unit="บาท"
+              className="bg-orange-50 text-orange-700 ring-orange-200"
+              valueClassName="text-xl text-orange-700 sm:text-2xl"
+            />
           </div>
         </section>
 
         <section className="mt-5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:flex sm:flex-wrap">
             <a
               href="/admin/stock"
-              className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+              className="rounded-xl bg-blue-600 px-4 py-3 text-center font-medium text-white hover:bg-blue-700 sm:py-2"
             >
               คลังรถบริษัท
             </a>
 
             <a
               href="/admin/motorcycles"
-              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
             >
               จัดการรถ Auction
             </a>
 
             <a
               href="/admin/merchants"
-              className="relative rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="relative rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
             >
               จัดการร้านค้า
 
@@ -1186,7 +1205,7 @@ export default function AdminPage() {
             {staffProfile?.role === "owner" && (
               <a
                 href="/admin/staff"
-                className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+                className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
               >
                 ตั้งค่า Owner
               </a>
@@ -1194,30 +1213,49 @@ export default function AdminPage() {
 
             <a
               href="/admin/history"
-              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
             >
               ประวัติการเสนอราคา
             </a>
 
             <a
               href="/admin/audit-logs"
-              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
             >
               ประวัติการทำงาน
             </a>
 
             <button
               onClick={loadDashboardData}
-              className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
+              className="rounded-xl border px-4 py-3 font-medium hover:bg-gray-100 sm:py-2"
             >
               โหลดใหม่
             </button>
 
-            {staffProfile?.role === "owner" && (
-              <>
+            {!isLoading && lotResults.length > 0 && (
+              <button
+                onClick={exportAuctionExcel}
+                className="rounded-xl bg-black px-4 py-3 font-medium text-white sm:py-2"
+              >
+                Export Excel สรุปผล
+              </button>
+            )}
+          </div>
+
+          {staffProfile?.role === "owner" && (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="font-semibold text-red-800">
+                Owner: บันทึกประวัติและล้างข้อมูล
+              </p>
+
+              <p className="mt-1 text-sm text-red-700">
+                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติและล้างราคาปัจจุบัน
+              </p>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                 <input
                   type="password"
-                  className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+                  className="rounded-xl border px-4 py-3 outline-none focus:ring-2 focus:ring-red-600 md:py-2"
                   placeholder="รหัสผ่าน Owner"
                   value={resetPassword}
                   onChange={(event) => setResetPassword(event.target.value)}
@@ -1225,7 +1263,7 @@ export default function AdminPage() {
 
                 <input
                   type="text"
-                  className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-red-600"
+                  className="rounded-xl border px-4 py-3 outline-none focus:ring-2 focus:ring-red-600 md:py-2"
                   placeholder='พิมพ์ "RESET AUCTION"'
                   value={resetPhrase}
                   onChange={(event) => setResetPhrase(event.target.value)}
@@ -1233,22 +1271,13 @@ export default function AdminPage() {
 
                 <button
                   onClick={resetAuctionData}
-                  className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+                  className="rounded-xl bg-red-600 px-4 py-3 font-medium text-white hover:bg-red-700 md:py-2"
                 >
-                  บันทึกประวัติและล้างข้อมูล
+                  บันทึกและล้าง
                 </button>
-              </>
-            )}
-
-            {!isLoading && lotResults.length > 0 && (
-              <button
-                onClick={exportAuctionExcel}
-                className="rounded-xl bg-black px-4 py-2 font-medium text-white"
-              >
-                Export Excel สรุปผล
-              </button>
-            )}
-          </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {isLoading && (
@@ -1259,97 +1288,164 @@ export default function AdminPage() {
 
         {!isLoading && !errorMessage && offers.length === 0 && (
           <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-gray-600">ยังไม่มีร้านค้าเสนอราคา</p>
+            <p className="font-semibold text-gray-900">ยังไม่มีร้านค้าเสนอราคา</p>
+            <p className="mt-1 text-sm text-gray-600">
+              เมื่อร้านค้าส่งราคาแล้ว ข้อมูลสรุปจะแสดงที่นี่
+            </p>
           </div>
         )}
 
         {!isLoading && lotResults.length > 0 && (
-          <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">
-              ราคาสูงสุดแต่ละ Lot
-            </h2>
+          <section className="mt-6 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  ราคาสูงสุดแต่ละ Lot
+                </h2>
 
-            <p className="mt-1 text-sm text-gray-600">
-              แสดงราคาสูงสุด ต้นทุน และกำไรขั้นต้นของแต่ละ Lot
-            </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  แสดงราคาสูงสุด ต้นทุน และกำไรขั้นต้นของแต่ละ Lot
+                </p>
+              </div>
 
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-[950px] w-full border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-100 text-gray-800">
-                    <th className="p-3">Lot</th>
-                    <th className="p-3">รายการรถ</th>
-                    <th className="p-3">ต้นทุน</th>
-                    <th className="p-3">ราคาสูงสุด</th>
-                    <th className="p-3">กำไรขั้นต้น</th>
-                    <th className="p-3">ร้านค้าอันดับ 1</th>
-                    <th className="p-3">จำนวนราคา</th>
-                    <th className="p-3">รายละเอียด</th>
-                  </tr>
-                </thead>
+              <button
+                onClick={exportAuctionExcel}
+                className="rounded-xl bg-black px-4 py-2 font-medium text-white"
+              >
+                Export Excel
+              </button>
+            </div>
 
-                <tbody>
-                  {lotResults.map((lot) => {
-                    const cost = Number(lot.motorcycle?.cost_price || 0);
-                    const profit = Number(lot.highestPrice || 0) - cost;
+            <div className="mt-4 space-y-3">
+              {lotResults.map((lot) => {
+                const cost = Number(lot.motorcycle?.cost_price || 0);
+                const profit = Number(lot.highestPrice || 0) - cost;
+                const groups = getOfferGroupsByPrice(lot.offers);
+                const tieNote = getTieNote(groups);
 
-                    return (
-                      <tr key={lot.lotKey} className="border-b align-top">
-                        <td className="p-3 font-semibold">
-                          {lot.motorcycle?.lot_number || "-"}
-                        </td>
+                return (
+                  <article
+                    key={lot.lotKey}
+                    className="rounded-2xl border bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Lot {lot.motorcycle?.lot_number || "-"}
+                        </p>
 
-                        <td className="p-3">
+                        <h3 className="mt-1 text-lg font-bold text-gray-900">
                           {lot.motorcycle?.motorcycle_name || "-"}
-                        </td>
+                        </h3>
 
-                        <td className="p-3">
-                          {cost ? `${cost.toLocaleString()} บาท` : "-"}
-                        </td>
+                        {tieNote && (
+                          <p className="mt-1 text-sm font-semibold text-orange-700">
+                            {tieNote}
+                          </p>
+                        )}
+                      </div>
 
-                        <td className="p-3 font-bold text-green-700">
-                          {Number(lot.highestPrice || 0).toLocaleString()} บาท
-                        </td>
+                      {lot.motorcycle?.id && (
+                        <a
+                          href={`/admin/lots/${lot.motorcycle.id}`}
+                          className="rounded-xl border px-4 py-2 text-sm font-medium hover:bg-gray-100"
+                        >
+                          ดูรายละเอียด
+                        </a>
+                      )}
+                    </div>
 
-                        <td
+                    <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <div className="rounded-2xl bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">ราคาสูงสุด</p>
+                        <p className="mt-1 break-words text-xl font-bold text-green-700 sm:text-2xl">
+                          {lot.highestPrice.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500">บาท</p>
+                      </div>
+
+                      <div className="rounded-2xl bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">ต้นทุน</p>
+                        <p className="mt-1 break-words text-xl font-bold text-gray-900 sm:text-2xl">
+                          {cost.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500">บาท</p>
+                      </div>
+
+                      <div className="rounded-2xl bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">กำไรขั้นต้น</p>
+                        <p
                           className={
                             profit >= 0
-                              ? "p-3 font-bold text-green-700"
-                              : "p-3 font-bold text-red-700"
+                              ? "mt-1 break-words text-xl font-bold text-green-700 sm:text-2xl"
+                              : "mt-1 break-words text-xl font-bold text-red-700 sm:text-2xl"
                           }
                         >
-                          {profit.toLocaleString()} บาท
-                        </td>
+                          {profit.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500">บาท</p>
+                      </div>
 
-                        <td className="p-3">
-                          {lot.topOffers.map((offer) => (
-                            <div key={offer.id} className="mb-1">
-                              <p className="font-semibold">
-                                {offer.merchants?.shop_name || "-"}
-                              </p>
-                              <p className="text-xs text-gray-500">
+                      <div className="rounded-2xl bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">จำนวนราคา</p>
+                        <p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
+                          {lot.offers.length}
+                        </p>
+                        <p className="text-xs text-gray-500">รายการ</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {groups.slice(0, 3).map((group, groupIndex) => (
+                        <div
+                          key={`${lot.lotKey}-${groupIndex}`}
+                          className={
+                            groupIndex === 0
+                              ? "rounded-2xl border border-green-200 bg-green-50 p-3"
+                              : "rounded-2xl border bg-gray-50 p-3"
+                          }
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p
+                              className={
+                                groupIndex === 0
+                                  ? "font-bold text-green-800"
+                                  : "font-bold text-gray-900"
+                              }
+                            >
+                              อันดับ {groupIndex + 1}
+                              {group.length >= 2 ? ` ร่วม ${group.length} ราย` : ""}
+                            </p>
+
+                            <p
+                              className={
+                                groupIndex === 0
+                                  ? "font-bold text-green-800"
+                                  : "font-bold text-gray-900"
+                              }
+                            >
+                              {Number(group[0]?.offer_price || 0).toLocaleString()} บาท
+                            </p>
+                          </div>
+
+                          <div className="mt-2 space-y-1">
+                            {group.map((offer) => (
+                              <p
+                                key={offer.id}
+                                className="text-sm leading-6 text-gray-700"
+                              >
+                                {offer.merchants?.shop_name || "-"} •{" "}
                                 {offer.merchants?.name || "-"} •{" "}
                                 {offer.merchants?.phone || "-"}
                               </p>
-                            </div>
-                          ))}
-                        </td>
-
-                        <td className="p-3">{lot.offers.length}</td>
-
-                        <td className="p-3">
-                          <a
-                            href={`/admin/lots/${lot.motorcycle?.id}`}
-                            className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-gray-100"
-                          >
-                            เปิดดู Lot
-                          </a>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
         )}
