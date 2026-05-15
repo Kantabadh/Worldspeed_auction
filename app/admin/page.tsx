@@ -61,6 +61,13 @@ type ArchiveResult = {
 
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
 
+function getStaffRoleLabel(role: string) {
+  if (role === "owner") return "Owner";
+  if (role === "admin") return "Admin";
+  if (role === "stock_staff") return "เจ้าหน้าที่รับรถ";
+  return role || "-";
+}
+
 export default function AdminPage() {
   const [offers, setOffers] = useState<AdminOffer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -117,9 +124,6 @@ export default function AdminPage() {
       return;
     }
 
-    setStaffProfile(savedProfile);
-    setIsCheckingStaff(false);
-
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
     if (userError || !userData.user) {
@@ -140,12 +144,21 @@ export default function AdminPage() {
       return;
     }
 
-    saveStaffSession({
+    const verifiedProfile: StaffProfile = {
       id: profile[0].id,
       email: profile[0].email,
       role: profile[0].role,
       active: profile[0].active,
-    });
+    };
+
+    saveStaffSession(verifiedProfile);
+
+    if (verifiedProfile.role === "stock_staff") {
+      window.location.href = "/admin/stock";
+      return;
+    }
+
+    setIsCheckingStaff(false);
   }
 
   function refreshStaffActivity() {
@@ -368,8 +381,9 @@ export default function AdminPage() {
     );
 
     setSoldStockMotorcycles(
-      stockMotorcycles.filter((motorcycle) => motorcycle.stock_status === "sold")
-        .length
+      stockMotorcycles.filter(
+        (motorcycle) => motorcycle.stock_status === "sold"
+      ).length
     );
 
     const totalCost = stockMotorcycles.reduce((sum, motorcycle) => {
@@ -952,7 +966,9 @@ export default function AdminPage() {
       <div className={`rounded-2xl p-3 ring-1 sm:p-4 ${className}`}>
         <p className="text-xs font-medium leading-5 sm:text-sm">{label}</p>
 
-        <p className={`mt-1 break-words text-2xl font-bold sm:text-3xl ${valueClassName}`}>
+        <p
+          className={`mt-1 break-words text-2xl font-bold sm:text-3xl ${valueClassName}`}
+        >
           {value}
         </p>
 
@@ -995,7 +1011,8 @@ export default function AdminPage() {
             </h1>
 
             <p className="mt-1 truncate text-xs text-gray-600 sm:text-sm">
-              เข้าสู่ระบบโดย {staffProfile.email} • {staffProfile.role}
+              เข้าสู่ระบบโดย {staffProfile.email} •{" "}
+              {getStaffRoleLabel(staffProfile.role)}
             </p>
           </div>
 
@@ -1111,7 +1128,9 @@ export default function AdminPage() {
             label="กำไรขั้นต้น"
             value={totalGrossProfit.toLocaleString()}
             subText="บาท"
-            valueClassName={totalGrossProfit >= 0 ? "text-green-700" : "text-red-700"}
+            valueClassName={
+              totalGrossProfit >= 0 ? "text-green-700" : "text-red-700"
+            }
           />
         </section>
 
@@ -1288,7 +1307,9 @@ export default function AdminPage() {
 
         {!isLoading && !errorMessage && offers.length === 0 && (
           <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
-            <p className="font-semibold text-gray-900">ยังไม่มีร้านค้าเสนอราคา</p>
+            <p className="font-semibold text-gray-900">
+              ยังไม่มีร้านค้าเสนอราคา
+            </p>
             <p className="mt-1 text-sm text-gray-600">
               เมื่อร้านค้าส่งราคาแล้ว ข้อมูลสรุปจะแสดงที่นี่
             </p>
@@ -1414,7 +1435,9 @@ export default function AdminPage() {
                               }
                             >
                               อันดับ {groupIndex + 1}
-                              {group.length >= 2 ? ` ร่วม ${group.length} ราย` : ""}
+                              {group.length >= 2
+                                ? ` ร่วม ${group.length} ราย`
+                                : ""}
                             </p>
 
                             <p
@@ -1424,7 +1447,10 @@ export default function AdminPage() {
                                   : "font-bold text-gray-900"
                               }
                             >
-                              {Number(group[0]?.offer_price || 0).toLocaleString()} บาท
+                              {Number(
+                                group[0]?.offer_price || 0
+                              ).toLocaleString()}{" "}
+                              บาท
                             </p>
                           </div>
 
