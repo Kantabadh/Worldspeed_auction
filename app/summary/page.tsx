@@ -41,9 +41,17 @@ type LotEditPermission = {
   can_edit: boolean;
 };
 
+type ExistingOfferRow = {
+  motorcycle_id: number;
+  offer_price: number;
+  was_edited?: boolean | null;
+  original_offer_price?: number | null;
+};
+
 type FinalOfferRow = {
   motorcycle_id: number;
   offer_price: number;
+  was_edited?: boolean | null;
   motorcycles: {
     id: number;
     lot_number: string;
@@ -79,10 +87,7 @@ export default function SummaryPage() {
     }
   }, []);
 
-  function buildFinalOfferList(
-    rows: FinalOfferRow[],
-    editedMotorcycleIds: number[]
-  ): Offer[] {
+  function buildFinalOfferList(rows: FinalOfferRow[]): Offer[] {
     return rows
       .map((row) => {
         const motorcycle = row.motorcycles;
@@ -94,21 +99,24 @@ export default function SummaryPage() {
           motorcycle: motorcycle?.motorcycle_name || "-",
           photos: motorcycle?.motorcycle_photos || [],
           price: String(Number(row.offer_price || 0)),
-          wasEdited: editedMotorcycleIds.includes(motorcycleId),
+          wasEdited: Boolean(row.was_edited),
         };
       })
-      .sort((a, b) => a.lot.localeCompare(b.lot));
+      .sort((a, b) =>
+        a.lot.localeCompare(b.lot, "th", {
+          numeric: true,
+          sensitivity: "base",
+        })
+      );
   }
 
-  async function fetchFinalSubmittedOffers(
-    submittedMerchantId: number,
-    editedMotorcycleIds: number[]
-  ) {
+  async function fetchFinalSubmittedOffers(submittedMerchantId: number) {
     const { data, error } = await supabase
       .from("offers")
       .select(`
         motorcycle_id,
         offer_price,
+        was_edited,
         motorcycles (
           id,
           lot_number,
@@ -126,7 +134,7 @@ export default function SummaryPage() {
       throw error;
     }
 
-    return buildFinalOfferList((data as unknown as FinalOfferRow[]) || [], editedMotorcycleIds);
+    return buildFinalOfferList((data as unknown as FinalOfferRow[]) || []);
   }
 
   async function confirmSubmit() {
@@ -228,11 +236,51 @@ export default function SummaryPage() {
         return;
       }
 
+      const { data: existingOfferRows, error: existingOfferError } =
+        await supabase
+          .from("offers")
+          .select(
+            "motorcycle_id, offer_price, was_edited, original_offer_price"
+          )
+          .eq("merchant_id", draft.submittedMerchantId)
+          .in("motorcycle_id", submittedMotorcycleIds);
+
+      if (existingOfferError) {
+        setErrorMessage(existingOfferError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const existingOfferMap = new Map<number, ExistingOfferRow>();
+
+      ((existingOfferRows as ExistingOfferRow[] | null) || []).forEach(
+        (row) => {
+          existingOfferMap.set(Number(row.motorcycle_id), row);
+        }
+      );
+
       for (const offer of offersToSave) {
+        const oldOffer = existingOfferMap.get(Number(offer.motorcycle_id));
+        const oldPrice = Number(oldOffer?.offer_price || 0);
+        const newPrice = Number(offer.offer_price || 0);
+        const priceChanged = oldPrice !== newPrice;
+
+        const originalOfferPrice =
+          oldOffer?.original_offer_price !== null &&
+          oldOffer?.original_offer_price !== undefined
+            ? Number(oldOffer.original_offer_price)
+            : oldPrice;
+
         const { error: updateOfferError } = await supabase
           .from("offers")
           .update({
-            offer_price: offer.offer_price,
+            offer_price: newPrice,
+            was_edited: Boolean(oldOffer?.was_edited) || priceChanged,
+            original_offer_price:
+              Boolean(oldOffer?.was_edited) || priceChanged
+                ? originalOfferPrice
+                : oldOffer?.original_offer_price || null,
+            updated_at: priceChanged ? new Date().toISOString() : null,
           })
           .eq("merchant_id", draft.submittedMerchantId)
           .eq("motorcycle_id", offer.motorcycle_id);
@@ -269,8 +317,7 @@ export default function SummaryPage() {
 
       try {
         finalOffers = await fetchFinalSubmittedOffers(
-          Number(draft.submittedMerchantId),
-          submittedMotorcycleIds
+          Number(draft.submittedMerchantId)
         );
       } catch (error) {
         setErrorMessage(
@@ -349,6 +396,9 @@ export default function SummaryPage() {
     const newOffersToInsert = offersToSave.map((offer) => ({
       ...offer,
       merchant_id: newMerchantId,
+      was_edited: false,
+      original_offer_price: null,
+      updated_at: null,
     }));
 
     const { error: offersError } = await supabase

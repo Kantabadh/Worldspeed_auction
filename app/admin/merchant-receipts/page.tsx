@@ -11,6 +11,9 @@ type ReceiptOffer = {
   motorcycle_id: number;
   offer_price: number;
   submitted_at: string;
+  was_edited: boolean | null;
+  original_offer_price: number | null;
+  updated_at: string | null;
   merchants: {
     id: number;
     name: string;
@@ -31,6 +34,7 @@ type MerchantGroup = {
   phone: string;
   offers: ReceiptOffer[];
   latestSubmittedAt: string;
+  editedCount: number;
 };
 
 function formatThaiDateTime(value: string) {
@@ -82,6 +86,19 @@ function makeReceiptNo(group: MerchantGroup) {
   return `MR-${y}${m}${d}-${group.merchantId}`;
 }
 
+function getEditNote(offer: ReceiptOffer) {
+  if (!offer.was_edited) return "";
+
+  const oldPrice = offer.original_offer_price;
+  const newPrice = offer.offer_price;
+
+  if (oldPrice !== null && oldPrice !== undefined) {
+    return `แก้ไขแล้ว / ราคาเดิม: ${Number(oldPrice).toLocaleString()} บาท`;
+  }
+
+  return "แก้ไขแล้ว";
+}
+
 export default function AdminMerchantReceiptsPage() {
   const [offers, setOffers] = useState<ReceiptOffer[]>([]);
   const [selectedMerchantId, setSelectedMerchantId] = useState<number | null>(
@@ -104,6 +121,9 @@ export default function AdminMerchantReceiptsPage() {
         motorcycle_id,
         offer_price,
         submitted_at,
+        was_edited,
+        original_offer_price,
+        updated_at,
         merchants (
           id,
           name,
@@ -147,6 +167,7 @@ export default function AdminMerchantReceiptsPage() {
           phone: offer.merchants?.phone || "-",
           offers: [],
           latestSubmittedAt: offer.submitted_at,
+          editedCount: 0,
         });
       }
 
@@ -156,11 +177,23 @@ export default function AdminMerchantReceiptsPage() {
 
       group.offers.push(offer);
 
+      if (offer.was_edited) {
+        group.editedCount += 1;
+      }
+
       if (
         new Date(offer.submitted_at).getTime() >
         new Date(group.latestSubmittedAt).getTime()
       ) {
         group.latestSubmittedAt = offer.submitted_at;
+      }
+
+      if (
+        offer.updated_at &&
+        new Date(offer.updated_at).getTime() >
+          new Date(group.latestSubmittedAt).getTime()
+      ) {
+        group.latestSubmittedAt = offer.updated_at;
       }
     });
 
@@ -207,6 +240,10 @@ export default function AdminMerchantReceiptsPage() {
   const selectedTotal = sortedSelectedOffers.reduce((sum, offer) => {
     return sum + Number(offer.offer_price || 0);
   }, 0);
+
+  const selectedEditedCount = sortedSelectedOffers.filter(
+    (offer) => offer.was_edited
+  ).length;
 
   function printSelectedReceipt() {
     if (!selectedGroup) {
@@ -259,6 +296,14 @@ export default function AdminMerchantReceiptsPage() {
 
           .print-row {
             page-break-inside: avoid;
+          }
+
+          .print-edited-badge {
+            border: 1px solid #92400e !important;
+            color: #92400e !important;
+            background: #fef3c7 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
         }
       `}</style>
@@ -359,13 +404,22 @@ export default function AdminMerchantReceiptsPage() {
                           </p>
                         </div>
 
-                        <span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-                          {group.offers.length} Lot
-                        </span>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
+                            {group.offers.length} Lot
+                          </span>
+
+                          {group.editedCount > 0 && (
+                            <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
+                              แก้ไขแล้ว {group.editedCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <p className="mt-2 text-xs text-gray-500">
-                        ส่งล่าสุด: {formatThaiDateTime(group.latestSubmittedAt)}
+                        ส่ง/แก้ไขล่าสุด:{" "}
+                        {formatThaiDateTime(group.latestSubmittedAt)}
                       </p>
                     </button>
                   );
@@ -385,6 +439,12 @@ export default function AdminMerchantReceiptsPage() {
                       ? `ร้าน: ${selectedGroup.shopName}`
                       : "เลือกร้านค้าก่อนพิมพ์"}
                   </p>
+
+                  {selectedGroup && selectedEditedCount > 0 && (
+                    <p className="mt-2 inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
+                      มีรายการแก้ไขแล้ว {selectedEditedCount} Lot
+                    </p>
+                  )}
                 </div>
 
                 <button
@@ -409,7 +469,7 @@ export default function AdminMerchantReceiptsPage() {
               ) : (
                 <div
                   id="print-receipt"
-                  className="mx-auto max-w-[850px] overflow-hidden rounded-2xl border border-gray-300 bg-white"
+                  className="mx-auto max-w-[900px] overflow-hidden rounded-2xl border border-gray-300 bg-white"
                 >
                   <div className="border-b-2 border-black px-5 py-4 text-center">
                     <h1 className="text-2xl font-bold text-black">
@@ -462,12 +522,20 @@ export default function AdminMerchantReceiptsPage() {
 
                       <div>
                         <p className="font-medium text-gray-600">
-                          ส่งราคาล่าสุด
+                          ส่ง/แก้ไขล่าสุด
                         </p>
                         <p className="mt-1 font-bold text-black">
                           {formatThaiDateTime(selectedGroup.latestSubmittedAt)}
                         </p>
                       </div>
+
+                      {selectedEditedCount > 0 && (
+                        <div className="col-span-2">
+                          <span className="print-edited-badge inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
+                            มีรายการแก้ไขแล้ว {selectedEditedCount} Lot
+                          </span>
+                        </div>
+                      )}
                     </section>
 
                     <section className="mt-4">
@@ -477,7 +545,7 @@ export default function AdminMerchantReceiptsPage() {
                             <th className="w-12 border border-black p-2 text-left">
                               ลำดับ
                             </th>
-                            <th className="w-20 border border-black p-2 text-left">
+                            <th className="w-16 border border-black p-2 text-left">
                               Lot
                             </th>
                             <th className="border border-black p-2 text-left">
@@ -489,33 +557,66 @@ export default function AdminMerchantReceiptsPage() {
                             <th className="w-24 border border-black p-2 text-left">
                               เวลา
                             </th>
+                            <th className="w-40 border border-black p-2 text-left">
+                              หมายเหตุ
+                            </th>
                           </tr>
                         </thead>
 
                         <tbody>
-                          {sortedSelectedOffers.map((offer, index) => (
-                            <tr key={offer.id} className="print-row">
-                              <td className="border border-black p-2">
-                                {index + 1}
-                              </td>
+                          {sortedSelectedOffers.map((offer, index) => {
+                            const editNote = getEditNote(offer);
 
-                              <td className="border border-black p-2 font-bold">
-                                {offer.motorcycles?.lot_number || "-"}
-                              </td>
+                            return (
+                              <tr key={offer.id} className="print-row">
+                                <td className="border border-black p-2">
+                                  {index + 1}
+                                </td>
 
-                              <td className="border border-black p-2">
-                                {offer.motorcycles?.motorcycle_name || "-"}
-                              </td>
+                                <td className="border border-black p-2 font-bold">
+                                  {offer.motorcycles?.lot_number || "-"}
+                                </td>
 
-                              <td className="border border-black p-2 text-right font-bold">
-                                {formatBaht(Number(offer.offer_price || 0))}
-                              </td>
+                                <td className="border border-black p-2">
+                                  {offer.motorcycles?.motorcycle_name || "-"}
+                                </td>
 
-                              <td className="border border-black p-2">
-                                {formatThaiTime(offer.submitted_at)}
-                              </td>
-                            </tr>
-                          ))}
+                                <td className="border border-black p-2 text-right font-bold">
+                                  {formatBaht(Number(offer.offer_price || 0))}
+                                </td>
+
+                                <td className="border border-black p-2">
+                                  {formatThaiTime(
+                                    offer.updated_at || offer.submitted_at
+                                  )}
+                                </td>
+
+                                <td className="border border-black p-2">
+                                  {editNote ? (
+                                    <div>
+                                      <span className="print-edited-badge inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-bold text-yellow-800">
+                                        แก้ไขแล้ว
+                                      </span>
+
+                                      {offer.original_offer_price !== null &&
+                                        offer.original_offer_price !==
+                                          undefined && (
+                                          <p className="mt-1 text-[11px] text-gray-700">
+                                            เดิม{" "}
+                                            {Number(
+                                              offer.original_offer_price
+                                            ).toLocaleString()}{" "}
+                                            บาท
+                                          </p>
+                                        )}
+                                    </div>
+                                  ) : (
+                                    "-"
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
 
                         <tfoot>
@@ -531,6 +632,7 @@ export default function AdminMerchantReceiptsPage() {
                               {formatBaht(selectedTotal)}
                             </td>
 
+                            <td className="border border-black p-2"></td>
                             <td className="border border-black p-2"></td>
                           </tr>
                         </tfoot>
