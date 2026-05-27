@@ -1314,6 +1314,13 @@ export default function AdminPage() {
               )}
             </a>
 
+            <a
+  href="/admin/merchant-receipts"
+  className="rounded-xl bg-green-600 px-4 py-3 text-center font-medium text-white hover:bg-green-700 sm:py-2"
+>
+  พิมพ์ใบเสนอราคาของร้านค้า
+</a>
+
             {staffProfile?.role === "owner" && (
               <a
                 href="/admin/staff"

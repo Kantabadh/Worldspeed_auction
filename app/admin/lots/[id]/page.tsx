@@ -25,9 +25,11 @@ type LotOffer = {
   offer_price: number;
   submitted_at: string;
   merchants: {
+    id: number;
     name: string;
     shop_name: string;
     phone: string;
+    merchant_account_id: number | string | null;
   } | null;
 };
 
@@ -75,6 +77,13 @@ function formatBaht(value: number | null | undefined) {
   return `${Number(value).toLocaleString()} บาท`;
 }
 
+function formatThaiDateTime(value: string) {
+  return new Date(value).toLocaleString("th-TH", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
 export default function LotResultPage() {
   const params = useParams();
   const lotId = Number(params.id);
@@ -82,6 +91,7 @@ export default function LotResultPage() {
   const [motorcycle, setMotorcycle] = useState<Motorcycle | null>(null);
   const [offers, setOffers] = useState<LotOffer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAllowingEditId, setIsAllowingEditId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function loadLotResult() {
@@ -90,7 +100,8 @@ export default function LotResultPage() {
 
     const { data: motorcycleData, error: motorcycleError } = await supabase
       .from("motorcycles")
-      .select(`
+      .select(
+        `
         id,
         lot_number,
         motorcycle_name,
@@ -100,7 +111,8 @@ export default function LotResultPage() {
           id,
           image_url
         )
-      `)
+      `
+      )
       .eq("id", lotId)
       .limit(1);
 
@@ -120,16 +132,20 @@ export default function LotResultPage() {
 
     const { data: offerData, error: offerError } = await supabase
       .from("offers")
-      .select(`
+      .select(
+        `
         id,
         offer_price,
         submitted_at,
         merchants (
+          id,
           name,
           shop_name,
-          phone
+          phone,
+          merchant_account_id
         )
-      `)
+      `
+      )
       .eq("motorcycle_id", lotId)
       .order("offer_price", { ascending: false });
 
@@ -162,6 +178,43 @@ export default function LotResultPage() {
 
   const offerGroups = getOfferGroupsByPrice(offers);
   const topThreeGroups = offerGroups.slice(0, 3);
+
+  async function allowMerchantEdit(offer: LotOffer) {
+    const merchantAccountId = offer.merchants?.merchant_account_id;
+
+    if (!merchantAccountId) {
+      alert("ไม่พบ merchant_account_id ของร้านค้านี้");
+      return;
+    }
+
+    const shopName =
+      offer.merchants?.shop_name || offer.merchants?.name || "ร้านค้านี้";
+
+    const confirmAllow = confirm(
+      `ต้องการเปิดให้ "${shopName}" แก้ไขราคาใช่หรือไม่?`
+    );
+
+    if (!confirmAllow) return;
+
+    setIsAllowingEditId(offer.id);
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("merchant_accounts")
+      .update({
+        can_edit_submission: true,
+      })
+      .eq("id", merchantAccountId);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setIsAllowingEditId(null);
+      return;
+    }
+
+    alert(`เปิดให้ ${shopName} แก้ไขราคาแล้ว`);
+    setIsAllowingEditId(null);
+  }
 
   function exportLotOffersCsv() {
     if (!motorcycle) return;
@@ -216,28 +269,118 @@ export default function LotResultPage() {
     URL.revokeObjectURL(url);
   }
 
+  function renderMobileOfferCard(offer: LotOffer, index: number) {
+    const rank = getRank(offers, index);
+    const offerPrice = Number(offer.offer_price || 0);
+    const profit = offerPrice - cost;
+    const isTopWinner = highestPrice !== null && offerPrice === highestPrice;
+
+    return (
+      <article
+        key={offer.id}
+        className={
+          isTopWinner
+            ? "rounded-2xl border border-green-200 bg-green-50 p-4 shadow-sm"
+            : "rounded-2xl border bg-white p-4 shadow-sm"
+        }
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p
+              className={
+                isTopWinner
+                  ? "text-sm font-bold text-green-700"
+                  : "text-sm font-bold text-gray-700"
+              }
+            >
+              อันดับ {rank === 1 ? "1 🏆" : rank}
+            </p>
+
+            <h3 className="mt-1 text-lg font-bold text-gray-900">
+              {offer.merchants?.shop_name || "-"}
+            </h3>
+          </div>
+
+          <div className="text-right">
+            <p className="text-xs text-gray-500">ราคาเสนอ</p>
+            <p className="text-xl font-bold text-green-700">
+              {offerPrice.toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-500">บาท</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 rounded-xl bg-white/80 p-3 text-sm">
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">ผู้ติดต่อ</span>
+            <span className="font-medium text-gray-900">
+              {offer.merchants?.name || "-"}
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">โทร</span>
+            <span className="font-medium text-gray-900">
+              {offer.merchants?.phone || "-"}
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">กำไรขั้นต้น</span>
+            <span
+              className={
+                cost && profit >= 0
+                  ? "font-bold text-green-700"
+                  : "font-bold text-red-700"
+              }
+            >
+              {cost ? `${profit.toLocaleString()} บาท` : "-"}
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">เวลาส่ง</span>
+            <span className="text-right font-medium text-gray-900">
+              {formatThaiDateTime(offer.submitted_at)}
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => allowMerchantEdit(offer)}
+          disabled={isAllowingEditId === offer.id}
+          className="mt-3 w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isAllowingEditId === offer.id
+            ? "กำลังเปิดให้แก้..."
+            : "เปิดให้แก้ราคา"}
+        </button>
+      </article>
+    );
+  }
+
   return (
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
-        <section className="mx-auto max-w-6xl px-4 py-6">
+        <section className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
           <BackButton />
 
           {errorMessage && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
               <p className="font-semibold">เกิดข้อผิดพลาด</p>
               <p className="text-sm">{errorMessage}</p>
             </div>
           )}
 
           {isLoading && (
-            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+            <div className="mt-4 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
               <p className="text-gray-600">กำลังโหลดผลรายการ...</p>
             </div>
           )}
 
           {!isLoading && motorcycle && (
             <>
-              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+              <section className="mt-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
@@ -275,15 +418,15 @@ export default function LotResultPage() {
                         key={photo.id}
                         src={photo.image_url}
                         alt={motorcycle.motorcycle_name}
-                        className="h-32 w-full rounded-2xl object-cover"
+                        className="h-32 w-full rounded-2xl bg-white object-contain ring-1 ring-gray-200"
                       />
                     ))}
                   </div>
                 )}
               </section>
 
-              <section className="mt-5 grid gap-4 md:grid-cols-4">
-                <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <p className="text-sm font-medium text-gray-500">
                     จำนวนร้านที่เสนอ
                   </p>
@@ -292,19 +435,19 @@ export default function LotResultPage() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <p className="text-sm font-medium text-gray-500">ต้นทุน</p>
-                  <p className="mt-2 text-2xl font-bold text-orange-700">
+                  <p className="mt-2 break-words text-2xl font-bold text-orange-700">
                     {cost ? cost.toLocaleString() : "-"}
                   </p>
                   {cost > 0 && <p className="text-sm text-gray-500">บาท</p>}
                 </div>
 
-                <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <p className="text-sm font-medium text-gray-500">
                     ราคาสูงสุด
                   </p>
-                  <p className="mt-2 text-2xl font-bold text-green-700">
+                  <p className="mt-2 break-words text-2xl font-bold text-green-700">
                     {highestPrice !== null
                       ? highestPrice.toLocaleString()
                       : "ยังไม่มีราคา"}
@@ -314,15 +457,15 @@ export default function LotResultPage() {
                   )}
                 </div>
 
-                <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <p className="text-sm font-medium text-gray-500">
                     กำไรขั้นต้น
                   </p>
                   <p
                     className={
                       highestProfit !== null && highestProfit >= 0
-                        ? "mt-2 text-2xl font-bold text-green-700"
-                        : "mt-2 text-2xl font-bold text-red-700"
+                        ? "mt-2 break-words text-2xl font-bold text-green-700"
+                        : "mt-2 break-words text-2xl font-bold text-red-700"
                     }
                   >
                     {cost && highestProfit !== null
@@ -336,7 +479,7 @@ export default function LotResultPage() {
               </section>
 
               {topThreeGroups.length > 0 && (
-                <section className="mt-5 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+                <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <h2 className="text-xl font-bold text-gray-900">
                     อันดับ 1-3
                   </h2>
@@ -368,7 +511,9 @@ export default function LotResultPage() {
                             }
                           >
                             อันดับ {rank}
-                            {group.length >= 2 ? ` ร่วม ${group.length} ราย` : ""}
+                            {group.length >= 2
+                              ? ` ร่วม ${group.length} ราย`
+                              : ""}
                           </p>
 
                           <p className="mt-2 text-xl font-bold text-gray-900">
@@ -387,7 +532,10 @@ export default function LotResultPage() {
 
                           <div className="mt-3 space-y-2">
                             {group.map((offer) => (
-                              <div key={offer.id} className="rounded-xl bg-white p-3">
+                              <div
+                                key={offer.id}
+                                className="rounded-xl bg-white p-3"
+                              >
                                 <p className="font-semibold text-gray-900">
                                   {offer.merchants?.shop_name || "-"}
                                 </p>
@@ -395,6 +543,16 @@ export default function LotResultPage() {
                                   {offer.merchants?.name || "-"} •{" "}
                                   {offer.merchants?.phone || "-"}
                                 </p>
+
+                                <button
+                                  onClick={() => allowMerchantEdit(offer)}
+                                  disabled={isAllowingEditId === offer.id}
+                                  className="mt-2 w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {isAllowingEditId === offer.id
+                                    ? "กำลังเปิด..."
+                                    : "เปิดให้แก้ราคา"}
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -417,7 +575,7 @@ export default function LotResultPage() {
                 </section>
               )}
 
-              <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+              <section className="mt-6 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
@@ -455,78 +613,100 @@ export default function LotResultPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="mt-5 overflow-x-auto">
-                    <table className="w-full border-collapse text-left text-sm">
-                      <thead>
-                        <tr className="border-b bg-gray-100 text-gray-700">
-                          <th className="p-3">อันดับ</th>
-                          <th className="p-3">ราคา</th>
-                          <th className="p-3">กำไรขั้นต้น</th>
-                          <th className="p-3">ผู้ติดต่อ</th>
-                          <th className="p-3">ร้าน</th>
-                          <th className="p-3">โทร</th>
-                          <th className="p-3">เวลาส่ง</th>
-                        </tr>
-                      </thead>
+                  <>
+                    <div className="mt-5 space-y-3 md:hidden">
+                      {offers.map((offer, index) =>
+                        renderMobileOfferCard(offer, index)
+                      )}
+                    </div>
 
-                      <tbody>
-                        {offers.map((offer, index) => {
-                          const rank = getRank(offers, index);
-                          const offerPrice = Number(offer.offer_price || 0);
-                          const profit = offerPrice - cost;
-                          const isTopWinner =
-                            highestPrice !== null && offerPrice === highestPrice;
+                    <div className="mt-5 hidden overflow-x-auto md:block">
+                      <table className="w-full border-collapse text-left text-sm">
+                        <thead>
+                          <tr className="border-b bg-gray-100 text-gray-700">
+                            <th className="p-3">อันดับ</th>
+                            <th className="p-3">ราคา</th>
+                            <th className="p-3">กำไรขั้นต้น</th>
+                            <th className="p-3">ผู้ติดต่อ</th>
+                            <th className="p-3">ร้าน</th>
+                            <th className="p-3">โทร</th>
+                            <th className="p-3">เวลาส่ง</th>
+                            <th className="p-3">จัดการ</th>
+                          </tr>
+                        </thead>
 
-                          return (
-                            <tr
-                              key={offer.id}
-                              className={
-                                isTopWinner
-                                  ? "border-b bg-green-50"
-                                  : "border-b"
-                              }
-                            >
-                              <td className="p-3 font-bold">
-                                {rank === 1 ? "1 🏆" : rank}
-                              </td>
+                        <tbody>
+                          {offers.map((offer, index) => {
+                            const rank = getRank(offers, index);
+                            const offerPrice = Number(offer.offer_price || 0);
+                            const profit = offerPrice - cost;
+                            const isTopWinner =
+                              highestPrice !== null &&
+                              offerPrice === highestPrice;
 
-                              <td className="p-3 font-bold text-green-700">
-                                {offerPrice.toLocaleString()} บาท
-                              </td>
-
-                              <td
+                            return (
+                              <tr
+                                key={offer.id}
                                 className={
-                                  cost && profit >= 0
-                                    ? "p-3 font-bold text-green-700"
-                                    : "p-3 font-bold text-red-700"
+                                  isTopWinner
+                                    ? "border-b bg-green-50"
+                                    : "border-b"
                                 }
                               >
-                                {cost ? `${profit.toLocaleString()} บาท` : "-"}
-                              </td>
+                                <td className="p-3 font-bold">
+                                  {rank === 1 ? "1 🏆" : rank}
+                                </td>
 
-                              <td className="p-3">
-                                {offer.merchants?.name || "-"}
-                              </td>
+                                <td className="p-3 font-bold text-green-700">
+                                  {offerPrice.toLocaleString()} บาท
+                                </td>
 
-                              <td className="p-3 font-medium">
-                                {offer.merchants?.shop_name || "-"}
-                              </td>
+                                <td
+                                  className={
+                                    cost && profit >= 0
+                                      ? "p-3 font-bold text-green-700"
+                                      : "p-3 font-bold text-red-700"
+                                  }
+                                >
+                                  {cost
+                                    ? `${profit.toLocaleString()} บาท`
+                                    : "-"}
+                                </td>
 
-                              <td className="p-3">
-                                {offer.merchants?.phone || "-"}
-                              </td>
+                                <td className="p-3">
+                                  {offer.merchants?.name || "-"}
+                                </td>
 
-                              <td className="p-3">
-                                {new Date(offer.submitted_at).toLocaleString(
-                                  "th-TH"
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                <td className="p-3 font-medium">
+                                  {offer.merchants?.shop_name || "-"}
+                                </td>
+
+                                <td className="p-3">
+                                  {offer.merchants?.phone || "-"}
+                                </td>
+
+                                <td className="p-3">
+                                  {formatThaiDateTime(offer.submitted_at)}
+                                </td>
+
+                                <td className="p-3">
+                                  <button
+                                    onClick={() => allowMerchantEdit(offer)}
+                                    disabled={isAllowingEditId === offer.id}
+                                    className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isAllowingEditId === offer.id
+                                      ? "กำลังเปิด..."
+                                      : "เปิดให้แก้ราคา"}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </section>
             </>
