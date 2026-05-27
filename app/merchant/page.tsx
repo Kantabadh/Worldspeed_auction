@@ -972,9 +972,9 @@ export default function MerchantPage() {
                           className="relative block w-full overflow-hidden bg-gray-100"
                         >
                           <img
-                            src={firstPhoto.image_url}
-                            alt={`${offer.motorcycle} photo`}
-                            className="h-48 w-full object-cover sm:h-64"
+                           src={firstPhoto.image_url}
+                          alt={`${offer.motorcycle} photo`}
+                          className="h-48 w-full bg-white object-contain sm:h-64"
                           />
 
                           {offer.photos.length > 1 && (
@@ -1284,18 +1284,18 @@ export default function MerchantPage() {
             </>
           )}
 
-          <div className="flex h-screen w-screen items-center justify-center overflow-auto p-2">
-            <img
-              src={galleryPhotos[galleryIndex].image_url}
-              alt="Motorcycle photo"
-              className="max-h-none max-w-none object-contain"
-              style={{
-                width: "100%",
-                height: "auto",
-                touchAction: "pinch-zoom",
-              }}
-            />
-          </div>
+          <div className="flex h-screen w-screen items-center justify-center overflow-auto bg-black p-2">
+          <img
+           src={galleryPhotos[galleryIndex].image_url}
+           alt="Motorcycle photo"
+            className="max-h-[92vh] max-w-full bg-white object-contain"
+           style={{
+             width: "auto",
+             height: "auto",
+              touchAction: "pinch-zoom",
+    }}
+  />
+</div>
         </div>
       )}
     </main>
