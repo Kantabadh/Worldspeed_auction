@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -9,6 +10,8 @@ type MotorcyclePhoto = {
   id: number;
   image_url: string;
 };
+
+type AcquisitionType = "" | "ซื้อ" | "เทิร์น" | "นวนคร" | "ประมูล";
 
 type MotorcycleDetails = {
   brand: string;
@@ -21,6 +24,8 @@ type MotorcycleDetails = {
   engine_number: string;
   registration_status: string;
   tax_expiry: string;
+  acquisition_type: AcquisitionType;
+  source_name: string;
   condition: string;
   notes: string;
 };
@@ -57,6 +62,14 @@ type StatusFilter = "all" | "active" | "hidden";
 
 const ITEMS_PER_PAGE = 5;
 
+const acquisitionTypeOptions: AcquisitionType[] = [
+  "",
+  "ซื้อ",
+  "เทิร์น",
+  "นวนคร",
+  "ประมูล",
+];
+
 const detailFields: {
   key: DetailKey;
   label: string;
@@ -80,6 +93,16 @@ const detailFields: {
     key: "tax_expiry",
     label: "ภาษีหมดอายุ",
     placeholder: "เช่น 12/2567",
+  },
+  {
+    key: "acquisition_type",
+    label: "ซื้อ/เทิร์น",
+    placeholder: "",
+  },
+  {
+    key: "source_name",
+    label: "มาจาก",
+    placeholder: "เช่น R1 / S2 / B1 / HO / นวนคร / บางบอน",
   },
   {
     key: "condition",
@@ -107,6 +130,8 @@ function createEmptyDetails(): MotorcycleDetails {
     engine_number: "",
     registration_status: "",
     tax_expiry: "",
+    acquisition_type: "",
+    source_name: "",
     condition: "",
     notes: "",
   };
@@ -148,6 +173,8 @@ function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
     engine_number: bike.engine_number || "",
     registration_status: bike.registration_status || "",
     tax_expiry: bike.tax_expiry || "",
+    acquisition_type: bike.acquisition_type || "",
+    source_name: bike.source_name || "",
     condition: bike.condition || "",
     notes: bike.notes || "",
   };
@@ -167,6 +194,7 @@ function getSavedStaffProfile() {
 
 export default function AdminMotorcyclesPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
+
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
 
   const [lotNumber, setLotNumber] = useState("");
@@ -243,6 +271,8 @@ export default function AdminMotorcyclesPage() {
       engine_number: bike.engine_number || "",
       registration_status: bike.registration_status || "",
       tax_expiry: bike.tax_expiry || "",
+      acquisition_type: bike.acquisition_type || "",
+      source_name: bike.source_name || "",
       condition: bike.condition || "",
       notes: bike.notes || "",
       active: bike.active,
@@ -252,9 +282,9 @@ export default function AdminMotorcyclesPage() {
 
   async function uploadPhoto(file: File, lot: string) {
     const fileExtension = file.name.split(".").pop();
-    const safeLot = lot.replaceAll(" ", "-");
+    const safeLot = lot.replaceAll(" ", "-").replace(/[^\w-]/g, "");
 
-    const filePath = `${safeLot}-${Date.now()}-${Math.random()
+    const filePath = `${safeLot || "lot"}-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}.${fileExtension}`;
 
@@ -309,7 +339,8 @@ export default function AdminMotorcyclesPage() {
 
     const { data, error } = await supabase
       .from("motorcycles")
-      .select(`
+      .select(
+        `
         id,
         lot_number,
         motorcycle_name,
@@ -324,6 +355,8 @@ export default function AdminMotorcyclesPage() {
         engine_number,
         registration_status,
         tax_expiry,
+        acquisition_type,
+        source_name,
         condition,
         notes,
         active,
@@ -332,7 +365,8 @@ export default function AdminMotorcyclesPage() {
           id,
           image_url
         )
-      `)
+      `
+      )
       .order("lot_number");
 
     if (error) {
@@ -346,7 +380,7 @@ export default function AdminMotorcyclesPage() {
   }
 
   async function addMotorcycle() {
-    if (!lotNumber || !motorcycleName) {
+    if (!lotNumber.trim() || !motorcycleName.trim()) {
       alert("กรุณากรอกเลข Lot และชื่อรถ");
       return;
     }
@@ -399,6 +433,8 @@ export default function AdminMotorcyclesPage() {
           engine_number: motorcycleData.engine_number || "",
           registration_status: motorcycleData.registration_status || "",
           tax_expiry: motorcycleData.tax_expiry || "",
+          acquisition_type: motorcycleData.acquisition_type || "",
+          source_name: motorcycleData.source_name || "",
           condition: motorcycleData.condition || "",
           notes: motorcycleData.notes || "",
           active: motorcycleData.active,
@@ -411,14 +447,14 @@ export default function AdminMotorcyclesPage() {
       setCostPrice("");
       setDetails(createEmptyDetails());
       setPhotoFiles([]);
-      setIsAdding(false);
-      loadMotorcycles();
+      await loadMotorcycles();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "เพิ่มรายการรถไม่สำเร็จ"
       );
-      setIsAdding(false);
     }
+
+    setIsAdding(false);
   }
 
   function startEditing(bike: Motorcycle) {
@@ -444,7 +480,7 @@ export default function AdminMotorcyclesPage() {
   }
 
   async function saveEdit(bike: Motorcycle) {
-    if (!editLotNumber || !editMotorcycleName) {
+    if (!editLotNumber.trim() || !editMotorcycleName.trim()) {
       alert("กรุณากรอกเลข Lot และชื่อรถ");
       return;
     }
@@ -496,7 +532,7 @@ export default function AdminMotorcyclesPage() {
       });
 
       cancelEditing();
-      loadMotorcycles();
+      await loadMotorcycles();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "บันทึกข้อมูลไม่สำเร็จ"
@@ -536,7 +572,7 @@ export default function AdminMotorcyclesPage() {
       },
     });
 
-    loadMotorcycles();
+    await loadMotorcycles();
   }
 
   async function toggleActive(bike: Motorcycle) {
@@ -581,7 +617,7 @@ export default function AdminMotorcyclesPage() {
       },
     });
 
-    loadMotorcycles();
+    await loadMotorcycles();
   }
 
   async function deleteMotorcycle(bike: Motorcycle) {
@@ -623,7 +659,7 @@ export default function AdminMotorcyclesPage() {
       },
     });
 
-    loadMotorcycles();
+    await loadMotorcycles();
   }
 
   function toggleDetail(bikeId: number) {
@@ -636,46 +672,75 @@ export default function AdminMotorcyclesPage() {
 
   function renderDetailInputs(
     value: MotorcycleDetails,
-    setValue: React.Dispatch<React.SetStateAction<MotorcycleDetails>>
+    setValue: Dispatch<SetStateAction<MotorcycleDetails>>
   ) {
     return (
       <div className="grid gap-4 md:grid-cols-2">
-        {detailFields.map((field) => (
-          <div
-            key={field.key}
-            className={field.multiline ? "md:col-span-2" : ""}
-          >
-            <label className="text-sm font-medium text-gray-700">
-              {field.label}
-            </label>
+        {detailFields.map((field) => {
+          if (field.key === "acquisition_type") {
+            return (
+              <div key={field.key}>
+                <label className="text-sm font-medium text-gray-700">
+                  {field.label}
+                </label>
 
-            {field.multiline ? (
-              <textarea
-                className="mt-2 min-h-24 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder={field.placeholder}
-                value={value[field.key]}
-                onChange={(e) =>
-                  setValue((current) => ({
-                    ...current,
-                    [field.key]: e.target.value,
-                  }))
-                }
-              />
-            ) : (
-              <input
-                className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder={field.placeholder}
-                value={value[field.key]}
-                onChange={(e) =>
-                  setValue((current) => ({
-                    ...current,
-                    [field.key]: e.target.value,
-                  }))
-                }
-              />
-            )}
-          </div>
-        ))}
+                <select
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  value={value.acquisition_type}
+                  onChange={(event) =>
+                    setValue((current) => ({
+                      ...current,
+                      acquisition_type: event.target.value as AcquisitionType,
+                    }))
+                  }
+                >
+                  {acquisitionTypeOptions.map((option) => (
+                    <option key={option || "empty"} value={option}>
+                      {option || "เลือกประเภท"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={field.key}
+              className={field.multiline ? "md:col-span-2" : ""}
+            >
+              <label className="text-sm font-medium text-gray-700">
+                {field.label}
+              </label>
+
+              {field.multiline ? (
+                <textarea
+                  className="mt-2 min-h-24 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder={field.placeholder}
+                  value={value[field.key]}
+                  onChange={(event) =>
+                    setValue((current) => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }))
+                  }
+                />
+              ) : (
+                <input
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  placeholder={field.placeholder}
+                  value={value[field.key]}
+                  onChange={(event) =>
+                    setValue((current) => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }))
+                  }
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -684,7 +749,9 @@ export default function AdminMotorcyclesPage() {
     const displayItems = [
       [
         "ต้นทุน",
-        bike.cost_price ? `${Number(bike.cost_price).toLocaleString()} บาท` : "-",
+        bike.cost_price
+          ? `${Number(bike.cost_price).toLocaleString()} บาท`
+          : "-",
       ],
       ["ยี่ห้อ", bike.brand],
       ["รุ่น", bike.model],
@@ -696,6 +763,8 @@ export default function AdminMotorcyclesPage() {
       ["เลขเครื่อง", bike.engine_number],
       ["สถานะเล่ม", bike.registration_status],
       ["ภาษีหมดอายุ", bike.tax_expiry],
+      ["ซื้อ/เทิร์น", bike.acquisition_type],
+      ["มาจาก", bike.source_name],
       ["สภาพรถ", bike.condition],
       ["หมายเหตุ", bike.notes],
     ];
@@ -721,16 +790,16 @@ export default function AdminMotorcyclesPage() {
   }
 
   function goToPage(page: number) {
-  const safePage = Math.min(Math.max(page, 1), totalPages);
-  setCurrentPage(safePage);
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(safePage);
 
-  setTimeout(() => {
-    listSectionRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }, 0);
-}
+    setTimeout(() => {
+      listSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
 
   function renderPaginationControls() {
     return (
@@ -827,6 +896,8 @@ export default function AdminMotorcyclesPage() {
         bike.engine_number,
         bike.registration_status,
         bike.tax_expiry,
+        bike.acquisition_type,
+        bike.source_name,
         bike.condition,
         bike.notes,
       ]
@@ -946,7 +1017,7 @@ export default function AdminMotorcyclesPage() {
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                   placeholder="เช่น 004"
                   value={lotNumber}
-                  onChange={(e) => setLotNumber(e.target.value)}
+                  onChange={(event) => setLotNumber(event.target.value)}
                 />
               </div>
 
@@ -959,7 +1030,7 @@ export default function AdminMotorcyclesPage() {
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                   placeholder="เช่น Honda PCX 160"
                   value={motorcycleName}
-                  onChange={(e) => setMotorcycleName(e.target.value)}
+                  onChange={(event) => setMotorcycleName(event.target.value)}
                 />
               </div>
 
@@ -973,8 +1044,8 @@ export default function AdminMotorcyclesPage() {
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                   placeholder="เช่น 25000"
                   value={costPrice}
-                  onChange={(e) =>
-                    setCostPrice(e.target.value.replace(/[^\d.]/g, ""))
+                  onChange={(event) =>
+                    setCostPrice(event.target.value.replace(/[^\d.]/g, ""))
                   }
                 />
 
@@ -996,7 +1067,9 @@ export default function AdminMotorcyclesPage() {
                 accept="image/*"
                 multiple
                 className="mt-2 w-full rounded-2xl border bg-gray-50 p-3"
-                onChange={(e) => setPhotoFiles(Array.from(e.target.files || []))}
+                onChange={(event) =>
+                  setPhotoFiles(Array.from(event.target.files || []))
+                }
               />
 
               {photoFiles.length > 0 && (
@@ -1017,8 +1090,8 @@ export default function AdminMotorcyclesPage() {
 
           <section
             ref={listSectionRef}
-           className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200"
-            >
+            className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200"
+          >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
@@ -1044,9 +1117,9 @@ export default function AdminMotorcyclesPage() {
 
                 <input
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง"
+                  placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง / ซื้อ/เทิร์น / มาจาก"
                   value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  onChange={(event) => setSearchText(event.target.value)}
                 />
               </div>
 
@@ -1057,8 +1130,8 @@ export default function AdminMotorcyclesPage() {
 
                 <select
                   value={statusFilter}
-                  onChange={(e) =>
-                    setStatusFilter(e.target.value as StatusFilter)
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as StatusFilter)
                   }
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
                 >
@@ -1140,6 +1213,11 @@ export default function AdminMotorcyclesPage() {
                                     ).toLocaleString()} บาท`
                                   : "-"}
                               </p>
+
+                              <p className="mt-1 text-sm text-gray-600">
+                                ซื้อ/เทิร์น: {bike.acquisition_type || "-"} •
+                                มาจาก: {bike.source_name || "-"}
+                              </p>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
@@ -1178,7 +1256,7 @@ export default function AdminMotorcyclesPage() {
                                     <img
                                       src={photo.image_url}
                                       alt={bike.motorcycle_name}
-                                      className="h-28 w-full object-cover"
+                                      className="h-28 w-full bg-white object-contain"
                                     />
 
                                     <button
@@ -1213,8 +1291,8 @@ export default function AdminMotorcyclesPage() {
                                     <input
                                       className="mt-1 w-full rounded-xl border p-3"
                                       value={editLotNumber}
-                                      onChange={(e) =>
-                                        setEditLotNumber(e.target.value)
+                                      onChange={(event) =>
+                                        setEditLotNumber(event.target.value)
                                       }
                                     />
                                   </div>
@@ -1227,8 +1305,8 @@ export default function AdminMotorcyclesPage() {
                                     <input
                                       className="mt-1 w-full rounded-xl border p-3"
                                       value={editMotorcycleName}
-                                      onChange={(e) =>
-                                        setEditMotorcycleName(e.target.value)
+                                      onChange={(event) =>
+                                        setEditMotorcycleName(event.target.value)
                                       }
                                     />
                                   </div>
@@ -1242,9 +1320,12 @@ export default function AdminMotorcyclesPage() {
                                       inputMode="decimal"
                                       className="mt-1 w-full rounded-xl border p-3"
                                       value={editCostPrice}
-                                      onChange={(e) =>
+                                      onChange={(event) =>
                                         setEditCostPrice(
-                                          e.target.value.replace(/[^\d.]/g, "")
+                                          event.target.value.replace(
+                                            /[^\d.]/g,
+                                            ""
+                                          )
                                         )
                                       }
                                     />
@@ -1268,9 +1349,9 @@ export default function AdminMotorcyclesPage() {
                                     accept="image/*"
                                     multiple
                                     className="mt-1 w-full rounded-xl border bg-white p-3"
-                                    onChange={(e) =>
+                                    onChange={(event) =>
                                       setEditPhotoFiles(
-                                        Array.from(e.target.files || [])
+                                        Array.from(event.target.files || [])
                                       )
                                     }
                                   />

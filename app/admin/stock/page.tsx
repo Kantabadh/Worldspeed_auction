@@ -18,6 +18,8 @@ type StockStatus =
   | "sold"
   | "cancelled";
 
+type AcquisitionType = "" | "ซื้อ" | "เทิร์น" | "นวนคร" | "ประมูล";
+
 type MotorcycleDetails = {
   brand: string;
   model: string;
@@ -32,6 +34,7 @@ type MotorcycleDetails = {
   condition: string;
   notes: string;
   purchase_date: string;
+  acquisition_type: AcquisitionType;
   source_name: string;
   repair_notes: string;
 };
@@ -65,6 +68,14 @@ type AuditLogInput = {
   targetName?: string;
   details?: Record<string, unknown>;
 };
+
+const acquisitionTypeOptions: AcquisitionType[] = [
+  "",
+  "ซื้อ",
+  "เทิร์น",
+  "นวนคร",
+  "ประมูล",
+];
 
 const statusOptions: { value: StockStatus; label: string; badge: string }[] = [
   {
@@ -131,9 +142,14 @@ const detailFields: {
     type: "date",
   },
   {
+    key: "acquisition_type",
+    label: "ซื้อ/เทิร์น",
+    placeholder: "",
+  },
+  {
     key: "source_name",
-    label: "ที่มาของรถ",
-    placeholder: "เช่น ซื้อหน้าร้าน / ลูกค้าเก่า / ประมูล",
+    label: "มาจาก",
+    placeholder: "เช่น R1 / S2 / B1 / HO / นวนคร / บางบอน",
   },
   {
     key: "condition",
@@ -170,6 +186,7 @@ function createEmptyDetails(): MotorcycleDetails {
     condition: "",
     notes: "",
     purchase_date: "",
+    acquisition_type: "",
     source_name: "",
     repair_notes: "",
   };
@@ -225,6 +242,7 @@ function getDetailsFromStock(bike: StockMotorcycle): MotorcycleDetails {
     condition: bike.condition || "",
     notes: bike.notes || "",
     purchase_date: bike.purchase_date || "",
+    acquisition_type: bike.acquisition_type || "",
     source_name: bike.source_name || "",
     repair_notes: bike.repair_notes || "",
   };
@@ -283,8 +301,35 @@ export default function AdminStockPage() {
   }, []);
 
   const isStockStaff = staffProfile?.role === "stock_staff";
+
   const canManageAuctionFromStock =
     staffProfile?.role === "owner" || staffProfile?.role === "admin";
+
+  const addStatusOptions = isStockStaff
+    ? statusOptions.filter(
+        (status) => status.value !== "in_auction" && status.value !== "sold"
+      )
+    : statusOptions;
+
+  const editStatusOptions = useMemo(() => {
+    if (!isStockStaff) return statusOptions;
+
+    const basicOptions = statusOptions.filter(
+      (status) => status.value !== "in_auction" && status.value !== "sold"
+    );
+
+    const currentStatusIsHidden = !basicOptions.some(
+      (status) => status.value === editStockStatus
+    );
+
+    if (!currentStatusIsHidden) return basicOptions;
+
+    const currentStatus = statusOptions.find(
+      (status) => status.value === editStockStatus
+    );
+
+    return currentStatus ? [currentStatus, ...basicOptions] : basicOptions;
+  }, [isStockStaff, editStockStatus]);
 
   async function createAuditLog({
     action,
@@ -315,7 +360,9 @@ export default function AdminStockPage() {
     stock_number: string | null;
     motorcycle_name: string;
   }) {
-    return `${bike.stock_number || "ไม่มีเลขสต็อก"} • ${bike.motorcycle_name}`;
+    return `${bike.stock_number || "ไม่มีเลขสต็อก"} • ${
+      bike.motorcycle_name
+    }`;
   }
 
   function getStockDetailPayload(bike: StockMotorcycle) {
@@ -337,6 +384,7 @@ export default function AdminStockPage() {
       condition: bike.condition || "",
       notes: bike.notes || "",
       purchase_date: bike.purchase_date || "",
+      acquisition_type: bike.acquisition_type || "",
       source_name: bike.source_name || "",
       repair_notes: bike.repair_notes || "",
       stock_status: bike.stock_status,
@@ -428,6 +476,7 @@ export default function AdminStockPage() {
         condition,
         notes,
         purchase_date,
+        acquisition_type,
         source_name,
         repair_notes,
         stock_status,
@@ -455,6 +504,14 @@ export default function AdminStockPage() {
   async function addStockMotorcycle() {
     if (!motorcycleName.trim()) {
       alert("กรุณากรอกชื่อรถ");
+      return;
+    }
+
+    if (
+      isStockStaff &&
+      (stockStatus === "in_auction" || stockStatus === "sold")
+    ) {
+      alert("เจ้าหน้าที่รับรถไม่สามารถตั้งสถานะนี้ได้");
       return;
     }
 
@@ -498,7 +555,7 @@ export default function AdminStockPage() {
           stock_number: stockData.stock_number || "",
           motorcycle_name: stockData.motorcycle_name,
           cost_price: Number(stockData.cost_price || 0),
-                    stock_status: stockData.stock_status,
+          stock_status: stockData.stock_status,
           stock_status_thai: getStatusLabel(stockData.stock_status),
           uploaded_photo_count: uploadedPhotoCount,
           ...cleanDetails(details),
@@ -551,6 +608,15 @@ export default function AdminStockPage() {
       return;
     }
 
+    if (
+      isStockStaff &&
+      (editStockStatus === "in_auction" || editStockStatus === "sold") &&
+      editStockStatus !== bike.stock_status
+    ) {
+      alert("เจ้าหน้าที่รับรถไม่สามารถเปลี่ยนเป็นสถานะนี้ได้");
+      return;
+    }
+
     setErrorMessage("");
 
     try {
@@ -597,6 +663,10 @@ export default function AdminStockPage() {
             tax_expiry: editDetails.tax_expiry.trim() || null,
             condition: editDetails.condition.trim() || null,
             notes: editDetails.notes.trim() || null,
+            purchase_date: editDetails.purchase_date.trim() || null,
+            acquisition_type: editDetails.acquisition_type.trim() || null,
+            source_name: editDetails.source_name.trim() || null,
+            repair_notes: editDetails.repair_notes.trim() || null,
           })
           .eq("id", bike.current_auction_motorcycle_id);
 
@@ -609,7 +679,9 @@ export default function AdminStockPage() {
         action: "stock_motorcycle_updated",
         targetType: "stock_motorcycle",
         targetId: String(bike.id),
-        targetName: `${editStockNumber || "ไม่มีเลขสต็อก"} • ${editMotorcycleName}`,
+        targetName: `${
+          editStockNumber || "ไม่มีเลขสต็อก"
+        } • ${editMotorcycleName}`,
         details: {
           before: getStockDetailPayload(bike),
           after: {
@@ -684,6 +756,10 @@ export default function AdminStockPage() {
           tax_expiry: bike.tax_expiry || null,
           condition: bike.condition || null,
           notes: bike.notes || null,
+          purchase_date: bike.purchase_date || null,
+          acquisition_type: bike.acquisition_type || null,
+          source_name: bike.source_name || null,
+          repair_notes: bike.repair_notes || null,
           active: true,
           image_url: firstPhoto,
           stock_motorcycle_id: bike.id,
@@ -849,6 +925,33 @@ export default function AdminStockPage() {
         {detailFields.map((field) => {
           const value = currentDetails[field.key];
 
+          if (field.key === "acquisition_type") {
+            return (
+              <div key={field.key}>
+                <label className="text-sm font-medium text-gray-700">
+                  {field.label}
+                </label>
+
+                <select
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  value={value}
+                  onChange={(event) =>
+                    setCurrentDetails({
+                      ...currentDetails,
+                      acquisition_type: event.target.value as AcquisitionType,
+                    })
+                  }
+                >
+                  {acquisitionTypeOptions.map((option) => (
+                    <option key={option || "empty"} value={option}>
+                      {option || "เลือกประเภท"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+
           if (field.multiline) {
             return (
               <div key={field.key} className="md:col-span-2">
@@ -910,6 +1013,7 @@ export default function AdminStockPage() {
         bike.license_plate,
         bike.frame_number,
         bike.engine_number,
+        bike.acquisition_type,
         bike.source_name,
         bike.stock_status,
         getStatusLabel(bike.stock_status),
@@ -933,7 +1037,7 @@ export default function AdminStockPage() {
 
   const readyCount = stockMotorcycles.filter(
     (bike) => bike.stock_status === "ready_to_sell"
-      ).length;
+  ).length;
 
   const inAuctionCount = stockMotorcycles.filter(
     (bike) => bike.stock_status === "in_auction"
@@ -1089,7 +1193,7 @@ export default function AdminStockPage() {
                     setStockStatus(event.target.value as StockStatus)
                   }
                 >
-                  {statusOptions.map((status) => (
+                  {addStatusOptions.map((status) => (
                     <option key={status.value} value={status.value}>
                       {status.label}
                     </option>
@@ -1121,7 +1225,9 @@ export default function AdminStockPage() {
             <div className="mt-5 rounded-2xl bg-gray-50 p-4">
               <h3 className="font-bold text-gray-900">รายละเอียดรถ</h3>
 
-              <div className="mt-4">{renderDetailInputs(details, setDetails)}</div>
+              <div className="mt-4">
+                {renderDetailInputs(details, setDetails)}
+              </div>
             </div>
 
             <button
@@ -1149,7 +1255,7 @@ export default function AdminStockPage() {
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
               <input
                 className="rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="ค้นหาเลขสต็อก / ชื่อรถ / รุ่น / ทะเบียน / ที่มา"
+                placeholder="ค้นหาเลขสต็อก / ชื่อรถ / รุ่น / ทะเบียน / ซื้อ/เทิร์น / มาจาก"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -1249,15 +1355,20 @@ export default function AdminStockPage() {
                             </p>
 
                             <p className="mt-1 text-sm text-gray-600">
-                              ทะเบียน: {bike.license_plate || "-"} • ที่มา:{" "}
-                              {bike.source_name || "-"}
+                              ทะเบียน: {bike.license_plate || "-"}
+                            </p>
+
+                            <p className="mt-1 text-sm text-gray-600">
+                              ซื้อ/เทิร์น: {bike.acquisition_type || "-"} •
+                              มาจาก: {bike.source_name || "-"}
                             </p>
                           </div>
 
                           <div className="text-right">
                             <p className="text-xs text-gray-500">ต้นทุน</p>
                             <p className="text-xl font-bold text-orange-700">
-                              {Number(bike.cost_price || 0).toLocaleString()} บาท
+                              {Number(bike.cost_price || 0).toLocaleString()}{" "}
+                              บาท
                             </p>
                           </div>
                         </div>
@@ -1276,8 +1387,9 @@ export default function AdminStockPage() {
                                 <button
                                   onClick={() => sendToAuction(bike)}
                                   disabled={
-                                    Boolean(bike.current_auction_motorcycle_id) ||
-                                    sendingToAuctionId === bike.id
+                                    Boolean(
+                                      bike.current_auction_motorcycle_id
+                                    ) || sendingToAuctionId === bike.id
                                   }
                                   className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
                                 >
@@ -1369,7 +1481,7 @@ export default function AdminStockPage() {
                                     )
                                   }
                                 >
-                                  {statusOptions.map((status) => (
+                                  {editStatusOptions.map((status) => (
                                     <option
                                       key={status.value}
                                       value={status.value}
@@ -1400,7 +1512,10 @@ export default function AdminStockPage() {
                             </div>
 
                             <div className="mt-5 rounded-2xl bg-white p-4">
-                              {renderDetailInputs(editDetails, setEditDetails)}
+                              {renderDetailInputs(
+                                editDetails,
+                                setEditDetails
+                              )}
                             </div>
 
                             <div className="mt-4 flex flex-wrap gap-2">

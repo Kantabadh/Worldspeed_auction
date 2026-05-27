@@ -20,6 +20,15 @@ type AdminOffer = {
     lot_number: string;
     motorcycle_name: string;
     cost_price: number | null;
+    brand: string | null;
+    model: string | null;
+    year: string | null;
+    license_plate: string | null;
+    frame_number: string | null;
+    engine_number: string | null;
+    purchase_date: string | null;
+    acquisition_type: string | null;
+    source_name: string | null;
   } | null;
 };
 
@@ -307,7 +316,16 @@ export default function AdminPage() {
           id,
           lot_number,
           motorcycle_name,
-          cost_price
+          cost_price,
+          brand,
+          model,
+          year,
+          license_plate,
+          frame_number,
+          engine_number,
+          purchase_date,
+          acquisition_type,
+          source_name
         )
       `)
       .order("offer_price", { ascending: false });
@@ -795,126 +813,201 @@ export default function AdminPage() {
     }
   }
 
+  function getMerchantKey(offer: AdminOffer) {
+    return (
+      offer.merchants?.phone ||
+      offer.merchants?.shop_name ||
+      offer.merchants?.name ||
+      `merchant-${offer.merchant_id}`
+    );
+  }
+
+  function getMerchantLabel(offer: AdminOffer) {
+    return (
+      offer.merchants?.shop_name ||
+      offer.merchants?.name ||
+      offer.merchants?.phone ||
+      `ร้านค้า ${offer.merchant_id}`
+    );
+  }
+
+  function getUniqueMerchantColumns() {
+    const merchantMap = new Map<string, string>();
+    const usedLabels = new Map<string, number>();
+
+    offers.forEach((offer) => {
+      const key = getMerchantKey(offer);
+      const baseLabel = getMerchantLabel(offer);
+
+      if (merchantMap.has(key)) return;
+
+      const usedCount = usedLabels.get(baseLabel) || 0;
+      usedLabels.set(baseLabel, usedCount + 1);
+
+      const label =
+        usedCount === 0 ? baseLabel : `${baseLabel} (${usedCount + 1})`;
+
+      merchantMap.set(key, label);
+    });
+
+    return Array.from(merchantMap.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }
+
+  function getShopOnlyText(group?: AdminOffer[]) {
+    if (!group || group.length === 0) return "";
+
+    return group
+      .map((offer) => offer.merchants?.shop_name || offer.merchants?.name || "-")
+      .join(" / ");
+  }
+
+  function getRankText(group?: AdminOffer[]) {
+    if (!group || group.length === 0) return "";
+
+    const price = Number(group[0].offer_price || 0).toLocaleString();
+
+    return group
+      .map((offer) => {
+        const shop = offer.merchants?.shop_name || offer.merchants?.name || "-";
+        return `${shop} ${price}`;
+      })
+      .join(" / ");
+  }
+
   function exportAuctionExcel() {
     const exportDate = new Date();
     const exportFileDateTime = formatExcelFileDateTime(exportDate);
 
-    const summaryRows = lotResults.map((lot) => {
+    const merchantColumns = getUniqueMerchantColumns();
+
+    const headers = [
+      "ลำดับ",
+      "ยี่ห้อ",
+      "รุ่น",
+      "รหัสรุ่น",
+      "เลขถัง",
+      "ทะเบียน",
+      "วันจดทะเบียน",
+      "ปี",
+      "ซื้อ/เทิร์น",
+      "มาจาก",
+      "ทุน",
+      ...merchantColumns.map((merchant) => merchant.label),
+      "MAX",
+      "WINNER",
+      "อันดับ 2",
+      "diff",
+    ];
+
+    const rows = lotResults.map((lot, index) => {
+      const motorcycle = lot.motorcycle;
+      const cost = Number(motorcycle?.cost_price || 0);
       const groups = getOfferGroupsByPrice(lot.offers);
 
       const rank1 = groups[0];
       const rank2 = groups[1];
-      const rank3 = groups[2];
 
-      const cost = Number(lot.motorcycle?.cost_price || 0);
+      const row: (string | number)[] = [
+        index + 1,
+        motorcycle?.brand || "",
+        motorcycle?.model || motorcycle?.motorcycle_name || "",
+        motorcycle?.engine_number || "",
+        motorcycle?.frame_number || "",
+        motorcycle?.license_plate || "",
+        motorcycle?.purchase_date ? formatThaiDate(motorcycle.purchase_date) : "",
+        motorcycle?.year || "",
+        motorcycle?.acquisition_type || "",
+        motorcycle?.source_name || "",
+        cost || "",
+      ];
 
-      const rank1Price = getGroupPrice(rank1);
-      const rank2Price = getGroupPrice(rank2);
-      const rank3Price = getGroupPrice(rank3);
+      merchantColumns.forEach((merchant) => {
+        const merchantOffers = lot.offers.filter(
+          (offer) => getMerchantKey(offer) === merchant.key
+        );
 
-      return {
-        Lot: lot.motorcycle?.lot_number || "",
-        รายการรถ: lot.motorcycle?.motorcycle_name || "",
-        ต้นทุน: cost || "",
-        "อันดับ 1 ร้านค้า": getGroupText(rank1),
-        "อันดับ 1 ราคา": rank1Price,
-        "กำไรขั้นต้น อันดับ 1": getGrossProfit(rank1Price, cost),
-        "อันดับ 2 ร้านค้า": getGroupText(rank2),
-        "อันดับ 2 ราคา": rank2Price,
-        "กำไรขั้นต้น อันดับ 2": getGrossProfit(rank2Price, cost),
-        "อันดับ 3 ร้านค้า": getGroupText(rank3),
-        "อันดับ 3 ราคา": rank3Price,
-        "กำไรขั้นต้น อันดับ 3": getGrossProfit(rank3Price, cost),
-        หมายเหตุ: getTieNote(groups),
-      };
-    });
+        if (merchantOffers.length === 0) {
+          row.push("");
+          return;
+        }
 
-    const detailRows = lotResults.flatMap((lot) => {
-      const groups = getOfferGroupsByPrice(lot.offers);
-      const cost = Number(lot.motorcycle?.cost_price || 0);
+        const highestMerchantOffer = merchantOffers.reduce(
+          (bestOffer, offer) => {
+            return Number(offer.offer_price || 0) >
+              Number(bestOffer.offer_price || 0)
+              ? offer
+              : bestOffer;
+          },
+          merchantOffers[0]
+        );
 
-      return groups.flatMap((group, groupIndex) => {
-        const rankText =
-          group.length >= 2
-            ? `อันดับ ${groupIndex + 1} ร่วม`
-            : `อันดับ ${groupIndex + 1}`;
-
-        return group.map((offer) => ({
-          Lot: lot.motorcycle?.lot_number || "",
-          รายการรถ: lot.motorcycle?.motorcycle_name || "",
-          ต้นทุน: cost || "",
-          อันดับ: rankText,
-          ร้านค้า: offer.merchants?.shop_name || "",
-          ผู้ติดต่อ: offer.merchants?.name || "",
-          โทร: offer.merchants?.phone || "",
-          ราคาเสนอ: Number(offer.offer_price || 0),
-          กำไรขั้นต้น: Number(offer.offer_price || 0) - cost,
-          วันที่ส่งราคา: formatThaiDate(offer.submitted_at),
-          เวลาส่งราคา: formatThaiTime(offer.submitted_at),
-        }));
+        row.push(Number(highestMerchantOffer.offer_price || 0));
       });
+
+      row.push(lot.highestPrice || "");
+      row.push(getShopOnlyText(rank1));
+      row.push(getRankText(rank2));
+      row.push(lot.highestPrice ? lot.highestPrice - cost : "");
+
+      return row;
     });
 
     const exportInfoRows = [
-      { รายการ: "วันที่ Export", ข้อมูล: formatThaiDate(exportDate) },
-      { รายการ: "เวลา Export", ข้อมูล: formatThaiTime(exportDate) },
-      { รายการ: "ผู้ Export", ข้อมูล: staffProfile?.email || "-" },
-      { รายการ: "สิทธิ์ผู้ Export", ข้อมูล: staffProfile?.role || "-" },
-      {
-        รายการ: "สถานะการเสนอราคา",
-        ข้อมูล: getThaiAuctionStatus(auctionStatus),
-      },
-      { รายการ: "จำนวน Lot ที่มีราคา", ข้อมูล: uniqueMotorcycles.size },
-      { รายการ: "จำนวนร้านค้าที่ส่งราคา", ข้อมูล: uniqueMerchants.size },
-      { รายการ: "จำนวนราคาที่ส่งทั้งหมด", ข้อมูล: offers.length },
-      { รายการ: "มูลค่าสูงสุดรวม", ข้อมูล: totalHighestOfferValue },
-      { รายการ: "ต้นทุนรวม", ข้อมูล: totalCostForSubmittedLots },
-      { รายการ: "กำไรขั้นต้นรวม", ข้อมูล: totalGrossProfit },
+      ["วันที่ Export", formatThaiDate(exportDate)],
+      ["เวลา Export", formatThaiTime(exportDate)],
+      ["ผู้ Export", staffProfile?.email || "-"],
+      ["สิทธิ์ผู้ Export", staffProfile?.role || "-"],
+      ["สถานะการเสนอราคา", getThaiAuctionStatus(auctionStatus)],
+      ["จำนวน Lot ที่มีราคา", uniqueMotorcycles.size],
+      ["จำนวนร้านค้าที่ส่งราคา", uniqueMerchants.size],
+      ["จำนวนราคาที่ส่งทั้งหมด", offers.length],
+      ["มูลค่าสูงสุดรวม", totalHighestOfferValue],
+      ["ต้นทุนรวม", totalCostForSubmittedLots],
+      ["กำไรขั้นต้นรวม", totalGrossProfit],
     ];
 
     const workbook = XLSX.utils.book_new();
 
-    const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
-    const detailSheet = XLSX.utils.json_to_sheet(detailRows);
-    const exportInfoSheet = XLSX.utils.json_to_sheet(exportInfoRows);
+    const resultSheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const exportInfoSheet = XLSX.utils.aoa_to_sheet([
+      ["รายการ", "ข้อมูล"],
+      ...exportInfoRows,
+    ]);
 
-    summarySheet["!cols"] = [
+    resultSheet["!cols"] = [
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 18 },
       { wch: 10 },
-      { wch: 28 },
-      { wch: 14 },
-      { wch: 42 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 42 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 42 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 30 },
-    ];
-
-    detailSheet["!cols"] = [
-      { wch: 10 },
-      { wch: 28 },
       { wch: 14 },
       { wch: 16 },
-      { wch: 28 },
-      { wch: 20 },
-      { wch: 16 },
+      { wch: 12 },
+      ...merchantColumns.map(() => ({ wch: 14 })),
       { wch: 14 },
-      { wch: 16 },
-      { wch: 16 },
-      { wch: 16 },
+      { wch: 22 },
+      { wch: 24 },
+      { wch: 14 },
     ];
 
     exportInfoSheet["!cols"] = [{ wch: 28 }, { wch: 36 }];
 
-    XLSX.utils.book_append_sheet(workbook, summarySheet, "สรุปอันดับ 1-3");
-    XLSX.utils.book_append_sheet(workbook, detailSheet, "รายละเอียดราคาทั้งหมด");
+    resultSheet["!autofilter"] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: Math.max(rows.length, 1), c: headers.length - 1 },
+      }),
+    };
+
+    XLSX.utils.book_append_sheet(workbook, resultSheet, "ผลเสนอราคา");
     XLSX.utils.book_append_sheet(workbook, exportInfoSheet, "ข้อมูลการ Export");
 
-    XLSX.writeFile(workbook, `สรุปผลเสนอราคา_${exportFileDateTime}.xlsx`);
+    XLSX.writeFile(workbook, `ผลเสนอราคา_รูปแบบบริษัท_${exportFileDateTime}.xlsx`);
   }
 
   function SummaryCard({
