@@ -471,6 +471,39 @@ setIsAllowingEditId(null);
     setErrorMessage("");
 
     try {
+            const staffProfile = getSavedStaffProfile();
+      const highestOffer = offers.length > 0 ? offers[0] : null;
+      const highestOfferPrice = highestOffer
+        ? Number(highestOffer.offer_price || 0)
+        : null;
+      const diff =
+        highestOfferPrice !== null ? highestOfferPrice - cost : null;
+
+      const { error: unsoldInsertError } = await supabase
+        .from("unsold_motorcycles")
+        .insert({
+          auction_round_id: motorcycle.auction_round_id || null,
+          original_motorcycle_id: motorcycle.id,
+          original_stock_motorcycle_id: motorcycle.stock_motorcycle_id || null,
+          lot_number: motorcycle.lot_number,
+          motorcycle_name: motorcycle.motorcycle_name,
+          cost_price: cost,
+          highest_offer: highestOfferPrice,
+          diff,
+          highest_merchant_id: highestOffer?.merchant_id || null,
+          highest_shop_name: highestOffer?.merchants?.shop_name || "",
+          highest_contact_name: highestOffer?.merchants?.name || "",
+          highest_phone: highestOffer?.merchants?.phone || "",
+          returned_by_email: staffProfile?.email || null,
+          note: "ไม่ขาย / กลับเข้าสต็อกจากหน้าผลเสนอราคา Lot",
+        });
+
+      if (unsoldInsertError) {
+        throw new Error(
+          `บันทึก Unsold Archive ไม่สำเร็จ: ${unsoldInsertError.message}`
+        );
+      }
+      
       const { error: motorcycleUpdateError } = await supabase
         .from("motorcycles")
         .update({
