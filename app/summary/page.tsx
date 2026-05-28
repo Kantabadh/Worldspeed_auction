@@ -169,7 +169,7 @@ export default function SummaryPage() {
     }
 
     if (!auctionRoundId) {
-      setErrorMessage("ไม่พบรอบ Auction ปัจจุบัน กรุณากลับไปหน้าเสนอราคาใหม่");
+      setErrorMessage("ไม่พบรอบเสนอราคาปัจจุบัน กรุณากลับไปหน้าเสนอราคาใหม่");
       return;
     }
 
@@ -192,7 +192,7 @@ export default function SummaryPage() {
       );
 
       if (submittedMotorcycleIds.length === 0) {
-        setErrorMessage("ไม่พบ Lot ที่ต้องการแก้ไข");
+        setErrorMessage("ไม่พบล็อตที่ต้องการแก้ไข");
         setIsSubmitting(false);
         return;
       }
@@ -203,7 +203,7 @@ export default function SummaryPage() {
 
       if (notAllowedLots.length > 0) {
         setErrorMessage(
-          "มีบาง Lot ที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่"
+          "มีบางล็อตที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่"
         );
         setIsSubmitting(false);
         return;
@@ -252,7 +252,7 @@ export default function SummaryPage() {
 
       if (missingPermissionIds.length > 0) {
         setErrorMessage(
-          "สิทธิ์แก้ไข Lot นี้หมดแล้วหรือไม่ได้รับอนุญาต กรุณาติดต่อผู้ดูแล"
+          "สิทธิ์แก้ไขล็อตนี้หมดแล้วหรือไม่ได้รับอนุญาต กรุณาติดต่อผู้ดูแล"
         );
         setIsSubmitting(false);
         return;
@@ -509,7 +509,7 @@ export default function SummaryPage() {
 
           <p className="mt-2 text-sm text-gray-600">
             {draft.isEditingSubmission
-              ? "หน้านี้แสดงเฉพาะ Lot ที่ได้รับอนุญาตให้แก้ไข หลังยืนยันแล้ว ใบยืนยันจะแสดงราคาสุดท้ายทั้งหมดของร้าน"
+              ? "หน้านี้แสดงเฉพาะล็อตที่ได้รับอนุญาตให้แก้ไข หลังยืนยันแล้ว ใบยืนยันจะแสดงราคาสุดท้ายทั้งหมดของร้าน"
               : "กรุณาตรวจสอบราคาให้ถูกต้องก่อนกดยืนยัน"}
           </p>
         </div>
@@ -523,9 +523,9 @@ export default function SummaryPage() {
 
         {draft.isEditingSubmission && (
           <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
-            <p className="font-semibold">แก้ไขเฉพาะ Lot ที่ได้รับอนุญาต</p>
+            <p className="font-semibold">แก้ไขเฉพาะล็อตที่ได้รับอนุญาต</p>
             <p className="text-sm">
-              เมื่อยืนยันแล้ว ระบบจะบันทึกราคาใหม่เฉพาะ Lot นี้ และล็อกการแก้ไขอีกครั้ง
+              เมื่อยืนยันแล้ว ระบบจะบันทึกราคาใหม่เฉพาะล็อตนี้ และล็อกการแก้ไขอีกครั้ง
             </p>
           </div>
         )}
@@ -575,7 +575,7 @@ export default function SummaryPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                      Lot {offer.lot}
+                      ล็อต {offer.lot}
                     </p>
 
                     <h3 className="mt-1 font-bold text-gray-900">

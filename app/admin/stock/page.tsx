@@ -104,7 +104,7 @@ const statusOptions: { value: StockStatus; label: string; badge: string }[] = [
   },
   {
     value: "in_auction",
-    label: "อยู่ใน Auction",
+    label: "อยู่ในรอบเสนอราคา",
     badge: "bg-blue-100 text-blue-700",
   },
   {
@@ -245,8 +245,8 @@ function getRoundStatusLabel(status?: string | null) {
 }
 
 function getStockStatusDescription(status: StockStatus | string) {
-  if (status === "ready_to_sell") return "พร้อมนำเข้ารอบ Auction ถัดไป";
-  if (status === "in_auction") return "อยู่ในรอบ Auction ปัจจุบันหรือรอบที่เลือกไว้";
+  if (status === "ready_to_sell") return "พร้อมนำเข้ารอบเสนอราคาถัดไป";
+  if (status === "in_auction") return "อยู่ในรอบเสนอราคาปัจจุบันหรือรอบที่เลือกไว้";
   if (status === "sold") return "ขายแล้ว ไม่ควรนำเข้ารอบใหม่";
   if (status === "repairing") return "ยังซ่อมอยู่ ควรรอให้พร้อมก่อน";
   if (status === "cancelled") return "ยกเลิกรายการนี้แล้ว";
@@ -269,7 +269,7 @@ function getSendToRoundButtonText(
 ) {
   if (sendingToAuctionId === bike.id) return "กำลังนำเข้ารอบ...";
   if (bike.current_auction_motorcycle_id || bike.stock_status === "in_auction") {
-    return "เข้ารอบ Auction แล้ว";
+    return "เข้ารอบเสนอราคาแล้ว";
   }
   if (bike.stock_status === "sold") return "ขายแล้ว";
   if (bike.stock_status === "repairing") return "กำลังซ่อม";
@@ -790,28 +790,28 @@ export default function AdminStockPage() {
   async function sendToAuction(bike: StockMotorcycle) {
     if (!canManageAuctionFromStock) {
       alert(
-        "เจ้าหน้าที่รับรถสามารถเพิ่ม/แก้ไขรถในคลังได้ แต่ไม่สามารถนำรถเข้ารอบ Auction ได้"
+        "เจ้าหน้าที่รับรถสามารถเพิ่ม/แก้ไขรถในคลังได้ แต่ไม่สามารถนำรถเข้ารอบเสนอราคาได้"
       );
       return;
     }
 
     if (!currentRound) {
-      alert("ยังไม่มีรอบ Auction ปัจจุบัน กรุณาสร้างรอบจากหน้า Admin ก่อน");
+      alert("ยังไม่มีรอบเสนอราคาปัจจุบัน กรุณาสร้างรอบจากหน้า Admin ก่อน");
       return;
     }
 
     if (currentRound.status === "closed" || currentRound.status === "archived") {
-      alert("รอบ Auction ปัจจุบันปิดแล้ว กรุณาเปิดรอบหรือสร้างรอบใหม่ก่อน");
+      alert("รอบเสนอราคาปัจจุบันปิดแล้ว กรุณาเปิดรอบหรือสร้างรอบใหม่ก่อน");
       return;
     }
 
     if (bike.current_auction_motorcycle_id || bike.stock_status === "in_auction") {
-      alert("รถคันนี้ถูกนำเข้ารอบ Auction แล้ว");
+      alert("รถคันนี้ถูกนำเข้ารอบเสนอราคาแล้ว");
       return;
     }
 
     if (bike.stock_status === "sold") {
-      alert("รถคันนี้ขายแล้ว ไม่สามารถนำเข้ารอบ Auction ใหม่ได้");
+      alert("รถคันนี้ขายแล้ว ไม่สามารถนำเข้ารอบเสนอราคาใหม่ได้");
       return;
     }
 
@@ -821,7 +821,7 @@ export default function AdminStockPage() {
     }
 
     if (bike.stock_status === "cancelled") {
-      alert("รถคันนี้ถูกยกเลิกแล้ว ไม่สามารถนำเข้ารอบ Auction ได้");
+      alert("รถคันนี้ถูกยกเลิกแล้ว ไม่สามารถนำเข้ารอบเสนอราคาได้");
       return;
     }
 
@@ -925,7 +925,7 @@ export default function AdminStockPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "เกิดข้อผิดพลาดระหว่างนำรถเข้ารอบ Auction";
+          : "เกิดข้อผิดพลาดระหว่างนำรถเข้ารอบเสนอราคา";
 
       setErrorMessage(message);
     }
@@ -942,7 +942,7 @@ export default function AdminStockPage() {
     }
 
     if (bike.current_auction_motorcycle_id) {
-      alert("รถคันนี้ถูกนำเข้ารอบ Auction แล้ว แนะนำให้เปลี่ยนสถานะแทนการลบ");
+      alert("รถคันนี้ถูกนำเข้ารอบเสนอราคาแล้ว แนะนำให้เปลี่ยนสถานะแทนการลบ");
       return;
     }
 
@@ -1184,7 +1184,7 @@ export default function AdminStockPage() {
     },
     {
       value: "in_auction",
-      label: "อยู่ใน Auction",
+      label: "อยู่ในรอบเสนอราคา",
       count: inAuctionCount,
     },
     {
@@ -1223,7 +1223,7 @@ export default function AdminStockPage() {
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Stock
+                คลังรถ
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
@@ -1231,7 +1231,7 @@ export default function AdminStockPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                เพิ่มรถเข้าคลัง เก็บข้อมูลต้นทุน รูปภาพ และเลือกนำเข้ารอบ Auction ปัจจุบัน
+                เพิ่มรถเข้าคลัง เก็บข้อมูลต้นทุน รูปภาพ และเลือกนำเข้ารอบเสนอราคาปัจจุบัน
               </p>
 
               {isStockStaff && (
@@ -1263,11 +1263,11 @@ export default function AdminStockPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                  Current Auction Round
+                  รอบเสนอราคาปัจจุบัน
                 </p>
 
                 <h2 className="mt-1 text-xl font-bold text-gray-900">
-                  รอบ Auction ปัจจุบัน
+                  รอบเสนอราคาปัจจุบัน
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
@@ -1286,7 +1286,7 @@ export default function AdminStockPage() {
 
             {isLoadingCurrentRound ? (
               <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
-                กำลังโหลดรอบ Auction ปัจจุบัน...
+                กำลังโหลดรอบเสนอราคาปัจจุบัน...
               </div>
             ) : currentRound ? (
               <div className="mt-4 grid gap-3 rounded-2xl border bg-gray-50 p-4 md:grid-cols-4">
@@ -1320,9 +1320,9 @@ export default function AdminStockPage() {
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
-                <p className="font-bold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+                <p className="font-bold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
                 <p className="mt-1 text-sm">
-                  กรุณาไปหน้า Admin แล้วสร้างรอบ Auction ปัจจุบันก่อนนำรถเข้า Auction
+                  กรุณาไปหน้า Admin แล้วสร้างรอบเสนอราคาปัจจุบันก่อนนำรถเข้ารอบเสนอราคา
                 </p>
               </div>
             )}
@@ -1344,7 +1344,7 @@ export default function AdminStockPage() {
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">อยู่ใน Auction</p>
+              <p className="text-sm text-gray-500">อยู่ในรอบเสนอราคา</p>
               <p className="mt-2 text-2xl font-bold text-blue-700">
                 {inAuctionCount}
               </p>
@@ -1372,13 +1372,13 @@ export default function AdminStockPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              รถที่เพิ่มในหน้านี้ยังไม่แสดงให้ร้านค้าเห็น จนกว่าจะนำเข้ารอบ Auction ปัจจุบัน
+              รถที่เพิ่มในหน้านี้ยังไม่แสดงให้ร้านค้าเห็น จนกว่าจะนำเข้ารอบเสนอราคาปัจจุบัน
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  เลขสต็อก / Lot ที่ต้องการ
+                  เลขสต็อก / ล็อตที่ต้องการ
                 </label>
 
                 <input
@@ -1605,7 +1605,7 @@ export default function AdminStockPage() {
 
                               {bike.current_auction_motorcycle_id && (
                                 <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-                                  เข้ารอบ Auction แล้ว
+                                  เข้ารอบเสนอราคาแล้ว
                                 </span>
                               )}
                             </div>

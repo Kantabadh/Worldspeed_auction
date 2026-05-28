@@ -134,7 +134,7 @@ export default function SuccessPage() {
               </div>
 
               <div>
-                <p className="text-sm font-medium text-gray-500">จำนวน Lot</p>
+                <p className="text-sm font-medium text-gray-500">จำนวนล็อต</p>
                 <p className="mt-1 font-bold text-gray-900">
                   {submission.offers.length} รายการ
                 </p>
@@ -150,7 +150,7 @@ export default function SuccessPage() {
               {submission.isUpdatedSubmission && editedCount > 0 && (
                 <div className="sm:col-span-2">
                   <p className="rounded-2xl bg-yellow-100 px-4 py-3 text-sm font-bold text-yellow-800">
-                    มีรายการที่แก้ไข {editedCount} Lot
+                    มีรายการที่แก้ไข {editedCount} ล็อต
                   </p>
                 </div>
               )}

@@ -381,7 +381,7 @@ export default function AdminMotorcyclesPage() {
 
   async function addMotorcycle() {
     if (!lotNumber.trim() || !motorcycleName.trim()) {
-      alert("กรุณากรอกเลข Lot และชื่อรถ");
+      alert("กรุณากรอกเลขล็อตและชื่อรถ");
       return;
     }
 
@@ -481,7 +481,7 @@ export default function AdminMotorcyclesPage() {
 
   async function saveEdit(bike: Motorcycle) {
     if (!editLotNumber.trim() || !editMotorcycleName.trim()) {
-      alert("กรุณากรอกเลข Lot และชื่อรถ");
+      alert("กรุณากรอกเลขล็อตและชื่อรถ");
       return;
     }
 
@@ -583,8 +583,8 @@ export default function AdminMotorcyclesPage() {
 
     const confirmToggle = confirm(
       newActive
-        ? `ต้องการแสดง Lot ${bike.lot_number} ให้ร้านค้าเห็นใช่หรือไม่?`
-        : `ต้องการซ่อน Lot ${bike.lot_number} จากร้านค้าใช่หรือไม่?`
+        ? `ต้องการแสดงล็อต ${bike.lot_number} ให้ร้านค้าเห็นใช่หรือไม่?`
+        : `ต้องการซ่อนล็อต ${bike.lot_number} จากร้านค้าใช่หรือไม่?`
     );
 
     if (!confirmToggle) return;
@@ -622,7 +622,7 @@ export default function AdminMotorcyclesPage() {
 
   async function deleteMotorcycle(bike: Motorcycle) {
     const confirmDelete = confirm(
-      `ต้องการลบ Lot ${bike.lot_number} ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน`
+      `ต้องการลบล็อต ${bike.lot_number} ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน`
     );
 
     if (!confirmDelete) return;
@@ -951,6 +951,9 @@ export default function AdminMotorcyclesPage() {
               <p className="mt-1 text-sm text-gray-600">
                 เพิ่มรถ อัปโหลดรูป แก้ไขรายละเอียด ต้นทุน และเปิด/ซ่อนรายการ
               </p>
+              <p className="mt-2 text-sm font-medium text-amber-700">
+                การเพิ่มรถใหม่ให้ทำผ่านหน้า คลังรถและรอบเสนอราคา เท่านั้น
+              </p>
             </div>
 
             <button
@@ -1000,6 +1003,30 @@ export default function AdminMotorcyclesPage() {
             </div>
           </section>
 
+          <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  รายการรถในรอบเสนอราคา
+                </p>
+                <h2 className="mt-1 text-xl font-bold text-gray-900">
+                  การเพิ่มรถใหม่ให้ทำผ่านหน้า คลังรถและรอบเสนอราคา เท่านั้น
+                </h2>
+                <p className="mt-1 text-sm text-gray-700">
+                  หน้านี้ใช้ดู แก้ไข ซ่อน หรือจัดการรถที่ถูกส่งเข้ารอบเสนอราคาแล้ว
+                </p>
+              </div>
+
+              <a
+                href="/admin/stock"
+                className="rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white shadow hover:bg-gray-800"
+              >
+                ไปหน้า คลังรถและรอบเสนอราคา
+              </a>
+            </div>
+          </section>
+
+          {false && (
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">เพิ่มรายการรถ</h2>
 
@@ -1010,7 +1037,7 @@ export default function AdminMotorcyclesPage() {
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  เลข Lot
+                  เลขล็อต
                 </label>
 
                 <input
@@ -1087,6 +1114,7 @@ export default function AdminMotorcyclesPage() {
               {isAdding ? "กำลังเพิ่ม..." : "เพิ่มรายการรถ"}
             </button>
           </section>
+          )}
 
           <section
             ref={listSectionRef}
@@ -1117,7 +1145,7 @@ export default function AdminMotorcyclesPage() {
 
                 <input
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง / ซื้อ/เทิร์น / มาจาก"
+                  placeholder="ค้นหาล็อต / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง / ซื้อ/เทิร์น / มาจาก"
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
                 />
@@ -1198,7 +1226,7 @@ export default function AdminMotorcyclesPage() {
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
                               <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                                Lot {bike.lot_number}
+                                ล็อต {bike.lot_number}
                               </p>
 
                               <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -1285,7 +1313,7 @@ export default function AdminMotorcyclesPage() {
                                 <div className="mt-3 grid gap-3 md:grid-cols-3">
                                   <div>
                                     <label className="text-sm font-medium text-gray-700">
-                                      เลข Lot
+                                      เลขล็อต
                                     </label>
 
                                     <input

@@ -408,7 +408,7 @@ setIsAllowingEditId(null);
         });
 
       if (soldInsertError) {
-        throw new Error(`บันทึก Sold Archive ไม่สำเร็จ: ${soldInsertError.message}`);
+        throw new Error(`บันทึกรถที่ขายแล้วไม่สำเร็จ: ${soldInsertError.message}`);
       }
 
       const { error: motorcycleUpdateError } = await supabase
@@ -546,7 +546,7 @@ setIsAllowingEditId(null);
 
       if (unsoldInsertError) {
         throw new Error(
-          `บันทึก Unsold Archive ไม่สำเร็จ: ${unsoldInsertError.message}`
+          `บันทึกรถที่กลับเข้าสต็อกไม่สำเร็จ: ${unsoldInsertError.message}`
         );
       }
       
@@ -1121,7 +1121,7 @@ setIsAllowingEditId(null);
                         onClick={exportLotOffersCsv}
                         className="rounded-xl bg-black px-4 py-2 font-medium text-white hover:bg-gray-800"
                       >
-                        Export CSV
+                        ดาวน์โหลด CSV
                       </button>
                     )}
                   </div>

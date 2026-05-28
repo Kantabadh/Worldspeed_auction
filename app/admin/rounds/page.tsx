@@ -353,11 +353,11 @@ export default function AdminRoundsPage() {
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Auction Rounds
+                รอบเสนอราคา
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                จัดการรอบ Auction
+                จัดการรอบเสนอราคา
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
@@ -414,7 +414,7 @@ export default function AdminRoundsPage() {
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
-                  รายการรอบ Auction
+                  รายการรอบเสนอราคา
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
@@ -432,13 +432,13 @@ export default function AdminRoundsPage() {
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5 text-gray-600">
-                กำลังโหลดรอบ Auction...
+                กำลังโหลดรอบเสนอราคา...
               </div>
             )}
 
             {!isLoading && filteredRounds.length === 0 && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="font-semibold text-gray-900">ยังไม่มีรอบ Auction</p>
+                <p className="font-semibold text-gray-900">ยังไม่มีรอบเสนอราคา</p>
                 <p className="mt-1 text-sm text-gray-600">
                   ไปที่หน้า /admin เพื่อสร้างรอบใหม่
                 </p>
@@ -454,7 +454,7 @@ export default function AdminRoundsPage() {
                       <th className="border p-3">วันที่ประมูล</th>
                       <th className="border p-3">สถานะ</th>
                       <th className="border p-3 text-center">ปัจจุบัน</th>
-                      <th className="border p-3 text-right">Lot</th>
+                      <th className="border p-3 text-right">ล็อต</th>
                       <th className="border p-3 text-right">ราคาเสนอ</th>
                       <th className="border p-3 text-right">มูลค่าสูงสุด</th>
                       <th className="border p-3">จัดการ</th>

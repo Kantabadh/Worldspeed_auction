@@ -385,7 +385,7 @@ export default function AdminHistoryDetailPage() {
     }
 
     if (offers.length === 0) {
-      alert("ไม่มีข้อมูลราคาสำหรับ Export");
+      alert("ไม่มีข้อมูลราคาสำหรับดาวน์โหลด");
       return;
     }
 
@@ -436,11 +436,11 @@ export default function AdminHistoryDetailPage() {
         ข้อมูล: formatThaiDateTime(round.created_at),
       },
       {
-        รายการ: "สถานะ Auction ตอนบันทึก",
+        รายการ: "สถานะรอบเสนอราคาตอนบันทึก",
         ข้อมูล: getThaiAuctionStatus(round.auction_status),
       },
       {
-        รายการ: "จำนวน Lot ที่มีราคา",
+        รายการ: "จำนวนล็อตที่มีราคา",
         ข้อมูล: totalLots,
       },
       {
@@ -468,11 +468,11 @@ export default function AdminHistoryDetailPage() {
         ข้อมูล: round.created_by_email || round.exported_by_email || "-",
       },
       {
-        รายการ: "ผู้ Export",
+        รายการ: "ผู้ดาวน์โหลด",
         ข้อมูล: staffProfile?.email || "-",
       },
       {
-        รายการ: "วันที่ Export",
+        รายการ: "วันที่ดาวน์โหลด",
         ข้อมูล: formatThaiDateTime(new Date().toISOString()),
       },
     ];
@@ -485,7 +485,7 @@ export default function AdminHistoryDetailPage() {
 
     XLSX.utils.book_append_sheet(workbook, summarySheet, "สรุปอันดับ 1-3");
     XLSX.utils.book_append_sheet(workbook, detailSheet, "รายละเอียดราคาทั้งหมด");
-    XLSX.utils.book_append_sheet(workbook, infoSheet, "ข้อมูลการ Export");
+    XLSX.utils.book_append_sheet(workbook, infoSheet, "ข้อมูลการดาวน์โหลด");
 
     const fileDate = formatThaiDateForFileName(round.created_at);
     const safeRoundName = round.round_name.replace(/[\\/:*?"<>|]/g, "-");
@@ -578,14 +578,14 @@ export default function AdminHistoryDetailPage() {
             <section className="grid gap-4 md:grid-cols-4">
               <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
                 <p className="text-sm font-medium text-gray-500">
-                  Lot ที่มีราคา
+                  ล็อตที่มีราคา
                 </p>
 
                 <p className="mt-2 text-3xl font-bold text-gray-900">
                   {totalLots.toLocaleString()}
                 </p>
 
-                <p className="text-sm text-gray-500">Lot</p>
+                <p className="text-sm text-gray-500">ล็อต</p>
               </div>
 
               <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
@@ -683,7 +683,7 @@ export default function AdminHistoryDetailPage() {
                     onClick={exportExcel}
                     className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
                   >
-                    Export Excel
+                    ดาวน์โหลด Excel
                   </button>
                 </div>
               </div>
@@ -708,14 +708,14 @@ export default function AdminHistoryDetailPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  แสดงเฉพาะอันดับ 1 ถึง 3 ของแต่ละ Lot รวมกรณีราคาเท่ากัน
+                  แสดงเฉพาะอันดับ 1 ถึง 3 ของแต่ละล็อต รวมกรณีราคาเท่ากัน
                 </p>
 
                 <div className="mt-4 overflow-x-auto">
                   <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
                     <thead>
                       <tr className="border-b bg-gray-100 text-gray-800">
-                        <th className="p-3">Lot</th>
+                        <th className="p-3">ล็อต</th>
                         <th className="p-3">รายการรถ</th>
                         <th className="p-3">อันดับ</th>
                         <th className="p-3">ชื่อร้าน</th>
@@ -793,7 +793,7 @@ export default function AdminHistoryDetailPage() {
               <section className="mt-6 space-y-5">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">
-                    รายละเอียดราคาแยกตาม Lot
+                    รายละเอียดราคาแยกตามล็อต
                   </h2>
 
                   <p className="mt-1 text-sm text-gray-600">
@@ -809,7 +809,7 @@ export default function AdminHistoryDetailPage() {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                          Lot {lot.lot_number}
+                          ล็อต {lot.lot_number}
                         </p>
 
                         <h3 className="mt-1 text-xl font-bold text-gray-900">

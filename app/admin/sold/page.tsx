@@ -31,6 +31,17 @@ type SoldMotorcycle = {
   } | null;
 };
 
+type SoldRoundGroup = {
+  roundId: string;
+  roundName: string;
+  auctionDate: string | null;
+  items: SoldMotorcycle[];
+  count: number;
+  totalSoldPrice: number;
+  totalCost: number;
+  totalDiff: number;
+};
+
 function formatBaht(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "-";
@@ -52,6 +63,20 @@ function formatThaiDateTime(value: string | null | undefined) {
   });
 }
 
+function formatThaiDate(value: string | null | undefined) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleDateString("th-TH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 function escapeCsvCell(value: string | number | null | undefined) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -59,6 +84,9 @@ function escapeCsvCell(value: string | number | null | undefined) {
 export default function AdminSoldPage() {
   const [soldMotorcycles, setSoldMotorcycles] = useState<SoldMotorcycle[]>([]);
   const [searchText, setSearchText] = useState("");
+  const [expandedRoundIds, setExpandedRoundIds] = useState<
+    Record<string, boolean>
+  >({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -147,11 +175,60 @@ export default function AdminSoldPage() {
     return sum + Number(item.diff || 0);
   }, 0);
 
+  const soldRoundGroups = useMemo(() => {
+    const map = new Map<string, SoldRoundGroup>();
+
+    filteredSoldMotorcycles.forEach((item) => {
+      const roundId = item.auction_round_id
+        ? String(item.auction_round_id)
+        : "no-round";
+      const roundName = item.auction_rounds?.round_name || "ไม่พบรอบเสนอราคา";
+      const auctionDate = item.auction_rounds?.auction_date || null;
+
+      if (!map.has(roundId)) {
+        map.set(roundId, {
+          roundId,
+          roundName,
+          auctionDate,
+          items: [],
+          count: 0,
+          totalSoldPrice: 0,
+          totalCost: 0,
+          totalDiff: 0,
+        });
+      }
+
+      const group = map.get(roundId);
+
+      if (!group) return;
+
+      group.items.push(item);
+      group.count += 1;
+      group.totalSoldPrice += Number(item.sold_price || 0);
+      group.totalCost += Number(item.cost_price || 0);
+      group.totalDiff += Number(item.diff || 0);
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const dateA = a.auctionDate ? new Date(a.auctionDate).getTime() : 0;
+      const dateB = b.auctionDate ? new Date(b.auctionDate).getTime() : 0;
+
+      return dateB - dateA;
+    });
+  }, [filteredSoldMotorcycles]);
+
+  function toggleRound(roundId: string) {
+    setExpandedRoundIds((current) => ({
+      ...current,
+      [roundId]: !current[roundId],
+    }));
+  }
+
   function exportSoldCsv() {
     const headers = [
       "ลำดับ",
-      "รอบ Auction",
-      "Lot",
+      "รอบเสนอราคา",
+      "ล็อต",
       "รถ",
       "ร้านที่ซื้อ",
       "ผู้ติดต่อ",
@@ -207,7 +284,7 @@ export default function AdminSoldPage() {
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Sold Archive
+                รายการขายแล้ว
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
@@ -215,7 +292,7 @@ export default function AdminSoldPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                ดูรายการรถที่ปิดการขายแล้ว พร้อมรอบ Auction ผู้ซื้อ ราคา และกำไร
+                ดูรายการรถที่ปิดการขายแล้ว พร้อมรอบเสนอราคา ผู้ซื้อ ราคา และกำไร
               </p>
             </div>
 
@@ -232,7 +309,7 @@ export default function AdminSoldPage() {
                 disabled={filteredSoldMotorcycles.length === 0}
                 className="rounded-xl bg-black px-4 py-2 font-medium text-white shadow-sm hover:bg-gray-800 disabled:bg-gray-300"
               >
-                Export CSV
+                ดาวน์โหลด CSV
               </button>
             </div>
           </div>
@@ -288,13 +365,13 @@ export default function AdminSoldPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  ค้นหาจาก Lot, ชื่อรถ, ร้านค้า, เบอร์โทร หรือรอบ Auction
+                  ค้นหาจากล็อต, ชื่อรถ, ร้านค้า, เบอร์โทร หรือรอบเสนอราคา
                 </p>
               </div>
 
               <input
                 className="w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black md:w-96"
-                placeholder="ค้นหา Lot / รถ / ร้าน / โทร / รอบ"
+                placeholder="ค้นหาล็อต / รถ / ร้าน / โทร / รอบ"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -312,157 +389,244 @@ export default function AdminSoldPage() {
                   ยังไม่มีรถที่ขายแล้ว
                 </p>
                 <p className="mt-1 text-sm text-gray-600">
-                  เมื่อกดยืนยันขายจากหน้า Lot รายการจะแสดงที่นี่
+                  เมื่อกดยืนยันขายจากหน้าล็อต รายการจะแสดงที่นี่
                 </p>
               </div>
             )}
 
             {!isLoading && filteredSoldMotorcycles.length > 0 && (
-              <>
-                <div className="mt-4 hidden overflow-x-auto rounded-2xl border md:block">
-                  <table className="w-full border-collapse text-left text-sm">
-                    <thead>
-                      <tr className="bg-gray-100 text-gray-700">
-                        <th className="border p-3">วันที่ขาย</th>
-                        <th className="border p-3">รอบ</th>
-                        <th className="border p-3">Lot</th>
-                        <th className="border p-3">รถ</th>
-                        <th className="border p-3">ร้านที่ซื้อ</th>
-                        <th className="border p-3 text-right">ราคาขาย</th>
-                        <th className="border p-3 text-right">ต้นทุน</th>
-                        <th className="border p-3 text-right">diff</th>
-                        <th className="border p-3">ผู้ยืนยัน</th>
-                      </tr>
-                    </thead>
+              <div className="mt-4 space-y-4">
+                {soldRoundGroups.map((group) => {
+                  const isExpanded = Boolean(expandedRoundIds[group.roundId]);
 
-                    <tbody>
-                      {filteredSoldMotorcycles.map((item) => (
-                        <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="border p-3">
-                            {formatThaiDateTime(item.sold_at)}
-                          </td>
-
-                          <td className="border p-3">
-                            {item.auction_rounds?.round_name || "-"}
-                          </td>
-
-                          <td className="border p-3 font-bold">
-                            {item.lot_number || "-"}
-                          </td>
-
-                          <td className="border p-3">
-                            {item.motorcycle_name || "-"}
-                          </td>
-
-                          <td className="border p-3">
-                            <p className="font-semibold text-gray-900">
-                              {item.winner_shop_name || "-"}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {item.winner_contact_name || "-"} •{" "}
-                              {item.winner_phone || "-"}
-                            </p>
-                          </td>
-
-                          <td className="border p-3 text-right font-bold text-green-700">
-                            {formatBaht(item.sold_price)}
-                          </td>
-
-                          <td className="border p-3 text-right">
-                            {formatBaht(item.cost_price)}
-                          </td>
-
-                          <td
-                            className={
-                              Number(item.diff || 0) >= 0
-                                ? "border p-3 text-right font-bold text-green-700"
-                                : "border p-3 text-right font-bold text-red-700"
-                            }
-                          >
-                            {formatBaht(item.diff)}
-                          </td>
-
-                          <td className="border p-3">
-                            {item.sold_by_email || "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-4 space-y-3 md:hidden">
-                  {filteredSoldMotorcycles.map((item) => (
+                  return (
                     <article
-                      key={item.id}
-                      className="rounded-2xl border bg-white p-4 shadow-sm"
+                      key={group.roundId}
+                      className="rounded-2xl border bg-white p-4 ring-1 ring-gray-100"
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                            Lot {item.lot_number || "-"}
+                          <p className="text-sm font-medium text-gray-500">
+                            รอบเสนอราคา
                           </p>
 
-                          <h3 className="mt-1 text-lg font-bold text-gray-900">
-                            {item.motorcycle_name || "-"}
+                          <h3 className="mt-1 text-xl font-bold text-gray-900">
+                            {group.roundName}
                           </h3>
 
-                          <p className="mt-1 text-xs text-gray-500">
-                            {item.auction_rounds?.round_name || "-"}
+                          <p className="mt-1 text-sm text-gray-600">
+                            วันที่ประมูล: {formatThaiDate(group.auctionDate)}
                           </p>
                         </div>
 
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500">ราคาขาย</p>
-                          <p className="text-lg font-bold text-green-700">
-                            {formatBaht(item.sold_price)}
-                          </p>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleRound(group.roundId)}
+                          className="rounded-xl border px-4 py-2 text-sm font-semibold hover:bg-gray-100"
+                        >
+                          {isExpanded ? "ซ่อนรายการ" : "เปิดดูรายการ"}
+                        </button>
                       </div>
 
-                      <div className="mt-3 rounded-xl bg-gray-50 p-3 text-sm">
-                        <p>
-                          <span className="text-gray-500">ร้าน: </span>
-                          <span className="font-semibold">
-                            {item.winner_shop_name || "-"}
-                          </span>
-                        </p>
+                      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <div className="rounded-xl bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">
+                            จำนวนรถขายแล้ว
+                          </p>
+                          <p className="mt-1 text-lg font-bold text-gray-900">
+                            {group.count}
+                          </p>
+                        </div>
 
-                        <p className="mt-1">
-                          <span className="text-gray-500">ติดต่อ: </span>
-                          <span className="font-semibold">
-                            {item.winner_contact_name || "-"} •{" "}
-                            {item.winner_phone || "-"}
-                          </span>
-                        </p>
+                        <div className="rounded-xl bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">ยอดขายรวม</p>
+                          <p className="mt-1 text-lg font-bold text-green-700">
+                            {formatBaht(group.totalSoldPrice)}
+                          </p>
+                        </div>
 
-                        <p className="mt-1">
-                          <span className="text-gray-500">ต้นทุน: </span>
-                          <span>{formatBaht(item.cost_price)}</span>
-                        </p>
+                        <div className="rounded-xl bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">ต้นทุนรวม</p>
+                          <p className="mt-1 text-lg font-bold text-orange-700">
+                            {formatBaht(group.totalCost)}
+                          </p>
+                        </div>
 
-                        <p className="mt-1">
-                          <span className="text-gray-500">diff: </span>
-                          <span
+                        <div className="rounded-xl bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">กำไรรวม</p>
+                          <p
                             className={
-                              Number(item.diff || 0) >= 0
-                                ? "font-bold text-green-700"
-                                : "font-bold text-red-700"
+                              group.totalDiff >= 0
+                                ? "mt-1 text-lg font-bold text-green-700"
+                                : "mt-1 text-lg font-bold text-red-700"
                             }
                           >
-                            {formatBaht(item.diff)}
-                          </span>
-                        </p>
-
-                        <p className="mt-1">
-                          <span className="text-gray-500">วันที่ขาย: </span>
-                          <span>{formatThaiDateTime(item.sold_at)}</span>
-                        </p>
+                            {formatBaht(group.totalDiff)}
+                          </p>
+                        </div>
                       </div>
+
+                      {isExpanded && (
+                        <>
+                          <div className="mt-4 hidden overflow-x-auto rounded-2xl border md:block">
+                            <table className="w-full border-collapse text-left text-sm">
+                              <thead>
+                                <tr className="bg-gray-100 text-gray-700">
+                                  <th className="border p-3">ล็อต</th>
+                                  <th className="border p-3">รถ</th>
+                                  <th className="border p-3">ร้านที่ซื้อ</th>
+                                  <th className="border p-3">โทร</th>
+                                  <th className="border p-3 text-right">
+                                    ราคาขาย
+                                  </th>
+                                  <th className="border p-3 text-right">
+                                    ต้นทุน
+                                  </th>
+                                  <th className="border p-3 text-right">diff</th>
+                                  <th className="border p-3">วันที่ขาย</th>
+                                  <th className="border p-3">ผู้ยืนยัน</th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                {group.items.map((item) => (
+                                  <tr key={item.id} className="hover:bg-gray-50">
+                                    <td className="border p-3 font-bold">
+                                      {item.lot_number || "-"}
+                                    </td>
+
+                                    <td className="border p-3">
+                                      {item.motorcycle_name || "-"}
+                                    </td>
+
+                                    <td className="border p-3">
+                                      <p className="font-semibold text-gray-900">
+                                        {item.winner_shop_name || "-"}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {item.winner_contact_name || "-"}
+                                      </p>
+                                    </td>
+
+                                    <td className="border p-3">
+                                      {item.winner_phone || "-"}
+                                    </td>
+
+                                    <td className="border p-3 text-right font-bold text-green-700">
+                                      {formatBaht(item.sold_price)}
+                                    </td>
+
+                                    <td className="border p-3 text-right">
+                                      {formatBaht(item.cost_price)}
+                                    </td>
+
+                                    <td
+                                      className={
+                                        Number(item.diff || 0) >= 0
+                                          ? "border p-3 text-right font-bold text-green-700"
+                                          : "border p-3 text-right font-bold text-red-700"
+                                      }
+                                    >
+                                      {formatBaht(item.diff)}
+                                    </td>
+
+                                    <td className="border p-3">
+                                      {formatThaiDateTime(item.sold_at)}
+                                    </td>
+
+                                    <td className="border p-3">
+                                      {item.sold_by_email || "-"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="mt-4 space-y-3 md:hidden">
+                            {group.items.map((item) => (
+                              <article
+                                key={item.id}
+                                className="rounded-2xl border bg-white p-4 shadow-sm"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                                      ล็อต {item.lot_number || "-"}
+                                    </p>
+
+                                    <h3 className="mt-1 text-lg font-bold text-gray-900">
+                                      {item.motorcycle_name || "-"}
+                                    </h3>
+                                  </div>
+
+                                  <div className="text-right">
+                                    <p className="text-xs text-gray-500">
+                                      ราคาขาย
+                                    </p>
+                                    <p className="text-lg font-bold text-green-700">
+                                      {formatBaht(item.sold_price)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 rounded-xl bg-gray-50 p-3 text-sm">
+                                  <p>
+                                    <span className="text-gray-500">ร้าน: </span>
+                                    <span className="font-semibold">
+                                      {item.winner_shop_name || "-"}
+                                    </span>
+                                  </p>
+
+                                  <p className="mt-1">
+                                    <span className="text-gray-500">ติดต่อ: </span>
+                                    <span className="font-semibold">
+                                      {item.winner_contact_name || "-"} •{" "}
+                                      {item.winner_phone || "-"}
+                                    </span>
+                                  </p>
+
+                                  <p className="mt-1">
+                                    <span className="text-gray-500">ต้นทุน: </span>
+                                    <span>{formatBaht(item.cost_price)}</span>
+                                  </p>
+
+                                  <p className="mt-1">
+                                    <span className="text-gray-500">diff: </span>
+                                    <span
+                                      className={
+                                        Number(item.diff || 0) >= 0
+                                          ? "font-bold text-green-700"
+                                          : "font-bold text-red-700"
+                                      }
+                                    >
+                                      {formatBaht(item.diff)}
+                                    </span>
+                                  </p>
+
+                                  <p className="mt-1">
+                                    <span className="text-gray-500">
+                                      วันที่ขาย:{" "}
+                                    </span>
+                                    <span>{formatThaiDateTime(item.sold_at)}</span>
+                                  </p>
+
+                                  <p className="mt-1">
+                                    <span className="text-gray-500">
+                                      ผู้ยืนยัน:{" "}
+                                    </span>
+                                    <span>{item.sold_by_email || "-"}</span>
+                                  </p>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </article>
-                  ))}
-                </div>
-              </>
+                  );
+                })}
+              </div>
             )}
           </section>
         </section>

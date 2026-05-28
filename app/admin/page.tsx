@@ -124,7 +124,6 @@ export default function AdminPage() {
   const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(
     null
   );
-  const [newRoundName, setNewRoundName] = useState("");
   const [newRoundDate, setNewRoundDate] = useState("");
   const [isRoundUpdating, setIsRoundUpdating] = useState(false);
 
@@ -514,17 +513,34 @@ export default function AdminPage() {
 
   async function createNewAuctionRound() {
     if (staffProfile?.role !== "owner" && staffProfile?.role !== "admin") {
-      setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่สร้างรอบ Auction ได้");
+      setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่สร้างรอบเสนอราคาได้");
       return;
     }
 
-    if (!newRoundName.trim()) {
-      alert("กรุณากรอกชื่อรอบ Auction");
+    if (!newRoundDate) {
+      alert("กรุณาเลือกวันที่ประมูล");
       return;
     }
+
+    const [selectedYear, selectedMonth, selectedDay] = newRoundDate
+      .split("-")
+      .map(Number);
+    const selectedDate = new Date(
+      selectedYear,
+      selectedMonth - 1,
+      selectedDay
+    );
+    const autoRoundName = `รอบวันที่ ${selectedDate.toLocaleDateString(
+      "th-TH",
+      {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }
+    )}`;
 
     const confirmCreate = confirm(
-      "ต้องการสร้างรอบ Auction ใหม่และตั้งเป็นรอบปัจจุบันใช่หรือไม่?"
+      "ต้องการสร้างรอบเสนอราคาใหม่และตั้งเป็นรอบปัจจุบันใช่หรือไม่?"
     );
 
     if (!confirmCreate) return;
@@ -547,11 +563,11 @@ export default function AdminPage() {
       const { data: roundData, error: createError } = await supabase
         .from("auction_rounds")
         .insert({
-          round_name: newRoundName.trim(),
-          auction_date: newRoundDate || null,
+          round_name: autoRoundName,
+          auction_date: newRoundDate,
           status: "draft",
           is_current: true,
-          note: "สร้างเป็นรอบ Auction ปัจจุบัน",
+          note: "สร้างเป็นรอบเสนอราคาปัจจุบัน",
         })
         .select("id, round_name")
         .single();
@@ -564,24 +580,23 @@ export default function AdminPage() {
         action: "auction_round_created",
         targetType: "auction_round",
         targetId: roundData?.id ? String(roundData.id) : undefined,
-        targetName: roundData?.round_name || newRoundName.trim(),
+        targetName: roundData?.round_name || autoRoundName,
         details: {
-          round_name: newRoundName.trim(),
-          auction_date: newRoundDate || null,
+          round_name: autoRoundName,
+          auction_date: newRoundDate,
           status: "draft",
           is_current: true,
         },
       });
 
-      setNewRoundName("");
       setNewRoundDate("");
 
       await loadCurrentAuctionRound();
 
-      alert("สร้างรอบ Auction ใหม่เรียบร้อยแล้ว");
+      alert("สร้างรอบเสนอราคาใหม่เรียบร้อยแล้ว");
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "สร้างรอบ Auction ไม่สำเร็จ";
+        error instanceof Error ? error.message : "สร้างรอบเสนอราคาไม่สำเร็จ";
 
       setErrorMessage(message);
     }
@@ -591,7 +606,7 @@ export default function AdminPage() {
 
   async function updateCurrentRoundStatus(newStatus: "draft" | "open" | "closed") {
     if (!currentRound) {
-      alert("ยังไม่มีรอบ Auction ปัจจุบัน");
+      alert("ยังไม่มีรอบเสนอราคาปัจจุบัน");
       return;
     }
 
@@ -915,7 +930,7 @@ export default function AdminPage() {
     }
 
     const confirmArchive = confirm(
-      "ต้องการบันทึกประวัติรอบ Auction ปัจจุบันใช่หรือไม่? ระบบจะยังไม่ล้างข้อมูลปัจจุบัน"
+      "ต้องการบันทึกประวัติรอบเสนอราคาปัจจุบันใช่หรือไม่? ระบบจะยังไม่ล้างข้อมูลปัจจุบัน"
     );
 
     if (!confirmArchive) return;
@@ -988,9 +1003,9 @@ export default function AdminPage() {
     }
 
     const confirmReset = confirm(
-  `ต้องการบันทึกประวัติรอบนี้ แล้วล้างข้อมูล Auction ปัจจุบันใช่หรือไม่?
+  `ต้องการบันทึกประวัติรอบนี้ แล้วล้างข้อมูลรอบเสนอราคาปัจจุบันใช่หรือไม่?
 
-ระบบจะเก็บประวัติก่อน แล้วล้างราคา รายการส่งราคา และ Lot ใน Auction ปัจจุบัน
+ระบบจะเก็บประวัติก่อน แล้วล้างราคา รายการส่งราคา และรายการรถในรอบเสนอราคาปัจจุบัน
 
 ระบบจะไม่ลบบัญชีร้านค้า บัญชีแอดมิน คลังรถ และประวัติรอบเก่า`
 );
@@ -1009,7 +1024,7 @@ export default function AdminPage() {
     }
 
     const secondConfirm = confirm(
-      "ยืนยันครั้งสุดท้าย: ระบบจะบันทึกประวัติรอบนี้ก่อน แล้วจึงล้าง Auction ปัจจุบัน ต้องการทำต่อหรือไม่?"
+      "ยืนยันครั้งสุดท้าย: ระบบจะบันทึกประวัติรอบนี้ก่อน แล้วจึงล้างรอบเสนอราคาปัจจุบัน ต้องการทำต่อหรือไม่?"
     );
 
     if (!secondConfirm) return;
@@ -1079,7 +1094,7 @@ export default function AdminPage() {
         .not("id", "is", null);
 
       if (motorcyclePhotosError) {
-        throw new Error(`ล้างรูป Lot Auction ไม่สำเร็จ: ${motorcyclePhotosError.message}`);
+        throw new Error(`ล้างรูปรายการรถในรอบเสนอราคาไม่สำเร็จ: ${motorcyclePhotosError.message}`);
       }
 
       const { error: motorcyclesError } = await supabase
@@ -1088,7 +1103,7 @@ export default function AdminPage() {
         .not("id", "is", null);
 
       if (motorcyclesError) {
-        throw new Error(`ล้าง Lot Auction ไม่สำเร็จ: ${motorcyclesError.message}`);
+        throw new Error(`ล้างรายการรถในรอบเสนอราคาไม่สำเร็จ: ${motorcyclesError.message}`);
       }
 
       const { error: merchantAccountResetError } = await supabase
@@ -1112,7 +1127,7 @@ export default function AdminPage() {
         .not("id", "is", null);
 
       if (auctionSettingError) {
-        throw new Error(`ปิดรอบ Auction ไม่สำเร็จ: ${auctionSettingError.message}`);
+        throw new Error(`ปิดรอบเสนอราคาไม่สำเร็จ: ${auctionSettingError.message}`);
       }
 
       if (currentRound) {
@@ -1163,11 +1178,11 @@ export default function AdminPage() {
 
       alert(
         archiveResult
-          ? `บันทึกประวัติและล้าง Auction ปัจจุบันเรียบร้อยแล้ว
+          ? `บันทึกประวัติและล้างรอบเสนอราคาปัจจุบันเรียบร้อยแล้ว
 ${archiveResult.roundName}
 Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 ราคาเสนอที่บันทึก: ${archiveResult.archivedOfferCount}`
-          : "ล้าง Auction ปัจจุบันเรียบร้อยแล้ว"
+          : "ล้างรอบเสนอราคาปัจจุบันเรียบร้อยแล้ว"
       );
 
       await loadDashboardData();
@@ -1326,18 +1341,18 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
     });
 
     const exportInfoRows = [
-      ["รอบ Auction", currentRound?.round_name || "-"],
+      ["รอบเสนอราคา", currentRound?.round_name || "-"],
       [
-        "วันที่ Auction",
+        "วันที่เสนอราคา",
         currentRound?.auction_date ? formatThaiDate(currentRound.auction_date) : "-",
       ],
       ["รหัสรอบ", currentRound?.id ? `#${currentRound.id}` : "-"],
-      ["วันที่ Export", formatThaiDate(exportDate)],
-      ["เวลา Export", formatThaiTime(exportDate)],
-      ["ผู้ Export", staffProfile?.email || "-"],
-      ["สิทธิ์ผู้ Export", staffProfile?.role || "-"],
+      ["วันที่ดาวน์โหลด", formatThaiDate(exportDate)],
+      ["เวลาดาวน์โหลด", formatThaiTime(exportDate)],
+      ["ผู้ดาวน์โหลด", staffProfile?.email || "-"],
+      ["สิทธิ์ผู้ดาวน์โหลด", staffProfile?.role || "-"],
       ["สถานะการเสนอราคา", getThaiAuctionStatus(auctionStatus)],
-      ["จำนวน Lot ที่มีราคา", uniqueMotorcycles.size],
+      ["จำนวนล็อตที่มีราคา", uniqueMotorcycles.size],
       ["จำนวนร้านค้าที่ส่งราคา", uniqueMerchants.size],
       ["จำนวนราคาที่ส่งทั้งหมด", offers.length],
       ["มูลค่าสูงสุดรวม", totalHighestOfferValue],
@@ -1383,7 +1398,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
     };
 
     XLSX.utils.book_append_sheet(workbook, resultSheet, "ผลเสนอราคา");
-    XLSX.utils.book_append_sheet(workbook, exportInfoSheet, "ข้อมูลการ Export");
+    XLSX.utils.book_append_sheet(workbook, exportInfoSheet, "ข้อมูลการดาวน์โหลด");
 
     const roundFileName = (currentRound?.round_name || "current-round")
       .replace(/[\\/:*?"<>|]/g, "")
@@ -1544,11 +1559,11 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Current Auction Round
+                รอบเสนอราคาปัจจุบัน
               </p>
 
               <h2 className="mt-1 text-xl font-bold text-gray-900">
-                รอบ Auction ปัจจุบัน
+                รอบเสนอราคาปัจจุบัน
               </h2>
 
               <p className="mt-1 text-sm text-gray-600">
@@ -1629,7 +1644,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
-              <p className="font-bold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+              <p className="font-bold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
               <p className="mt-1 text-sm">
                 สร้างรอบใหม่ก่อน แล้วค่อยนำรถจากคลังเข้าสู่รอบนั้น
               </p>
@@ -1637,16 +1652,9 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           )}
 
           <div className="mt-5 rounded-2xl border bg-white p-4">
-            <h3 className="font-bold text-gray-900">สร้างรอบ Auction ใหม่</h3>
+            <h3 className="font-bold text-gray-900">สร้างรอบเสนอราคาใหม่</h3>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px_auto]">
-              <input
-                className="rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="เช่น เสาร์แรก มิ.ย. 2569"
-                value={newRoundName}
-                onChange={(event) => setNewRoundName(event.target.value)}
-              />
-
+            <div className="mt-3 grid gap-3 md:grid-cols-[220px_auto]">
               <input
                 type="date"
                 className="rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
@@ -1711,22 +1719,22 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
         <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
           <SummaryCard label="ราคาที่ส่งทั้งหมด" value={offers.length} />
           <SummaryCard label="ร้านค้าที่ส่ง" value={uniqueMerchants.size} />
-          <SummaryCard label="Lot ที่มีราคา" value={uniqueMotorcycles.size} />
+          <SummaryCard label="ล็อตที่มีราคา" value={uniqueMotorcycles.size} />
           <SummaryCard
-            label="Lot ทั้งหมด"
+            label="ล็อตทั้งหมด"
             value={totalMotorcycles}
             subText={`เปิดอยู่: ${activeMotorcycles}`}
           />
           <SummaryCard
             label="ขายแล้ว"
             value={soldRoundMotorcycles}
-            subText="Lot ในรอบนี้"
+            subText="ล็อตในรอบนี้"
             valueClassName="text-purple-700"
           />
           <SummaryCard
             label="กลับเข้าสต็อก"
             value={unsoldRoundMotorcycles}
-            subText="Lot ในรอบนี้"
+            subText="ล็อตในรอบนี้"
             valueClassName="text-yellow-700"
           />
           <SummaryCard
@@ -1755,7 +1763,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
         <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
-              Stock Summary
+              ภาพรวมคลังรถ
             </p>
 
             <h2 className="mt-1 text-lg font-bold text-gray-900 sm:text-xl">
@@ -1763,7 +1771,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              ภาพรวมรถทั้งหมดในคลังก่อนเลือกนำเข้า Auction
+              ภาพรวมรถทั้งหมดในคลังก่อนเลือกนำเข้ารอบเสนอราคา
             </p>
           </div>
 
@@ -1810,101 +1818,110 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           </div>
         </section>
 
-        <section className="mt-5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-          <div className="grid gap-3 sm:flex sm:flex-wrap">
-            <a
-              href="/admin/stock"
-              className="rounded-xl bg-blue-600 px-4 py-3 text-center font-medium text-white hover:bg-blue-700 sm:py-2"
-            >
-              คลังรถบริษัท
-            </a>
+        <section className="mt-5">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+              <h3 className="font-bold text-gray-900">งานหลัก</h3>
 
-            <a
-              href="/admin/motorcycles"
-              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
-            >
-              จัดการรถ Auction
-            </a>
+              <div className="mt-3 grid gap-3">
+                <a
+                  href="/admin/stock"
+                  className="rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700"
+                >
+                  คลังรถและรอบเสนอราคา
+                </a>
 
-            <a
-              href="/admin/merchants"
-              className="relative rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
-            >
-              จัดการร้านค้า
+                <a
+                  href="/admin/rounds"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  รอบเสนอราคา
+                </a>
 
-              {pendingMerchantRequests > 0 && (
-                <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
-                  {pendingMerchantRequests}
-                </span>
-              )}
-            </a>
+                <a
+                  href="/admin/merchant-receipts"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  พิมพ์ใบเสนอราคา
+                </a>
+              </div>
+            </div>
 
-            <a
-              href="/admin/merchant-receipts"
-              className="rounded-xl bg-green-600 px-4 py-3 text-center font-medium text-white hover:bg-green-700 sm:py-2"
-            >
-              พิมพ์ใบเสนอราคาของร้านค้า
-            </a>
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+              <h3 className="font-bold text-gray-900">ผลและประวัติ</h3>
 
-            <a
-               href="/admin/sold"
-               className="rounded-xl bg-purple-600 px-4 py-3 text-center font-medium text-white hover:bg-purple-700 sm:py-2"
-             >
-             รถที่ขายแล้ว
-            </a>
+              <div className="mt-3 grid gap-3">
+                <a
+                  href="/admin/sold"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  รถที่ขายแล้ว
+                </a>
 
-            <a
-             href="/admin/unsold"
-             className="rounded-xl bg-yellow-500 px-4 py-3 text-center font-medium text-white hover:bg-yellow-600 sm:py-2"
-            >
-             รถที่กลับเข้าสต็อก
-            </a>
-            
-            <a
-            href="/admin/rounds"
-            className="rounded-xl bg-indigo-600 px-4 py-3 text-center font-medium text-white hover:bg-indigo-700 sm:py-2"
-            >
-             จัดการรอบ Auction
-            </a>
+                <a
+                  href="/admin/unsold"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  รถที่กลับเข้าสต็อก
+                </a>
 
-            {staffProfile?.role === "owner" && (
-              <a
-                href="/admin/staff"
-                className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
-              >
-                ตั้งค่า Owner
-              </a>
-            )}
+                <a
+                  href="/admin/history"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  ประวัติรอบเสนอราคา
+                </a>
+              </div>
+            </div>
 
-            <a
-              href="/admin/history"
-              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
-            >
-              ประวัติการเสนอราคา
-            </a>
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+              <h3 className="font-bold text-gray-900">จัดการระบบ</h3>
 
-            <a
-              href="/admin/audit-logs"
-              className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100 sm:py-2"
-            >
-              ประวัติการทำงาน
-            </a>
+              <div className="mt-3 grid gap-3">
+                <a
+                  href="/admin/merchants"
+                  className="relative rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  ร้านค้า
 
-            <button
-              onClick={loadDashboardData}
-              className="rounded-xl border px-4 py-3 font-medium hover:bg-gray-100 sm:py-2"
-            >
-              โหลดใหม่
-            </button>
+                  {pendingMerchantRequests > 0 && (
+                    <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                      {pendingMerchantRequests}
+                    </span>
+                  )}
+                </a>
 
-            {!isLoading && lotResults.length > 0 && (
-              <button
-                onClick={exportAuctionExcel}
-                className="rounded-xl bg-black px-4 py-3 font-medium text-white sm:py-2"
-              >
-                Export Excel สรุปผล
-              </button>
-            )}
+                <a
+                  href="/admin/motorcycles"
+                  className="rounded-xl border px-4 py-3 text-center font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  รายการรถในรอบเสนอราคา
+                </a>
+
+                <a
+                  href="/admin/audit-logs"
+                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                >
+                  ประวัติการทำงาน
+                </a>
+
+                {staffProfile?.role === "owner" && (
+                  <a
+                    href="/admin/staff"
+                    className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                  >
+                    ตั้งค่า Owner
+                  </a>
+                )}
+
+                <button
+                  onClick={loadDashboardData}
+                  className="rounded-xl border px-4 py-3 font-medium hover:bg-gray-100"
+                >
+                  โหลดใหม่
+                </button>
+              </div>
+            </div>
           </div>
 
           {staffProfile?.role === "owner" && (
@@ -1914,7 +1931,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
               </p>
 
               <p className="mt-1 text-sm text-red-700">
-                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้าง Auction ปัจจุบัน
+                ใช้เมื่อจบรอบเสนอราคาแล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้างรอบเสนอราคาปัจจุบัน
               </p>
 
               <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
@@ -1923,7 +1940,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 </p>
 
                 <p className="mt-1 text-sm text-blue-700">
-                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูล Auction ปัจจุบัน
+                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูลรอบเสนอราคาปัจจุบัน
                 </p>
 
                 <button
@@ -1986,11 +2003,11 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
-                  ราคาสูงสุดแต่ละ Lot
+                  ราคาสูงสุดแต่ละล็อต
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  แสดงราคาสูงสุด ต้นทุน และกำไรขั้นต้นของแต่ละ Lot
+                  แสดงราคาสูงสุด ต้นทุน และกำไรขั้นต้นของแต่ละล็อต
                 </p>
               </div>
 
@@ -1998,7 +2015,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 onClick={exportAuctionExcel}
                 className="rounded-xl bg-black px-4 py-2 font-medium text-white"
               >
-                Export Excel
+                ดาวน์โหลด Excel
               </button>
             </div>
 

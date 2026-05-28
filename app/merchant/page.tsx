@@ -190,14 +190,14 @@ export default function MerchantPage() {
   function getEmptyLotMessage() {
     if (isLoadingCurrentRound) {
       return {
-        title: "กำลังโหลดข้อมูลรอบ Auction...",
+        title: "กำลังโหลดข้อมูลรอบเสนอราคา...",
         detail: "กรุณารอสักครู่",
       };
     }
 
     if (!currentRound) {
       return {
-        title: "ยังไม่มีรอบ Auction ปัจจุบัน",
+        title: "ยังไม่มีรอบเสนอราคาปัจจุบัน",
         detail: "กรุณารอเจ้าหน้าที่เปิดรอบใหม่",
       };
     }
@@ -210,7 +210,7 @@ export default function MerchantPage() {
     }
 
     return {
-      title: "ยังไม่มี Lot ในรอบนี้",
+      title: "ยังไม่มีล็อตในรอบนี้",
       detail: `${getRoundDisplayName(currentRound)} • ${getRoundDateText(currentRound)}`,
     };
   }
@@ -577,7 +577,7 @@ export default function MerchantPage() {
     }
 
     if (hasSubmitted && editableLotIds.length === 0) {
-      alert("ส่งราคาแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแลให้เปิด Lot ที่ต้องการแก้");
+      alert("ส่งราคาแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแลให้เปิดล็อตที่ต้องการแก้");
       return;
     }
 
@@ -594,7 +594,7 @@ export default function MerchantPage() {
     if (submittedOffers.length === 0) {
       alert(
         hasSubmitted
-          ? "กรุณาใส่ราคาใน Lot ที่ได้รับอนุญาตให้แก้ไข"
+          ? "กรุณาใส่ราคาในล็อตที่ได้รับอนุญาตให้แก้ไข"
           : "กรุณาใส่ราคาอย่างน้อย 1 รายการ"
       );
       return;
@@ -841,8 +841,8 @@ export default function MerchantPage() {
       <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
         {isLoadingCurrentRound ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-3 text-gray-700 sm:p-4">
-            <p className="text-sm font-semibold text-gray-500">รอบ Auction ปัจจุบัน</p>
-            <p className="mt-1 font-semibold">กำลังโหลดรอบ Auction...</p>
+            <p className="text-sm font-semibold text-gray-500">รอบเสนอราคาปัจจุบัน</p>
+            <p className="mt-1 font-semibold">กำลังโหลดรอบเสนอราคา...</p>
             <p className="mt-1 text-sm">กำลังตรวจสอบรอบปัจจุบัน</p>
           </div>
         ) : currentRound ? (
@@ -850,7 +850,7 @@ export default function MerchantPage() {
             <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-green-700">รอบ Auction ปัจจุบัน</p>
+                  <p className="text-sm font-semibold text-green-700">รอบเสนอราคาปัจจุบัน</p>
                   <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
                   <p className="mt-1 text-sm">
                     {getRoundDateText(currentRound)}
@@ -866,7 +866,7 @@ export default function MerchantPage() {
             <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-red-700">รอบ Auction ปัจจุบัน</p>
+                  <p className="text-sm font-semibold text-red-700">รอบเสนอราคาปัจจุบัน</p>
                   <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
                   <p className="mt-1 text-sm">
                     {getRoundDateText(currentRound)} • {getRoundClosedDetail(currentRound.status)}
@@ -881,8 +881,8 @@ export default function MerchantPage() {
           )
         ) : (
           <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
-            <p className="text-sm font-semibold text-yellow-700">รอบ Auction ปัจจุบัน</p>
-            <p className="mt-1 font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+            <p className="text-sm font-semibold text-yellow-700">รอบเสนอราคาปัจจุบัน</p>
+            <p className="mt-1 font-semibold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
             <p className="mt-1 text-sm">กรุณารอเจ้าหน้าที่เปิดรอบใหม่</p>
           </div>
         )}
@@ -896,9 +896,9 @@ export default function MerchantPage() {
 
         {hasSubmitted && editableLotCount > 0 && (
           <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-800 sm:p-4">
-            <p className="font-semibold">แก้ไขราคาได้บาง Lot</p>
+            <p className="font-semibold">แก้ไขราคาได้บางล็อต</p>
             <p className="text-sm">
-              แก้ไขได้เฉพาะ Lot ที่ผู้ดูแลเปิดสิทธิ์ให้
+              แก้ไขได้เฉพาะล็อตที่ผู้ดูแลเปิดสิทธิ์ให้
             </p>
           </div>
         )}
@@ -947,7 +947,7 @@ export default function MerchantPage() {
 
               <input
                 className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="ค้นหา Lot / ชื่อรถ / รุ่น / ทะเบียน"
+                placeholder="ค้นหาล็อต / ชื่อรถ / รุ่น / ทะเบียน"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -1006,7 +1006,7 @@ export default function MerchantPage() {
                   </h3>
 
                   <p className="mt-1 text-sm text-yellow-800">
-                    เก็บ Lot ที่สนใจไว้ตรงนี้ โดยไม่เปลี่ยนลำดับรายการหลัก
+                    เก็บล็อตที่สนใจไว้ตรงนี้ โดยไม่เปลี่ยนลำดับรายการหลัก
                   </p>
                 </div>
 
@@ -1028,7 +1028,7 @@ export default function MerchantPage() {
                     className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
-                      Lot {offer.lot}
+                      ล็อต {offer.lot}
                     </p>
 
                     <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
@@ -1148,7 +1148,7 @@ export default function MerchantPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                               {isStarred ? "⭐ " : ""}
-                              Lot {offer.lot}
+                              ล็อต {offer.lot}
                             </p>
 
                             <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -1186,7 +1186,7 @@ export default function MerchantPage() {
 
                           {hasSubmitted && lotCanEdit && (
                             <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                              แก้ไข Lot นี้ได้
+                              แก้ไขล็อตนี้ได้
                             </span>
                           )}
 
@@ -1229,7 +1229,7 @@ export default function MerchantPage() {
                           <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div>
-                                <p className="font-semibold text-gray-900">Lot</p>
+                                <p className="font-semibold text-gray-900">ล็อต</p>
                                 <p>{offer.lot || "-"}</p>
                               </div>
 
@@ -1355,7 +1355,7 @@ export default function MerchantPage() {
 
                           {hasSubmitted && !lotCanEdit && (
                             <p className="mt-2 text-xs text-gray-500">
-                              หากต้องการแก้ Lot นี้ กรุณาติดต่อผู้ดูแล
+                              หากต้องการแก้ล็อตนี้ กรุณาติดต่อผู้ดูแล
                             </p>
                           )}
                         </div>
@@ -1382,7 +1382,7 @@ export default function MerchantPage() {
               <p className="text-xs text-yellow-700">ส่งแล้ว แก้ไขไม่ได้</p>
             ) : hasSubmitted && editableLotCount > 0 ? (
               <p className="text-xs text-orange-700">
-                แก้ไขได้ {editableLotCount} Lot
+                แก้ไขได้ {editableLotCount} ล็อต
               </p>
             ) : (
               <p className="text-xs text-gray-500">ตรวจสอบก่อนส่ง</p>

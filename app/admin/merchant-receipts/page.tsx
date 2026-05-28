@@ -402,8 +402,8 @@ export default function AdminMerchantReceiptsPage() {
 
           {!isLoading && !errorMessage && !currentRound && (
             <div className="no-print mt-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
-              <p className="font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
-              <p className="mt-1 text-sm">กรุณาเปิดรอบ Auction ก่อนพิมพ์ใบเสนอราคา</p>
+              <p className="font-semibold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
+              <p className="mt-1 text-sm">กรุณาเปิดรอบเสนอราคาก่อนพิมพ์ใบเสนอราคา</p>
             </div>
           )}
 
@@ -469,7 +469,7 @@ export default function AdminMerchantReceiptsPage() {
 
                         <div className="flex shrink-0 flex-col items-end gap-2">
                           <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-                            {group.offers.length} Lot
+                            {group.offers.length} ล็อต
                           </span>
 
                           {group.editedCount > 0 && (
@@ -505,7 +505,7 @@ export default function AdminMerchantReceiptsPage() {
 
                   {selectedGroup && selectedEditedCount > 0 && (
                     <p className="mt-2 inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
-                      มีรายการแก้ไขแล้ว {selectedEditedCount} Lot
+                      มีรายการแก้ไขแล้ว {selectedEditedCount} ล็อต
                     </p>
                   )}
                 </div>
@@ -563,14 +563,14 @@ export default function AdminMerchantReceiptsPage() {
                       </div>
 
                       <div>
-                        <p className="font-medium text-gray-600">รอบ Auction</p>
+                        <p className="font-medium text-gray-600">รอบเสนอราคา</p>
                         <p className="mt-1 font-bold text-black">
                           {getRoundDisplayName(currentRound)}
                         </p>
                       </div>
 
                       <div>
-                        <p className="font-medium text-gray-600">วันที่ Auction</p>
+                        <p className="font-medium text-gray-600">วันที่เสนอราคา</p>
                         <p className="mt-1 font-bold text-black">
                           {getRoundDateText(currentRound)}
                         </p>
@@ -609,7 +609,7 @@ export default function AdminMerchantReceiptsPage() {
                       {selectedEditedCount > 0 && (
                         <div className="col-span-2">
                           <span className="print-edited-badge inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
-                            มีรายการแก้ไขแล้ว {selectedEditedCount} Lot
+                            มีรายการแก้ไขแล้ว {selectedEditedCount} ล็อต
                           </span>
                         </div>
                       )}
@@ -623,7 +623,7 @@ export default function AdminMerchantReceiptsPage() {
                               ลำดับ
                             </th>
                             <th className="w-16 border border-black p-2 text-left">
-                              Lot
+                              ล็อต
                             </th>
                             <th className="border border-black p-2 text-left">
                               รายการรถ

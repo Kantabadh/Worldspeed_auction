@@ -317,7 +317,7 @@ export default function AdminHistoryPage() {
 
     const headers = [
       "ลำดับ",
-      "Lot",
+      "ล็อต",
       "ยี่ห้อ",
       "รุ่น",
       "ชื่อรถ",
@@ -375,7 +375,7 @@ export default function AdminHistoryPage() {
     if (!selectedRound) return;
 
     const headers = [
-      "Lot",
+      "ล็อต",
       "รถ",
       "ร้านค้า",
       "ผู้ติดต่อ",
@@ -427,11 +427,11 @@ export default function AdminHistoryPage() {
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Auction History
+                ประวัติรอบเสนอราคา
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                ประวัติรอบ Auction
+                ประวัติรอบเสนอราคา
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
@@ -512,7 +512,7 @@ export default function AdminHistoryPage() {
               {!isLoadingRounds && filteredRounds.length === 0 && (
                 <div className="mt-4 rounded-2xl bg-gray-50 p-4">
                   <p className="font-semibold text-gray-900">
-                    ยังไม่มีประวัติรอบ Auction
+                    ยังไม่มีประวัติรอบเสนอราคา
                   </p>
                   <p className="mt-1 text-sm text-gray-600">
                     ให้ Owner กด “บันทึกประวัติรอบนี้” จากหน้า Admin ก่อน
@@ -547,7 +547,7 @@ export default function AdminHistoryPage() {
                           <p className="font-bold text-gray-900">
                             {formatNumber(round.total_lots)}
                           </p>
-                          <p className="text-gray-500">Lot</p>
+                          <p className="text-gray-500">ล็อต</p>
                         </div>
 
                         <div className="rounded-xl bg-gray-100 p-2">
@@ -582,7 +582,7 @@ export default function AdminHistoryPage() {
               {!selectedRound ? (
                 <div className="rounded-2xl bg-gray-50 p-8 text-center">
                   <p className="text-lg font-bold text-gray-900">
-                    เลือกรอบ Auction ก่อน
+                    เลือกรอบเสนอราคาก่อน
                   </p>
 
                   <p className="mt-2 text-sm text-gray-600">
@@ -594,7 +594,7 @@ export default function AdminHistoryPage() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                        Selected Round
+                        รอบที่เลือก
                       </p>
 
                       <h2 className="mt-1 text-xl font-bold text-gray-900">
@@ -618,22 +618,14 @@ export default function AdminHistoryPage() {
                         disabled={roundLots.length === 0}
                         className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-300"
                       >
-                        Export Lot CSV
-                      </button>
-
-                      <button
-                        onClick={exportRoundOffersCsv}
-                        disabled={roundOffers.length === 0}
-                        className="rounded-xl border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-40"
-                      >
-                        Export Offer CSV
+                        ดาวน์โหลดสรุปผลรอบนี้
                       </button>
                     </div>
                   </div>
 
                   <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
                     <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">Lot</p>
+                      <p className="text-sm text-gray-500">ล็อต</p>
                       <p className="mt-1 text-xl font-bold">
                         {formatNumber(selectedRound.total_lots)}
                       </p>
@@ -682,19 +674,19 @@ export default function AdminHistoryPage() {
                     <>
                       <section className="mt-6">
                         <h3 className="text-lg font-bold text-gray-900">
-                          สรุปผลแต่ละ Lot
+                          สรุปผลแต่ละล็อต
                         </h3>
 
                         {roundLots.length === 0 ? (
                           <div className="mt-3 rounded-2xl bg-gray-50 p-5 text-gray-600">
-                            ไม่มีข้อมูล Lot ในรอบนี้
+                            ไม่มีข้อมูลล็อตในรอบนี้
                           </div>
                         ) : (
                           <div className="mt-3 overflow-x-auto rounded-2xl border">
                             <table className="w-full border-collapse text-left text-sm">
                               <thead>
                                 <tr className="bg-gray-100 text-gray-700">
-                                  <th className="border p-3">Lot</th>
+                                  <th className="border p-3">ล็อต</th>
                                   <th className="border p-3">รถ</th>
                                   <th className="border p-3">ซื้อ/เทิร์น</th>
                                   <th className="border p-3">มาจาก</th>
@@ -795,7 +787,7 @@ export default function AdminHistoryPage() {
                                   className="rounded-2xl border bg-white p-4"
                                 >
                                   <summary className="cursor-pointer font-bold text-gray-900">
-                                    Lot {lotNumber} •{" "}
+                                    ล็อต {lotNumber} •{" "}
                                     {lot.motorcycle_name || "-"} •{" "}
                                     {offers.length} ราคา
                                   </summary>
