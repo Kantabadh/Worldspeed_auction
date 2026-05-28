@@ -1811,6 +1811,13 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
              รถที่ขายแล้ว
             </a>
 
+            <a
+            href="/admin/rounds"
+            className="rounded-xl bg-indigo-600 px-4 py-3 text-center font-medium text-white hover:bg-indigo-700 sm:py-2"
+            >
+             จัดการรอบ Auction
+            </a>
+
             {staffProfile?.role === "owner" && (
               <a
                 href="/admin/staff"
