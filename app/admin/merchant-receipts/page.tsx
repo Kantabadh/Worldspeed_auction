@@ -9,6 +9,7 @@ type ReceiptOffer = {
   id: number;
   merchant_id: number;
   motorcycle_id: number;
+  auction_round_id: number | null;
   offer_price: number;
   submitted_at: string;
   was_edited: boolean | null;
@@ -35,6 +36,13 @@ type MerchantGroup = {
   offers: ReceiptOffer[];
   latestSubmittedAt: string;
   editedCount: number;
+};
+
+type CurrentAuctionRound = {
+  id: number;
+  round_name: string | null;
+  auction_date: string | null;
+  status: string | null;
 };
 
 function formatThaiDateTime(value: string) {
@@ -76,6 +84,18 @@ function formatBaht(value: number) {
   return `${Number(value || 0).toLocaleString()} บาท`;
 }
 
+function getRoundDisplayName(round: CurrentAuctionRound | null) {
+  if (!round) return "-";
+
+  return round.round_name || `Round ${round.id}`;
+}
+
+function getRoundDateText(round: CurrentAuctionRound | null) {
+  if (!round?.auction_date) return "-";
+
+  return formatThaiDate(round.auction_date);
+}
+
 function makeReceiptNo(group: MerchantGroup) {
   const latestDate = new Date(group.latestSubmittedAt);
 
@@ -101,6 +121,9 @@ function getEditNote(offer: ReceiptOffer) {
 
 export default function AdminMerchantReceiptsPage() {
   const [offers, setOffers] = useState<ReceiptOffer[]>([]);
+  const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(
+    null
+  );
   const [selectedMerchantId, setSelectedMerchantId] = useState<number | null>(
     null
   );
@@ -112,6 +135,31 @@ export default function AdminMerchantReceiptsPage() {
     setIsLoading(true);
     setErrorMessage("");
 
+    const { data: roundData, error: roundError } = await supabase
+      .from("auction_rounds")
+      .select("id, round_name, auction_date, status")
+      .eq("is_current", true)
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (roundError) {
+      setErrorMessage(roundError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const loadedRound = (roundData as CurrentAuctionRound) || null;
+
+    setCurrentRound(loadedRound);
+
+    if (!loadedRound) {
+      setOffers([]);
+      setSelectedMerchantId(null);
+      setIsLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("offers")
       .select(
@@ -119,6 +167,7 @@ export default function AdminMerchantReceiptsPage() {
         id,
         merchant_id,
         motorcycle_id,
+        auction_round_id,
         offer_price,
         submitted_at,
         was_edited,
@@ -137,6 +186,7 @@ export default function AdminMerchantReceiptsPage() {
         )
       `
       )
+      .eq("auction_round_id", loadedRound.id)
       .order("submitted_at", { ascending: false });
 
     if (error) {
@@ -146,6 +196,7 @@ export default function AdminMerchantReceiptsPage() {
     }
 
     setOffers((data as unknown as ReceiptOffer[]) || []);
+    setSelectedMerchantId(null);
     setIsLoading(false);
   }
 
@@ -327,6 +378,11 @@ export default function AdminMerchantReceiptsPage() {
               <p className="mt-1 text-sm text-gray-600">
                 เลือกร้านค้า 1 ร้าน แล้วพิมพ์ใบเสนอราคาของร้านนั้นเท่านั้น
               </p>
+
+              <p className="mt-2 text-sm font-semibold text-gray-800">
+                รอบ: {getRoundDisplayName(currentRound)} • วันที่:{" "}
+                {getRoundDateText(currentRound)}
+              </p>
             </div>
 
             <button
@@ -341,6 +397,13 @@ export default function AdminMerchantReceiptsPage() {
             <div className="no-print mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
               <p className="font-semibold">เกิดข้อผิดพลาด</p>
               <p className="text-sm">{errorMessage}</p>
+            </div>
+          )}
+
+          {!isLoading && !errorMessage && !currentRound && (
+            <div className="no-print mt-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+              <p className="font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+              <p className="mt-1 text-sm">กรุณาเปิดรอบ Auction ก่อนพิมพ์ใบเสนอราคา</p>
             </div>
           )}
 
@@ -496,6 +559,20 @@ export default function AdminMerchantReceiptsPage() {
                         <p className="font-medium text-gray-600">วันที่พิมพ์</p>
                         <p className="mt-1 font-bold text-black">
                           {formatThaiDate(new Date().toISOString())}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium text-gray-600">รอบ Auction</p>
+                        <p className="mt-1 font-bold text-black">
+                          {getRoundDisplayName(currentRound)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium text-gray-600">วันที่ Auction</p>
+                        <p className="mt-1 font-bold text-black">
+                          {getRoundDateText(currentRound)}
                         </p>
                       </div>
 

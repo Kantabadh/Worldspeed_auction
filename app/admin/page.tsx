@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import StaffGuard from "@/components/StaffGuard";
 
 type AdminOffer = {
   id: number;
@@ -101,6 +102,8 @@ export default function AdminPage() {
 
   const [totalMotorcycles, setTotalMotorcycles] = useState(0);
   const [activeMotorcycles, setActiveMotorcycles] = useState(0);
+  const [soldRoundMotorcycles, setSoldRoundMotorcycles] = useState(0);
+  const [unsoldRoundMotorcycles, setUnsoldRoundMotorcycles] = useState(0);
   const [pendingMerchantRequests, setPendingMerchantRequests] = useState(0);
 
   const [totalStockMotorcycles, setTotalStockMotorcycles] = useState(0);
@@ -379,12 +382,14 @@ export default function AdminPage() {
     if (!roundId) {
       setTotalMotorcycles(0);
       setActiveMotorcycles(0);
+      setSoldRoundMotorcycles(0);
+      setUnsoldRoundMotorcycles(0);
       return;
     }
 
     const { data, error } = await supabase
       .from("motorcycles")
-      .select("id, active, auction_round_id")
+      .select("id, active, auction_round_id, lot_sale_status")
       .eq("auction_round_id", roundId);
 
     if (error) {
@@ -397,6 +402,14 @@ export default function AdminPage() {
     setTotalMotorcycles(motorcycles.length);
     setActiveMotorcycles(
       motorcycles.filter((motorcycle) => motorcycle.active).length
+    );
+    setSoldRoundMotorcycles(
+      motorcycles.filter((motorcycle) => motorcycle.lot_sale_status === "sold")
+        .length
+    );
+    setUnsoldRoundMotorcycles(
+      motorcycles.filter((motorcycle) => motorcycle.lot_sale_status === "unsold")
+        .length
     );
   }
 
@@ -862,7 +875,7 @@ export default function AdminPage() {
   }
 
   async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
-    if (offers.length === 0) {
+    if (!currentRound || totalMotorcycles === 0) {
       return null;
     }
 
@@ -1240,6 +1253,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 
     const headers = [
       "ลำดับ",
+      "Lot",
       "ยี่ห้อ",
       "รุ่น",
       "รหัสรุ่น",
@@ -1267,6 +1281,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 
       const row: (string | number)[] = [
         index + 1,
+        motorcycle?.lot_number || "",
         motorcycle?.brand || "",
         motorcycle?.model || motorcycle?.motorcycle_name || "",
         motorcycle?.engine_number || "",
@@ -1311,6 +1326,12 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
     });
 
     const exportInfoRows = [
+      ["รอบ Auction", currentRound?.round_name || "-"],
+      [
+        "วันที่ Auction",
+        currentRound?.auction_date ? formatThaiDate(currentRound.auction_date) : "-",
+      ],
+      ["รหัสรอบ", currentRound?.id ? `#${currentRound.id}` : "-"],
       ["วันที่ Export", formatThaiDate(exportDate)],
       ["เวลา Export", formatThaiTime(exportDate)],
       ["ผู้ Export", staffProfile?.email || "-"],
@@ -1334,6 +1355,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 
     resultSheet["!cols"] = [
       { wch: 8 },
+      { wch: 10 },
       { wch: 14 },
       { wch: 22 },
       { wch: 14 },
@@ -1363,7 +1385,14 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
     XLSX.utils.book_append_sheet(workbook, resultSheet, "ผลเสนอราคา");
     XLSX.utils.book_append_sheet(workbook, exportInfoSheet, "ข้อมูลการ Export");
 
-    XLSX.writeFile(workbook, `ผลเสนอราคา_รูปแบบบริษัท_${exportFileDateTime}.xlsx`);
+    const roundFileName = (currentRound?.round_name || "current-round")
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, "-");
+
+    XLSX.writeFile(
+      workbook,
+      `ผลเสนอราคา_${roundFileName}_${exportFileDateTime}.xlsx`
+    );
   }
 
   function SummaryCard({
@@ -1447,7 +1476,8 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-10">
+    <StaffGuard>
+      <main className="min-h-screen bg-gray-50 pb-10">
       <header className="border-b bg-white px-4 py-4 shadow-sm sm:py-5">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
@@ -1678,7 +1708,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           </div>
         </section>
 
-        <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
           <SummaryCard label="ราคาที่ส่งทั้งหมด" value={offers.length} />
           <SummaryCard label="ร้านค้าที่ส่ง" value={uniqueMerchants.size} />
           <SummaryCard label="Lot ที่มีราคา" value={uniqueMotorcycles.size} />
@@ -1686,6 +1716,18 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             label="Lot ทั้งหมด"
             value={totalMotorcycles}
             subText={`เปิดอยู่: ${activeMotorcycles}`}
+          />
+          <SummaryCard
+            label="ขายแล้ว"
+            value={soldRoundMotorcycles}
+            subText="Lot ในรอบนี้"
+            valueClassName="text-purple-700"
+          />
+          <SummaryCard
+            label="กลับเข้าสต็อก"
+            value={unsoldRoundMotorcycles}
+            subText="Lot ในรอบนี้"
+            valueClassName="text-yellow-700"
           />
           <SummaryCard
             label="รออนุมัติ"
@@ -1887,7 +1929,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 <button
                   type="button"
                   onClick={archiveCurrentAuctionOnly}
-                  disabled={isLoading || offers.length === 0}
+                  disabled={isLoading || !currentRound || totalMotorcycles === 0}
                   className="mt-3 rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 md:py-2"
                 >
                   บันทึกประวัติรอบนี้
@@ -2099,6 +2141,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           </section>
         )}
       </section>
-    </main>
+      </main>
+    </StaffGuard>
   );
 }

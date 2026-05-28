@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import StaffGuard from "@/components/StaffGuard";
 
 type StaffProfile = {
   id: string;
@@ -25,6 +26,28 @@ type AuditLog = {
 };
 
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
+
+const ACTION_LABELS: Record<string, string> = {
+  auction_round_status_changed: "เปลี่ยนสถานะรอบ Auction",
+  auction_status_changed: "เปลี่ยนสถานะรอบ Auction",
+  auction_round_set_current: "ตั้งรอบ Auction ปัจจุบัน",
+  stock_motorcycle_sent_to_auction_round: "นำรถจากคลังเข้ารอบ Auction",
+  stock_motorcycle_sent_to_auction: "นำรถจากคลังเข้ารอบ Auction",
+  stock_motorcycle_updated: "แก้ไขข้อมูลรถในคลัง",
+  merchant_edit_allowed: "เปิดให้ร้านค้าแก้ราคา",
+  lot_edit_unlocked: "เปิดให้ร้านค้าแก้ราคา",
+  lot_marked_sold: "ยืนยันขาย Lot",
+  lot_marked_unsold: "ไม่ขาย / กลับเข้าสต็อก",
+  auction_archived_only: "บันทึกประวัติรอบ Auction",
+  auction_reset_archived: "บันทึกประวัติและล้างรอบ Auction",
+  auction_reset_empty: "ล้างรอบ Auction ว่าง",
+  stock_motorcycle_created: "เพิ่มรถเข้าคลัง",
+  stock_motorcycle_deleted: "ลบรถในคลัง",
+  motorcycle_created: "เพิ่ม Lot Auction",
+  motorcycle_updated: "แก้ไข Lot Auction",
+  merchant_approved: "อนุมัติร้านค้า",
+  merchant_rejected: "ปฏิเสธร้านค้า",
+};
 
 export default function AdminAuditLogsPage() {
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
@@ -221,12 +244,17 @@ export default function AdminAuditLogsPage() {
       action === "stock_motorcycle_created" ||
       action === "stock_motorcycle_updated" ||
       action === "stock_motorcycle_sent_to_auction" ||
+      action === "stock_motorcycle_sent_to_auction_round" ||
       action === "stock_motorcycle_photo_deleted" ||
       action === "stock_motorcycle_deleted"
     );
   }
 
   function getActionText(action: string) {
+    if (ACTION_LABELS[action]) {
+      return ACTION_LABELS[action];
+    }
+
     if (
       action === "auction_status_changed" ||
       action === "auction_reset_archived" ||
@@ -265,11 +293,19 @@ export default function AdminAuditLogsPage() {
   }
 
   function getActionBadgeClass(action: string) {
-    if (action === "auction_status_changed") {
+    if (
+      action === "auction_status_changed" ||
+      action === "auction_round_status_changed" ||
+      action === "auction_round_set_current"
+    ) {
       return "bg-blue-100 text-blue-700";
     }
 
-    if (action === "auction_reset_archived" || action === "auction_reset_empty") {
+    if (
+      action === "auction_archived_only" ||
+      action === "auction_reset_archived" ||
+      action === "auction_reset_empty"
+    ) {
       return "bg-red-100 text-red-700";
     }
 
@@ -281,7 +317,13 @@ export default function AdminAuditLogsPage() {
       return "bg-purple-100 text-purple-700";
     }
 
-    if (action === "lot_edit_unlocked" || action === "lot_edit_locked") {
+    if (
+      action === "merchant_edit_allowed" ||
+      action === "lot_marked_sold" ||
+      action === "lot_marked_unsold" ||
+      action === "lot_edit_unlocked" ||
+      action === "lot_edit_locked"
+    ) {
       return "bg-orange-100 text-orange-700";
     }
 
@@ -323,11 +365,28 @@ export default function AdminAuditLogsPage() {
   function getCleanDetailText(log: AuditLog) {
     const details = log.details || {};
 
-    if (log.action === "auction_status_changed") {
+    if (
+      log.action === "auction_status_changed" ||
+      log.action === "auction_round_status_changed"
+    ) {
       const oldStatus = getStringDetail(details, "old_status_thai");
       const newStatus = getStringDetail(details, "new_status_thai");
 
       return `${oldStatus} → ${newStatus}`;
+    }
+
+    if (log.action === "auction_round_set_current") {
+      return `ตั้งเป็นรอบปัจจุบัน: ${log.target_name || "-"}`;
+    }
+
+    if (log.action === "auction_archived_only") {
+      const roundName = getStringDetail(
+        details,
+        "archived_round_name",
+        log.target_name || "-"
+      );
+
+      return `บันทึกประวัติรอบ Auction (${roundName})`;
     }
 
     if (log.action === "auction_reset_archived") {
@@ -356,6 +415,30 @@ export default function AdminAuditLogsPage() {
       const clearedLotCount = getNumberDetail(details, "cleared_lot_count");
 
       return `ล้างราคาของร้านค้า ${log.target_name || "-"} • ${clearedLotCount} Lot`;
+    }
+
+    if (log.action === "merchant_edit_allowed") {
+      const lotNumber = getStringDetail(details, "lot_number");
+      const shopName = getStringDetail(details, "merchant_shop_name");
+
+      return `เปิดให้ร้านค้าแก้ราคา Lot ${lotNumber} • ${shopName}`;
+    }
+
+    if (log.action === "lot_marked_sold") {
+      const lotNumber = getStringDetail(details, "lot_number");
+      const shopName = getStringDetail(details, "winner_shop_name");
+      const soldPrice = getNumberDetail(details, "sold_price", 0);
+
+      return `ยืนยันขาย Lot ${lotNumber} ให้ ${shopName} • ${Number(
+        soldPrice || 0
+      ).toLocaleString()} บาท`;
+    }
+
+    if (log.action === "lot_marked_unsold") {
+      const lotNumber = getStringDetail(details, "lot_number");
+      const motorcycleName = getStringDetail(details, "motorcycle_name");
+
+      return `ไม่ขาย / กลับเข้าสต็อก Lot ${lotNumber} • ${motorcycleName}`;
     }
 
     if (log.action === "lot_edit_unlocked") {
@@ -455,7 +538,10 @@ export default function AdminAuditLogsPage() {
       return `แก้ไขข้อมูลรถในคลัง ${log.target_name || "-"}`;
     }
 
-    if (log.action === "stock_motorcycle_sent_to_auction") {
+    if (
+      log.action === "stock_motorcycle_sent_to_auction" ||
+      log.action === "stock_motorcycle_sent_to_auction_round"
+    ) {
       const stockNumber = getStringDetail(details, "stock_number");
       const lotNumber = getStringDetail(details, "lot_number");
       const motorcycleName = getStringDetail(details, "motorcycle_name");
@@ -498,8 +584,22 @@ export default function AdminAuditLogsPage() {
   function getSubDetailText(log: AuditLog) {
     const details = log.details || {};
 
-    if (log.action === "auction_status_changed") {
+    if (
+      log.action === "auction_status_changed" ||
+      log.action === "auction_round_status_changed"
+    ) {
       return "เปลี่ยนสถานะการเสนอราคา";
+    }
+
+    if (log.action === "auction_round_set_current") {
+      return "กำหนดรอบที่ร้านค้าจะเห็นและเสนอราคา";
+    }
+
+    if (log.action === "auction_archived_only") {
+      const lotCount = getNumberDetail(details, "archived_lot_count", 0);
+      const offerCount = getNumberDetail(details, "archived_offer_count", 0);
+
+      return `บันทึก Lot ${lotCount} • ราคา ${offerCount} รายการ`;
     }
 
     if (log.action === "auction_reset_archived") {
@@ -542,6 +642,28 @@ export default function AdminAuditLogsPage() {
       const totalValue = getNumberDetail(details, "cleared_total_offer_value", 0);
 
       return `มูลค่าราคาที่ล้าง ${Number(totalValue || 0).toLocaleString()} บาท`;
+    }
+
+    if (log.action === "merchant_edit_allowed") {
+      const motorcycleName = getStringDetail(details, "motorcycle_name");
+      const offerPrice = getNumberDetail(details, "current_offer_price", 0);
+
+      return `${motorcycleName} • ราคาเดิม ${Number(
+        offerPrice || 0
+      ).toLocaleString()} บาท`;
+    }
+
+    if (log.action === "lot_marked_sold") {
+      const cost = getNumberDetail(details, "cost_price", 0);
+      const diff = getNumberDetail(details, "diff", 0);
+
+      return `ต้นทุน ${Number(cost || 0).toLocaleString()} บาท • diff ${Number(
+        diff || 0
+      ).toLocaleString()} บาท`;
+    }
+
+    if (log.action === "lot_marked_unsold") {
+      return "ซ่อน Lot จากหน้า Merchant และคืนสถานะรถในคลังเป็นพร้อมขาย";
     }
 
     if (log.action === "lot_edit_unlocked" || log.action === "lot_edit_locked") {
@@ -609,7 +731,10 @@ export default function AdminAuditLogsPage() {
       return `แก้ไขข้อมูลคลัง • เพิ่มรูปใหม่ ${photoCount} รูป`;
     }
 
-    if (log.action === "stock_motorcycle_sent_to_auction") {
+    if (
+      log.action === "stock_motorcycle_sent_to_auction" ||
+      log.action === "stock_motorcycle_sent_to_auction_round"
+    ) {
       const auctionMotorcycleId = getNumberDetail(
         details,
         "auction_motorcycle_id",
@@ -664,7 +789,8 @@ export default function AdminAuditLogsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 pb-10">
+    <StaffGuard>
+      <main className="min-h-screen bg-gray-50 pb-10">
       <header className="border-b bg-white px-4 py-5 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
           <div>
@@ -748,6 +874,15 @@ export default function AdminAuditLogsPage() {
               <option value="auction_status_changed">
                 Auction: เปิด/ปิดรับราคา
               </option>
+              <option value="auction_round_status_changed">
+                Auction: เปลี่ยนสถานะรอบ
+              </option>
+              <option value="auction_round_set_current">
+                Auction: ตั้งรอบปัจจุบัน
+              </option>
+              <option value="auction_archived_only">
+                Auction: บันทึกประวัติรอบ
+              </option>
               <option value="auction_reset_archived">
                 Auction: บันทึกประวัติและล้างข้อมูล
               </option>
@@ -763,6 +898,13 @@ export default function AdminAuditLogsPage() {
 
               <option value="lot_edit_unlocked">
                 Lot: ปลดล็อกแก้ไขราคา
+              </option>
+              <option value="merchant_edit_allowed">
+                Lot: เปิดให้ร้านค้าแก้ราคา
+              </option>
+              <option value="lot_marked_sold">Lot: ยืนยันขาย</option>
+              <option value="lot_marked_unsold">
+                Lot: ไม่ขาย / กลับเข้าสต็อก
               </option>
               <option value="lot_edit_locked">Lot: ล็อกแก้ไขราคา</option>
 
@@ -784,6 +926,9 @@ export default function AdminAuditLogsPage() {
               </option>
               <option value="stock_motorcycle_sent_to_auction">
                 Stock: นำเข้า Auction
+              </option>
+              <option value="stock_motorcycle_sent_to_auction_round">
+                Stock: นำเข้ารอบ Auction
               </option>
               <option value="stock_motorcycle_photo_deleted">
                 Stock: ลบรูป
@@ -868,13 +1013,17 @@ export default function AdminAuditLogsPage() {
                       </td>
 
                       <td className="p-3">
-                        <span
-                          className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${getActionBadgeClass(
-                            log.action
-                          )}`}
-                        >
-                          {getActionText(log.action)}
-                        </span>
+                        <div className="space-y-1">
+                          <span
+                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${getActionBadgeClass(
+                              log.action
+                            )}`}
+                          >
+                            {getActionText(log.action)}
+                          </span>
+
+                          <p className="text-xs text-gray-400">{log.action}</p>
+                        </div>
                       </td>
 
                       <td className="p-3">
@@ -886,6 +1035,15 @@ export default function AdminAuditLogsPage() {
                           <p className="mt-1 text-xs text-gray-500">
                             {getSubDetailText(log)}
                           </p>
+
+                          <details className="mt-3">
+                            <summary className="cursor-pointer text-xs font-semibold text-gray-500">
+                              ดูข้อมูล technical JSON
+                            </summary>
+                            <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-white p-3 text-xs text-gray-600 ring-1 ring-gray-200">
+                              {JSON.stringify(log.details || {}, null, 2)}
+                            </pre>
+                          </details>
                         </div>
                       </td>
                     </tr>
@@ -896,6 +1054,7 @@ export default function AdminAuditLogsPage() {
           </section>
         )}
       </section>
-    </main>
+      </main>
+    </StaffGuard>
   );
 }

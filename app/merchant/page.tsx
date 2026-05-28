@@ -142,9 +142,9 @@ export default function MerchantPage() {
   }
 
   function getRoundStatusLabel(status?: string | null) {
-    if (status === "draft") return "เตรียมรอบ";
+    if (status === "draft") return "ยังไม่เปิดรับราคา";
     if (status === "open") return "เปิดรับราคา";
-    if (status === "closed") return "ปิดรอบ";
+    if (status === "closed") return "ปิดรับราคาแล้ว";
     if (status === "archived") return "บันทึกประวัติแล้ว";
     return status || "-";
   }
@@ -161,6 +161,58 @@ export default function MerchantPage() {
       month: "long",
       day: "numeric",
     });
+  }
+
+  function getRoundDisplayName(round: CurrentAuctionRound) {
+    return round.round_name || `Round ${round.id}`;
+  }
+
+  function getRoundDateText(round: CurrentAuctionRound) {
+    return round.auction_date
+      ? `วันที่ ${formatThaiDate(round.auction_date)}`
+      : "ยังไม่ได้ระบุวันที่";
+  }
+
+  function getRoundClosedMessage(status?: string | null) {
+    if (status === "draft") return "รอบนี้ยังไม่เปิดรับราคา";
+    if (status === "closed") return "รอบนี้ปิดรับราคาแล้ว";
+    if (status === "archived") return "รอบนี้บันทึกประวัติแล้ว";
+    return "รอบนี้ยังไม่เปิดให้เสนอราคา";
+  }
+
+  function getRoundClosedDetail(status?: string | null) {
+    if (status === "draft") return "กรุณารอเจ้าหน้าที่เปิดรับราคา";
+    if (status === "closed") return "กรุณารอรอบถัดไป";
+    if (status === "archived") return "กรุณารอรอบถัดไป";
+    return "กรุณารอเจ้าหน้าที่เปิดรับราคา";
+  }
+
+  function getEmptyLotMessage() {
+    if (isLoadingCurrentRound) {
+      return {
+        title: "กำลังโหลดข้อมูลรอบ Auction...",
+        detail: "กรุณารอสักครู่",
+      };
+    }
+
+    if (!currentRound) {
+      return {
+        title: "ยังไม่มีรอบ Auction ปัจจุบัน",
+        detail: "กรุณารอเจ้าหน้าที่เปิดรอบใหม่",
+      };
+    }
+
+    if (auctionStatus !== "open") {
+      return {
+        title: getRoundClosedMessage(currentRound.status),
+        detail: getRoundClosedDetail(currentRound.status),
+      };
+    }
+
+    return {
+      title: "ยังไม่มี Lot ในรอบนี้",
+      detail: `${getRoundDisplayName(currentRound)} • ${getRoundDateText(currentRound)}`,
+    };
   }
 
   function toggleStarLot(motorcycleId: number) {
@@ -647,6 +699,8 @@ export default function MerchantPage() {
     safeCurrentPage * ITEMS_PER_PAGE
   );
 
+  const emptyLotMessage = getEmptyLotMessage();
+
   const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1)
     .filter((page) => {
       return (
@@ -787,31 +841,49 @@ export default function MerchantPage() {
       <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
         {isLoadingCurrentRound ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-3 text-gray-700 sm:p-4">
-            <p className="font-semibold">กำลังโหลดรอบ Auction...</p>
+            <p className="text-sm font-semibold text-gray-500">รอบ Auction ปัจจุบัน</p>
+            <p className="mt-1 font-semibold">กำลังโหลดรอบ Auction...</p>
+            <p className="mt-1 text-sm">กำลังตรวจสอบรอบปัจจุบัน</p>
           </div>
         ) : currentRound ? (
           auctionStatus === "open" ? (
             <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
-              <p className="font-semibold">เปิดรับราคา</p>
-              <p className="mt-1 text-sm">
-                รอบ: {currentRound.round_name || `Round ${currentRound.id}`}
-                {currentRound.auction_date
-                  ? ` • วันที่ ${formatThaiDate(currentRound.auction_date)}`
-                  : ""}
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-green-700">รอบ Auction ปัจจุบัน</p>
+                  <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
+                  <p className="mt-1 text-sm">
+                    {getRoundDateText(currentRound)}
+                  </p>
+                </div>
+
+                <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
+                  {getRoundStatusLabel(currentRound.status)}
+                </span>
+              </div>
             </div>
           ) : (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
-              <p className="font-semibold">ยังไม่เปิดรับราคา</p>
-              <p className="mt-1 text-sm">
-                รอบ: {currentRound.round_name || `Round ${currentRound.id}`} • สถานะ: {getRoundStatusLabel(currentRound.status)}
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-red-700">รอบ Auction ปัจจุบัน</p>
+                  <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
+                  <p className="mt-1 text-sm">
+                    {getRoundDateText(currentRound)} • {getRoundClosedDetail(currentRound.status)}
+                  </p>
+                </div>
+
+                <span className="w-fit rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">
+                  {getRoundStatusLabel(currentRound.status)}
+                </span>
+              </div>
             </div>
           )
         ) : (
           <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
-            <p className="font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
-            <p className="mt-1 text-sm">กรุณารอผู้ดูแลสร้างและเปิดรอบ Auction ก่อน</p>
+            <p className="text-sm font-semibold text-yellow-700">รอบ Auction ปัจจุบัน</p>
+            <p className="mt-1 font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+            <p className="mt-1 text-sm">กรุณารอเจ้าหน้าที่เปิดรอบใหม่</p>
           </div>
         )}
 
@@ -991,18 +1063,8 @@ export default function MerchantPage() {
 
           {offers.length === 0 && !errorMessage && (
             <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-              <p className="font-semibold text-gray-900">
-                {isLoadingCurrentRound
-                  ? "กำลังโหลด..."
-                  : currentRound && auctionStatus === "open"
-                    ? "ยังไม่มีรถในรอบ Auction นี้"
-                    : "ยังไม่เปิดรอบ Auction"}
-              </p>
-              <p className="mt-1 text-sm text-gray-600">
-                {currentRound
-                  ? `รอบ: ${currentRound.round_name || `Round ${currentRound.id}`}`
-                  : "กรุณารอผู้ดูแลเปิดรอบ Auction"}
-              </p>
+              <p className="font-semibold text-gray-900">{emptyLotMessage.title}</p>
+              <p className="mt-1 text-sm text-gray-600">{emptyLotMessage.detail}</p>
             </div>
           )}
 

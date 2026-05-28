@@ -120,7 +120,7 @@ function formatThaiDateTime(value: string | null | undefined) {
 function getSaleStatusLabel(status?: string | null) {
   if (status === "in_auction") return "อยู่ในรอบประมูล";
   if (status === "sold") return "ขายแล้ว";
-  if (status === "unsold") return "ไม่ขาย / กลับเข้าสต็อก";
+  if (status === "unsold") return "กลับเข้าสต็อกแล้ว";
   if (status === "cancelled") return "ยกเลิก";
   return status || "อยู่ในรอบประมูล";
 }
@@ -350,6 +350,29 @@ setIsAllowingEditId(null);
       return;
     }
 
+    if (isUnsold) {
+      alert("Lot นี้ถูกส่งกลับเข้าสต็อกแล้ว ไม่สามารถบันทึกขายซ้ำได้");
+      return;
+    }
+
+    const { data: existingSoldRecords, error: existingSoldError } =
+      await supabase
+        .from("sold_motorcycles")
+        .select("id")
+        .eq("original_motorcycle_id", motorcycle.id)
+        .limit(1);
+
+    if (existingSoldError) {
+      setErrorMessage(existingSoldError.message);
+      return;
+    }
+
+    if (existingSoldRecords && existingSoldRecords.length > 0) {
+      alert("Lot นี้ถูกบันทึกว่าขายแล้ว");
+      await loadLotResult();
+      return;
+    }
+
     const staffProfile = getSavedStaffProfile();
     const soldPrice = Number(offer.offer_price || 0);
     const diff = soldPrice - cost;
@@ -458,6 +481,29 @@ setIsAllowingEditId(null);
 
     if (isSold) {
       alert("Lot นี้ขายแล้ว ไม่สามารถย้ายกลับเข้าสต็อกได้จากหน้านี้");
+      return;
+    }
+
+    if (isUnsold) {
+      alert("Lot นี้ถูกส่งกลับเข้าสต็อกแล้ว");
+      return;
+    }
+
+    const { data: existingUnsoldRecords, error: existingUnsoldError } =
+      await supabase
+        .from("unsold_motorcycles")
+        .select("id")
+        .eq("original_motorcycle_id", motorcycle.id)
+        .limit(1);
+
+    if (existingUnsoldError) {
+      setErrorMessage(existingUnsoldError.message);
+      return;
+    }
+
+    if (existingUnsoldRecords && existingUnsoldRecords.length > 0) {
+      alert("Lot นี้ถูกส่งกลับเข้าสต็อกแล้ว");
+      await loadLotResult();
       return;
     }
 
@@ -787,7 +833,7 @@ setIsAllowingEditId(null);
                       </span>
                     ) : isUnsold ? (
                       <span className="rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-800">
-                        ไม่ขาย / กลับเข้าสต็อก
+                        กลับเข้าสต็อกแล้ว
                       </span>
                     ) : motorcycle.active ? (
                       <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
