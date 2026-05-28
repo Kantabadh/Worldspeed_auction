@@ -104,7 +104,7 @@ const statusOptions: { value: StockStatus; label: string; badge: string }[] = [
   },
   {
     value: "in_auction",
-    label: "อยู่ในการประมูล",
+    label: "อยู่ใน Auction",
     badge: "bg-blue-100 text-blue-700",
   },
   {
@@ -242,6 +242,39 @@ function getRoundStatusLabel(status?: string | null) {
   if (status === "closed") return "ปิดรอบ";
   if (status === "archived") return "บันทึกประวัติแล้ว";
   return status || "-";
+}
+
+function getStockStatusDescription(status: StockStatus | string) {
+  if (status === "ready_to_sell") return "พร้อมนำเข้ารอบ Auction ถัดไป";
+  if (status === "in_auction") return "อยู่ในรอบ Auction ปัจจุบันหรือรอบที่เลือกไว้";
+  if (status === "sold") return "ขายแล้ว ไม่ควรนำเข้ารอบใหม่";
+  if (status === "repairing") return "ยังซ่อมอยู่ ควรรอให้พร้อมก่อน";
+  if (status === "cancelled") return "ยกเลิกรายการนี้แล้ว";
+  if (status === "in_stock") return "อยู่ในคลัง ยังไม่ถูกนำเข้ารอบ";
+  return "-";
+}
+
+function canSendStockBikeToRound(bike: StockMotorcycle) {
+  if (bike.current_auction_motorcycle_id) return false;
+  if (bike.stock_status === "in_auction") return false;
+  if (bike.stock_status === "sold") return false;
+  if (bike.stock_status === "repairing") return false;
+  if (bike.stock_status === "cancelled") return false;
+  return true;
+}
+
+function getSendToRoundButtonText(
+  bike: StockMotorcycle,
+  sendingToAuctionId: number | null
+) {
+  if (sendingToAuctionId === bike.id) return "กำลังนำเข้ารอบ...";
+  if (bike.current_auction_motorcycle_id || bike.stock_status === "in_auction") {
+    return "เข้ารอบ Auction แล้ว";
+  }
+  if (bike.stock_status === "sold") return "ขายแล้ว";
+  if (bike.stock_status === "repairing") return "กำลังซ่อม";
+  if (bike.stock_status === "cancelled") return "ยกเลิกแล้ว";
+  return "นำเข้ารอบปัจจุบัน";
 }
 
 function getDetailsFromStock(bike: StockMotorcycle): MotorcycleDetails {
@@ -772,8 +805,23 @@ export default function AdminStockPage() {
       return;
     }
 
-    if (bike.current_auction_motorcycle_id) {
+    if (bike.current_auction_motorcycle_id || bike.stock_status === "in_auction") {
       alert("รถคันนี้ถูกนำเข้ารอบ Auction แล้ว");
+      return;
+    }
+
+    if (bike.stock_status === "sold") {
+      alert("รถคันนี้ขายแล้ว ไม่สามารถนำเข้ารอบ Auction ใหม่ได้");
+      return;
+    }
+
+    if (bike.stock_status === "repairing") {
+      alert("รถคันนี้ยังอยู่ระหว่างซ่อม กรุณาเปลี่ยนสถานะเป็นพร้อมขายก่อน");
+      return;
+    }
+
+    if (bike.stock_status === "cancelled") {
+      alert("รถคันนี้ถูกยกเลิกแล้ว ไม่สามารถนำเข้ารอบ Auction ได้");
       return;
     }
 
@@ -1107,6 +1155,60 @@ export default function AdminStockPage() {
     (bike) => bike.stock_status === "sold"
   ).length;
 
+  const inStockCount = stockMotorcycles.filter(
+    (bike) => bike.stock_status === "in_stock"
+  ).length;
+
+  const repairingCount = stockMotorcycles.filter(
+    (bike) => bike.stock_status === "repairing"
+  ).length;
+
+  const cancelledCount = stockMotorcycles.filter(
+    (bike) => bike.stock_status === "cancelled"
+  ).length;
+
+  const stockFilterOptions: {
+    value: "all" | StockStatus;
+    label: string;
+    count: number;
+  }[] = [
+    {
+      value: "all",
+      label: "ทั้งหมด",
+      count: stockMotorcycles.length,
+    },
+    {
+      value: "ready_to_sell",
+      label: "พร้อมขาย",
+      count: readyCount,
+    },
+    {
+      value: "in_auction",
+      label: "อยู่ใน Auction",
+      count: inAuctionCount,
+    },
+    {
+      value: "sold",
+      label: "ขายแล้ว",
+      count: soldCount,
+    },
+    {
+      value: "in_stock",
+      label: "อยู่ในสต็อก",
+      count: inStockCount,
+    },
+    {
+      value: "repairing",
+      label: "กำลังซ่อม",
+      count: repairingCount,
+    },
+    {
+      value: "cancelled",
+      label: "ยกเลิก",
+      count: cancelledCount,
+    },
+  ];
+
   useEffect(() => {
     loadStockMotorcycles();
     loadCurrentAuctionRound();
@@ -1385,6 +1487,27 @@ export default function AdminStockPage() {
               </div>
             </div>
 
+            <div className="mt-4 flex flex-wrap gap-2">
+              {stockFilterOptions.map((option) => {
+                const isSelected = statusFilter === option.value;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setStatusFilter(option.value)}
+                    className={
+                      isSelected
+                        ? "rounded-full bg-black px-4 py-2 text-sm font-bold text-white"
+                        : "rounded-full border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                    }
+                  >
+                    {option.label} ({option.count})
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
               <input
                 className="rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
@@ -1408,6 +1531,15 @@ export default function AdminStockPage() {
                 ))}
               </select>
             </div>
+
+            {statusFilter !== "all" && (
+              <div className="mt-3 rounded-2xl bg-gray-50 p-3 text-sm text-gray-600">
+                <span className="font-semibold text-gray-900">
+                  {getStatusLabel(statusFilter)}:
+                </span>{" "}
+                {getStockStatusDescription(statusFilter)}
+              </div>
+            )}
 
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
@@ -1520,17 +1652,16 @@ export default function AdminStockPage() {
                                 <button
                                   onClick={() => sendToAuction(bike)}
                                   disabled={
-                                    Boolean(
-                                      bike.current_auction_motorcycle_id
-                                    ) || sendingToAuctionId === bike.id
+                                    !canSendStockBikeToRound(bike) ||
+                                    sendingToAuctionId === bike.id
                                   }
-                                  className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
+                                  className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                                  title={getStockStatusDescription(bike.stock_status)}
                                 >
-                                  {sendingToAuctionId === bike.id
-                                    ? "กำลังนำเข้ารอบ..."
-                                    : bike.current_auction_motorcycle_id
-                                      ? "เข้ารอบ Auction แล้ว"
-                                      : "นำเข้ารอบปัจจุบัน"}
+                                  {getSendToRoundButtonText(
+                                    bike,
+                                    sendingToAuctionId
+                                  )}
                                 </button>
 
                                 <button
