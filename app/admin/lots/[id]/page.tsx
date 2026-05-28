@@ -317,8 +317,29 @@ export default function LotResultPage() {
       return;
     }
 
-    alert(`เปิดให้ ${shopName} แก้ไขราคาแล้ว`);
-    setIsAllowingEditId(null);
+    await createAuditLog({
+  action: "merchant_edit_allowed",
+  targetType: "offer",
+  targetId: String(offer.id),
+  targetName: `${shopName} • Lot ${motorcycle?.lot_number || "-"}`,
+  details: {
+    offer_id: offer.id,
+    merchant_id: offer.merchant_id,
+    merchant_account_id: merchantAccountId,
+    merchant_shop_name: offer.merchants?.shop_name || "",
+    merchant_contact_name: offer.merchants?.name || "",
+    merchant_phone: offer.merchants?.phone || "",
+    motorcycle_id: motorcycle?.id || null,
+    auction_round_id: motorcycle?.auction_round_id || null,
+    lot_number: motorcycle?.lot_number || "",
+    motorcycle_name: motorcycle?.motorcycle_name || "",
+    current_offer_price: Number(offer.offer_price || 0),
+    permission_after: true,
+  },
+});
+
+alert(`เปิดให้ ${shopName} แก้ไขราคาแล้ว`);
+setIsAllowingEditId(null);
   }
 
   async function markLotSold(offer: LotOffer) {

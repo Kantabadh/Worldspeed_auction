@@ -26,6 +26,12 @@ type AuctionRound = {
   note: string | null;
 };
 
+type StaffProfile = {
+  id?: string;
+  email?: string;
+  role?: string;
+};
+
 function formatBaht(value: number | null | undefined) {
   const numberValue = Number(value || 0);
 
@@ -78,6 +84,47 @@ function getStatusBadgeClass(status?: string | null) {
   if (status === "closed") return "bg-red-100 text-red-700";
   if (status === "archived") return "bg-purple-100 text-purple-700";
   return "bg-gray-100 text-gray-700";
+}
+
+function getSavedStaffProfile(): StaffProfile | null {
+  if (typeof window === "undefined") return null;
+
+  const savedProfileText = localStorage.getItem("staffProfile");
+
+  if (!savedProfileText) return null;
+
+  try {
+    return JSON.parse(savedProfileText) as StaffProfile;
+  } catch {
+    return null;
+  }
+}
+
+async function createAuditLog({
+  action,
+  targetType,
+  targetId,
+  targetName,
+  details,
+}: {
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  details?: Record<string, unknown>;
+}) {
+  const staffProfile = getSavedStaffProfile();
+
+  await supabase.from("admin_audit_logs").insert({
+    staff_id: staffProfile?.id || null,
+    staff_email: staffProfile?.email || null,
+    staff_role: staffProfile?.role || null,
+    action,
+    target_type: targetType || null,
+    target_id: targetId || null,
+    target_name: targetName || null,
+    details: details || {},
+  });
 }
 
 export default function AdminRoundsPage() {
@@ -165,6 +212,8 @@ export default function AdminRoundsPage() {
     setIsUpdatingId(round.id);
     setErrorMessage("");
 
+    const previousCurrentRound = rounds.find((item) => item.is_current) || null;
+
     const { error: clearError } = await supabase
       .from("auction_rounds")
       .update({ is_current: false })
@@ -187,11 +236,30 @@ export default function AdminRoundsPage() {
       return;
     }
 
+    await createAuditLog({
+      action: "auction_round_set_current",
+      targetType: "auction_round",
+      targetId: String(round.id),
+      targetName: round.round_name || `Round ${round.id}`,
+      details: {
+        round_id: round.id,
+        round_name: round.round_name,
+        auction_date: round.auction_date,
+        status: round.status,
+        is_current_after: true,
+        previous_current_round_id: previousCurrentRound?.id || null,
+        previous_current_round_name: previousCurrentRound?.round_name || null,
+      },
+    });
+
     setIsUpdatingId(null);
     await loadRounds();
   }
 
-  async function updateRoundStatus(round: AuctionRound, status: "draft" | "open" | "closed") {
+  async function updateRoundStatus(
+    round: AuctionRound,
+    status: "draft" | "open" | "closed"
+  ) {
     const confirmUpdate = confirm(
       `ต้องการเปลี่ยนสถานะ "${round.round_name || `Round ${round.id}`}" เป็น "${getRoundStatusLabel(status)}" ใช่หรือไม่?`
     );
@@ -240,11 +308,37 @@ export default function AdminRoundsPage() {
     }
 
     if (status === "open" || status === "closed") {
-      await supabase
+      const { error: settingError } = await supabase
         .from("auction_settings")
         .update({ status: status === "open" ? "open" : "closed" })
         .eq("auction_name", "Main Motorcycle Auction");
+
+      if (settingError) {
+        setErrorMessage(settingError.message);
+        setIsUpdatingId(null);
+        return;
+      }
     }
+
+    await createAuditLog({
+      action: "auction_round_status_changed",
+      targetType: "auction_round",
+      targetId: String(round.id),
+      targetName: round.round_name || `Round ${round.id}`,
+      details: {
+        round_id: round.id,
+        round_name: round.round_name,
+        auction_date: round.auction_date,
+        old_status: round.status,
+        new_status: status,
+        old_status_thai: getRoundStatusLabel(round.status),
+        new_status_thai: getRoundStatusLabel(status),
+        is_current_before: round.is_current,
+        is_current_after: status === "open" ? true : round.is_current,
+        synced_auction_settings:
+          status === "open" || status === "closed" ? true : false,
+      },
+    });
 
     setIsUpdatingId(null);
     await loadRounds();
@@ -375,7 +469,8 @@ export default function AdminRoundsPage() {
                             {round.round_name || `Round ${round.id}`}
                           </p>
                           <p className="text-xs text-gray-500">
-                            ID #{round.id} • สร้าง {formatThaiDateTime(round.created_at)}
+                            ID #{round.id} • สร้าง{" "}
+                            {formatThaiDateTime(round.created_at)}
                           </p>
                         </td>
 
@@ -385,12 +480,12 @@ export default function AdminRoundsPage() {
 
                         <td className="border p-3">
                           <span
-                           className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${getStatusBadgeClass(
-                             round.status
-                             )}`}
-                            >
-                             {getRoundStatusLabel(round.status)}
-                             </span>
+                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${getStatusBadgeClass(
+                              round.status
+                            )}`}
+                          >
+                            {getRoundStatusLabel(round.status)}
+                          </span>
                         </td>
 
                         <td className="border p-3 text-center">
@@ -416,7 +511,7 @@ export default function AdminRoundsPage() {
                         </td>
 
                         <td className="border p-3">
-                         <div className="flex min-w-[460px] flex-wrap gap-2">
+                          <div className="flex min-w-[460px] flex-wrap gap-2">
                             {!round.is_current && (
                               <button
                                 onClick={() => setAsCurrentRound(round)}
