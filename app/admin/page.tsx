@@ -8,6 +8,7 @@ type AdminOffer = {
   id: number;
   merchant_id: number;
   motorcycle_id: number;
+  auction_round_id: number | null;
   offer_price: number;
   submitted_at: string;
   was_edited: boolean | null;
@@ -72,6 +73,18 @@ type ArchiveResult = {
   archivedOfferCount: number;
 } | null;
 
+type CurrentAuctionRound = {
+  id: number;
+  round_name: string | null;
+  auction_date: string | null;
+  status: string | null;
+  is_current: boolean | null;
+  created_at: string | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  archived_at: string | null;
+};
+
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getStaffRoleLabel(role: string) {
@@ -104,6 +117,13 @@ export default function AdminPage() {
 
   const [resetPassword, setResetPassword] = useState("");
   const [resetPhrase, setResetPhrase] = useState("");
+
+  const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(
+    null
+  );
+  const [newRoundName, setNewRoundName] = useState("");
+  const [newRoundDate, setNewRoundDate] = useState("");
+  const [isRoundUpdating, setIsRoundUpdating] = useState(false);
 
   function saveStaffSession(profile: StaffProfile) {
     const updatedProfile = {
@@ -299,9 +319,15 @@ export default function AdminPage() {
     setIsUpdatingStatus(false);
   }
 
-  async function loadOffers() {
+  async function loadOffers(roundId?: number | null) {
     setIsLoading(true);
     setErrorMessage("");
+
+    if (!roundId) {
+      setOffers([]);
+      setIsLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("offers")
@@ -309,6 +335,7 @@ export default function AdminPage() {
         id,
         merchant_id,
         motorcycle_id,
+        auction_round_id,
         offer_price,
         submitted_at,
         was_edited,
@@ -335,6 +362,7 @@ export default function AdminPage() {
           source_name
         )
       `)
+      .eq("auction_round_id", roundId)
       .order("offer_price", { ascending: false });
 
     if (error) {
@@ -347,10 +375,17 @@ export default function AdminPage() {
     setIsLoading(false);
   }
 
-  async function loadMotorcycleCounts() {
+  async function loadMotorcycleCounts(roundId?: number | null) {
+    if (!roundId) {
+      setTotalMotorcycles(0);
+      setActiveMotorcycles(0);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("motorcycles")
-      .select("id, active");
+      .select("id, active, auction_round_id")
+      .eq("auction_round_id", roundId);
 
     if (error) {
       setErrorMessage(error.message);
@@ -419,13 +454,216 @@ export default function AdminPage() {
   }
 
   async function loadDashboardData() {
+    setIsLoading(true);
+
+    const round = await loadCurrentAuctionRound();
+
     await Promise.all([
       loadAuctionStatus(),
-      loadOffers(),
-      loadMotorcycleCounts(),
+      loadOffers(round?.id || null),
+      loadMotorcycleCounts(round?.id || null),
       loadPendingMerchantRequests(),
       loadStockSummary(),
     ]);
+  }
+
+  async function loadCurrentAuctionRound() {
+    const { data, error } = await supabase
+      .from("auction_rounds")
+      .select(
+        `
+        id,
+        round_name,
+        auction_date,
+        status,
+        is_current,
+        created_at,
+        opened_at,
+        closed_at,
+        archived_at
+      `
+      )
+      .eq("is_current", true)
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      setErrorMessage(error.message);
+      setCurrentRound(null);
+      return null;
+    }
+
+    const round = (data as CurrentAuctionRound) || null;
+    setCurrentRound(round);
+    return round;
+  }
+
+  async function createNewAuctionRound() {
+    if (staffProfile?.role !== "owner" && staffProfile?.role !== "admin") {
+      setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่สร้างรอบ Auction ได้");
+      return;
+    }
+
+    if (!newRoundName.trim()) {
+      alert("กรุณากรอกชื่อรอบ Auction");
+      return;
+    }
+
+    const confirmCreate = confirm(
+      "ต้องการสร้างรอบ Auction ใหม่และตั้งเป็นรอบปัจจุบันใช่หรือไม่?"
+    );
+
+    if (!confirmCreate) return;
+
+    setIsRoundUpdating(true);
+    setErrorMessage("");
+
+    try {
+      const { error: clearCurrentError } = await supabase
+        .from("auction_rounds")
+        .update({
+          is_current: false,
+        })
+        .eq("is_current", true);
+
+      if (clearCurrentError) {
+        throw new Error(clearCurrentError.message);
+      }
+
+      const { data: roundData, error: createError } = await supabase
+        .from("auction_rounds")
+        .insert({
+          round_name: newRoundName.trim(),
+          auction_date: newRoundDate || null,
+          status: "draft",
+          is_current: true,
+          note: "สร้างเป็นรอบ Auction ปัจจุบัน",
+        })
+        .select("id, round_name")
+        .single();
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      await createAuditLog({
+        action: "auction_round_created",
+        targetType: "auction_round",
+        targetId: roundData?.id ? String(roundData.id) : undefined,
+        targetName: roundData?.round_name || newRoundName.trim(),
+        details: {
+          round_name: newRoundName.trim(),
+          auction_date: newRoundDate || null,
+          status: "draft",
+          is_current: true,
+        },
+      });
+
+      setNewRoundName("");
+      setNewRoundDate("");
+
+      await loadCurrentAuctionRound();
+
+      alert("สร้างรอบ Auction ใหม่เรียบร้อยแล้ว");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "สร้างรอบ Auction ไม่สำเร็จ";
+
+      setErrorMessage(message);
+    }
+
+    setIsRoundUpdating(false);
+  }
+
+  async function updateCurrentRoundStatus(newStatus: "draft" | "open" | "closed") {
+    if (!currentRound) {
+      alert("ยังไม่มีรอบ Auction ปัจจุบัน");
+      return;
+    }
+
+    if (staffProfile?.role !== "owner" && staffProfile?.role !== "admin") {
+      setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่เปลี่ยนสถานะรอบได้");
+      return;
+    }
+
+    const confirmUpdate = confirm(
+      `ต้องการเปลี่ยนสถานะรอบนี้เป็น "${getRoundStatusLabel(newStatus)}" ใช่หรือไม่?`
+    );
+
+    if (!confirmUpdate) return;
+
+    setIsRoundUpdating(true);
+    setErrorMessage("");
+
+    try {
+      const updatePayload: {
+        status: string;
+        is_current: boolean;
+        opened_at?: string | null;
+        closed_at?: string | null;
+      } = {
+        status: newStatus,
+        is_current: true,
+      };
+
+      if (newStatus === "open") {
+        updatePayload.opened_at = new Date().toISOString();
+        updatePayload.closed_at = null;
+      }
+
+      if (newStatus === "closed") {
+        updatePayload.closed_at = new Date().toISOString();
+      }
+
+      const { error: roundError } = await supabase
+        .from("auction_rounds")
+        .update(updatePayload)
+        .eq("id", currentRound.id);
+
+      if (roundError) {
+        throw new Error(roundError.message);
+      }
+
+      if (newStatus === "open" || newStatus === "closed") {
+        const { error: settingError } = await supabase
+          .from("auction_settings")
+          .update({
+            status: newStatus === "open" ? "open" : "closed",
+          })
+          .eq("auction_name", "Main Motorcycle Auction");
+
+        if (settingError) {
+          throw new Error(settingError.message);
+        }
+
+        setAuctionStatus(newStatus === "open" ? "open" : "closed");
+      }
+
+      await createAuditLog({
+        action: "auction_round_status_changed",
+        targetType: "auction_round",
+        targetId: String(currentRound.id),
+        targetName: currentRound.round_name || `Round ${currentRound.id}`,
+        details: {
+          old_status: currentRound.status,
+          new_status: newStatus,
+          old_status_thai: getRoundStatusLabel(currentRound.status),
+          new_status_thai: getRoundStatusLabel(newStatus),
+        },
+      });
+
+      await loadCurrentAuctionRound();
+
+      alert(`เปลี่ยนสถานะเป็น ${getRoundStatusLabel(newStatus)} แล้ว`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "เปลี่ยนสถานะรอบไม่สำเร็จ";
+
+      setErrorMessage(message);
+    }
+
+    setIsRoundUpdating(false);
   }
 
   useEffect(() => {
@@ -570,6 +808,14 @@ export default function AdminPage() {
     return status || "-";
   }
 
+  function getRoundStatusLabel(status?: string | null) {
+    if (status === "draft") return "เตรียมรอบ";
+    if (status === "open") return "เปิดรับราคา";
+    if (status === "closed") return "ปิดรอบ";
+    if (status === "archived") return "บันทึกประวัติแล้ว";
+    return status || "-";
+  }
+
   function formatThaiDate(dateInput: string | Date) {
     const date = new Date(dateInput);
 
@@ -615,34 +861,34 @@ export default function AdminPage() {
     return chunks;
   }
 
- async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
-  if (offers.length === 0) {
-    return null;
+  async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
+    if (offers.length === 0) {
+      return null;
+    }
+
+    const { data, error } = await supabase.rpc("archive_current_auction", {
+      p_email: staffProfile?.email || null,
+      p_role: staffProfile?.role || null,
+      p_note: "บันทึกจากหน้า Admin Dashboard",
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const archiveRow = Array.isArray(data) ? data[0] : data;
+
+    if (!archiveRow) {
+      throw new Error("บันทึกประวัติไม่สำเร็จ: ไม่พบข้อมูลที่ส่งกลับจากฐานข้อมูล");
+    }
+
+    return {
+      roundId: Number(archiveRow.round_id),
+      roundName: String(archiveRow.round_name || "Auction Round"),
+      archivedLotCount: Number(archiveRow.archived_lot_count || 0),
+      archivedOfferCount: Number(archiveRow.archived_offer_count || 0),
+    };
   }
-
-  const { data, error } = await supabase.rpc("archive_current_auction", {
-    p_email: staffProfile?.email || null,
-    p_role: staffProfile?.role || null,
-    p_note: "บันทึกจากหน้า Admin Dashboard",
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const archiveRow = Array.isArray(data) ? data[0] : data;
-
-  if (!archiveRow) {
-    throw new Error("บันทึกประวัติไม่สำเร็จ: ไม่พบข้อมูลที่ส่งกลับจากฐานข้อมูล");
-  }
-
-  return {
-    roundId: Number(archiveRow.round_id),
-    roundName: String(archiveRow.round_name || "Auction Round"),
-    archivedLotCount: Number(archiveRow.archived_lot_count || 0),
-    archivedOfferCount: Number(archiveRow.archived_offer_count || 0),
-  };
-}
 
   async function archiveCurrentAuctionOnly() {
     if (staffProfile?.role !== "owner") {
@@ -729,8 +975,12 @@ export default function AdminPage() {
     }
 
     const confirmReset = confirm(
-      "ต้องการบันทึกประวัติรอบนี้ แล้วล้างข้อมูลการเสนอราคาปัจจุบันใช่หรือไม่? ระบบจะเก็บประวัติราคาไว้ก่อน จากนั้นจะลบราคาและรายการส่งราคาปัจจุบัน แต่จะไม่ลบรายการรถ รูปภาพ บัญชีร้านค้า และบัญชีแอดมิน"
-    );
+  `ต้องการบันทึกประวัติรอบนี้ แล้วล้างข้อมูล Auction ปัจจุบันใช่หรือไม่?
+
+ระบบจะเก็บประวัติก่อน แล้วล้างราคา รายการส่งราคา และ Lot ใน Auction ปัจจุบัน
+
+ระบบจะไม่ลบบัญชีร้านค้า บัญชีแอดมิน คลังรถ และประวัติรอบเก่า`
+);
 
     if (!confirmReset) return;
 
@@ -746,7 +996,7 @@ export default function AdminPage() {
     }
 
     const secondConfirm = confirm(
-      "ยืนยันครั้งสุดท้าย: ระบบจะบันทึกประวัติรอบนี้ก่อน แล้วจึงล้างข้อมูลปัจจุบัน ต้องการทำต่อหรือไม่?"
+      "ยืนยันครั้งสุดท้าย: ระบบจะบันทึกประวัติรอบนี้ก่อน แล้วจึงล้าง Auction ปัจจุบัน ต้องการทำต่อหรือไม่?"
     );
 
     if (!secondConfirm) return;
@@ -756,38 +1006,114 @@ export default function AdminPage() {
 
     try {
       const archiveResult = await archiveCurrentAuctionBeforeReset();
+      const now = new Date().toISOString();
 
-      const { error: offersError } = await supabase
-        .from("offers")
-        .delete()
-        .neq("id", 0);
+      const { error: clearStockLinkError } = await supabase
+        .from("stock_motorcycles")
+        .update({
+          current_auction_motorcycle_id: null,
+          current_auction_round_id: null,
+          updated_at: now,
+        })
+        .not("current_auction_motorcycle_id", "is", null);
 
-      if (offersError) {
-        throw new Error(offersError.message);
+      if (clearStockLinkError) {
+        throw new Error(`ล้างลิงก์รถในคลังไม่สำเร็จ: ${clearStockLinkError.message}`);
       }
 
-      const { error: merchantsError } = await supabase
-        .from("merchants")
-        .delete()
-        .neq("id", 0);
+      const { error: clearStockStatusError } = await supabase
+        .from("stock_motorcycles")
+        .update({
+          stock_status: "ready_to_sell",
+          updated_at: now,
+        })
+        .eq("stock_status", "in_auction");
 
-      if (merchantsError) {
-        throw new Error(merchantsError.message);
+      if (clearStockStatusError) {
+        throw new Error(`อัปเดตสถานะรถในคลังไม่สำเร็จ: ${clearStockStatusError.message}`);
       }
 
       const { error: permissionsError } = await supabase
         .from("merchant_lot_edit_permissions")
         .delete()
-        .neq("id", 0);
+        .not("id", "is", null);
 
       if (permissionsError) {
-        throw new Error(permissionsError.message);
+        throw new Error(`ล้างสิทธิ์แก้ไขราคาไม่สำเร็จ: ${permissionsError.message}`);
+      }
+
+      const { error: offersError } = await supabase
+        .from("offers")
+        .delete()
+        .not("id", "is", null);
+
+      if (offersError) {
+        throw new Error(`ล้างราคาเสนอไม่สำเร็จ: ${offersError.message}`);
+      }
+
+      const { error: merchantsError } = await supabase
+        .from("merchants")
+        .delete()
+        .not("id", "is", null);
+
+      if (merchantsError) {
+        throw new Error(`ล้างรายการส่งราคาของร้านค้าไม่สำเร็จ: ${merchantsError.message}`);
+      }
+
+      const { error: motorcyclePhotosError } = await supabase
+        .from("motorcycle_photos")
+        .delete()
+        .not("id", "is", null);
+
+      if (motorcyclePhotosError) {
+        throw new Error(`ล้างรูป Lot Auction ไม่สำเร็จ: ${motorcyclePhotosError.message}`);
+      }
+
+      const { error: motorcyclesError } = await supabase
+        .from("motorcycles")
+        .delete()
+        .not("id", "is", null);
+
+      if (motorcyclesError) {
+        throw new Error(`ล้าง Lot Auction ไม่สำเร็จ: ${motorcyclesError.message}`);
+      }
+
+      const { error: merchantAccountResetError } = await supabase
+        .from("merchant_accounts")
+        .update({
+          can_edit_submission: false,
+        })
+        .not("id", "is", null);
+
+      if (merchantAccountResetError) {
+        throw new Error(
+          `รีเซ็ตสถานะบัญชีร้านค้าไม่สำเร็จ: ${merchantAccountResetError.message}`
+        );
+      }
+
+      const { error: auctionSettingError } = await supabase
+        .from("auction_settings")
+        .update({
+          status: "closed",
+        })
+        .not("id", "is", null);
+
+      if (auctionSettingError) {
+        throw new Error(`ปิดรอบ Auction ไม่สำเร็จ: ${auctionSettingError.message}`);
+      }
+
+      if (currentRound) {
+        await supabase
+          .from("auction_rounds")
+          .update({
+            status: "closed",
+            closed_at: now,
+          })
+          .eq("id", currentRound.id);
       }
 
       await createAuditLog({
-        action: archiveResult
-          ? "auction_reset_archived"
-          : "auction_reset_empty",
+        action: archiveResult ? "auction_reset_archived" : "auction_reset_empty",
         targetType: archiveResult ? "auction_round" : "auction",
         targetId: archiveResult
           ? String(archiveResult.roundId)
@@ -806,16 +1132,30 @@ export default function AdminPage() {
           total_highest_value_before_reset: totalHighestOfferValue,
           total_cost_before_reset: totalCostForSubmittedLots,
           total_gross_profit_before_reset: totalGrossProfit,
-          deleted_current_offers: true,
-          deleted_current_merchant_submissions: true,
-          deleted_current_lot_edit_permissions: true,
+          cleared_current_offers: true,
+          cleared_current_merchant_submissions: true,
+          cleared_current_lot_edit_permissions: true,
+          cleared_current_auction_motorcycles: true,
+          cleared_current_auction_photos: true,
+          kept_merchant_accounts: true,
+          kept_staff_accounts: true,
+          kept_stock_motorcycles: true,
+          kept_archive_history: true,
+          auction_status_after_reset: "closed",
         },
       });
 
       setResetPassword("");
       setResetPhrase("");
 
-      alert("บันทึกประวัติรอบนี้และล้างข้อมูลปัจจุบันเรียบร้อยแล้ว");
+      alert(
+        archiveResult
+          ? `บันทึกประวัติและล้าง Auction ปัจจุบันเรียบร้อยแล้ว
+${archiveResult.roundName}
+Lot ที่บันทึก: ${archiveResult.archivedLotCount}
+ราคาเสนอที่บันทึก: ${archiveResult.archivedOfferCount}`
+          : "ล้าง Auction ปัจจุบันเรียบร้อยแล้ว"
+      );
 
       await loadDashboardData();
     } catch (error) {
@@ -1169,6 +1509,133 @@ export default function AdminPage() {
           </section>
         )}
 
+
+        <section className="mb-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+                Current Auction Round
+              </p>
+
+              <h2 className="mt-1 text-xl font-bold text-gray-900">
+                รอบ Auction ปัจจุบัน
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-600">
+                ใช้สำหรับแยกรอบประมูลรายเดือน เช่น เสาร์แรกของเดือน
+              </p>
+            </div>
+
+            <button
+              onClick={loadCurrentAuctionRound}
+              className="rounded-xl border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-gray-100"
+            >
+              โหลดรอบใหม่
+            </button>
+          </div>
+
+          {currentRound ? (
+            <div className="mt-4 rounded-2xl border bg-gray-50 p-4">
+              <div className="grid gap-4 md:grid-cols-4">
+                <div>
+                  <p className="text-sm text-gray-500">ชื่อรอบ</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    {currentRound.round_name || `Round ${currentRound.id}`}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">วันที่ประมูล</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    {currentRound.auction_date
+                      ? formatThaiDate(currentRound.auction_date)
+                      : "-"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">สถานะรอบ</p>
+                  <p className="mt-1 font-bold text-blue-700">
+                    {getRoundStatusLabel(currentRound.status)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">รหัสรอบ</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    #{currentRound.id}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateCurrentRoundStatus("draft")}
+                  disabled={isRoundUpdating}
+                  className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100 disabled:opacity-50"
+                >
+                  เตรียมรอบ
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateCurrentRoundStatus("open")}
+                  disabled={isRoundUpdating}
+                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-400"
+                >
+                  เปิดรอบ
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateCurrentRoundStatus("closed")}
+                  disabled={isRoundUpdating}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:bg-gray-400"
+                >
+                  ปิดรอบ
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+              <p className="font-bold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+              <p className="mt-1 text-sm">
+                สร้างรอบใหม่ก่อน แล้วค่อยนำรถจากคลังเข้าสู่รอบนั้น
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 rounded-2xl border bg-white p-4">
+            <h3 className="font-bold text-gray-900">สร้างรอบ Auction ใหม่</h3>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px_auto]">
+              <input
+                className="rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                placeholder="เช่น เสาร์แรก มิ.ย. 2569"
+                value={newRoundName}
+                onChange={(event) => setNewRoundName(event.target.value)}
+              />
+
+              <input
+                type="date"
+                className="rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                value={newRoundDate}
+                onChange={(event) => setNewRoundDate(event.target.value)}
+              />
+
+              <button
+                type="button"
+                onClick={createNewAuctionRound}
+                disabled={isRoundUpdating}
+                className="rounded-xl bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800 disabled:bg-gray-400"
+              >
+                สร้างรอบใหม่
+              </button>
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -1337,6 +1804,13 @@ export default function AdminPage() {
               พิมพ์ใบเสนอราคาของร้านค้า
             </a>
 
+            <a
+               href="/admin/sold"
+               className="rounded-xl bg-purple-600 px-4 py-3 text-center font-medium text-white hover:bg-purple-700 sm:py-2"
+             >
+             รถที่ขายแล้ว
+            </a>
+
             {staffProfile?.role === "owner" && (
               <a
                 href="/admin/staff"
@@ -1384,7 +1858,7 @@ export default function AdminPage() {
               </p>
 
               <p className="mt-1 text-sm text-red-700">
-                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้างราคาปัจจุบัน
+                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้าง Auction ปัจจุบัน
               </p>
 
               <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
@@ -1393,7 +1867,7 @@ export default function AdminPage() {
                 </p>
 
                 <p className="mt-1 text-sm text-blue-700">
-                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูลการเสนอราคาปัจจุบัน
+                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูล Auction ปัจจุบัน
                 </p>
 
                 <button

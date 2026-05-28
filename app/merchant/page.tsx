@@ -10,6 +10,7 @@ type MotorcyclePhoto = {
 
 type Motorcycle = {
   id: number;
+  auction_round_id: number | null;
   lot_number: string;
   motorcycle_name: string;
   brand: string | null;
@@ -67,6 +68,14 @@ type LotEditPermission = {
   can_edit: boolean;
 };
 
+type CurrentAuctionRound = {
+  id: number;
+  round_name: string | null;
+  auction_date: string | null;
+  status: string | null;
+  is_current: boolean | null;
+};
+
 type OfferFilter = "all" | "empty" | "priced" | "editable" | "starred";
 
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
@@ -92,7 +101,9 @@ export default function MerchantPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [errorMessage, setErrorMessage] = useState("");
-  const [auctionStatus, setAuctionStatus] = useState("open");
+  const [auctionStatus, setAuctionStatus] = useState("closed");
+  const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(null);
+  const [isLoadingCurrentRound, setIsLoadingCurrentRound] = useState(true);
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -128,6 +139,28 @@ export default function MerchantPage() {
 
     const session = JSON.parse(savedSession) as MerchantSession;
     saveMerchantSession(session);
+  }
+
+  function getRoundStatusLabel(status?: string | null) {
+    if (status === "draft") return "เตรียมรอบ";
+    if (status === "open") return "เปิดรับราคา";
+    if (status === "closed") return "ปิดรอบ";
+    if (status === "archived") return "บันทึกประวัติแล้ว";
+    return status || "-";
+  }
+
+  function formatThaiDate(value?: string | null) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "-";
+
+    return date.toLocaleDateString("th-TH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   }
 
   function toggleStarLot(motorcycleId: number) {
@@ -291,31 +324,48 @@ export default function MerchantPage() {
   }, [isMerchantLoggedIn]);
 
   useEffect(() => {
-    async function loadAuctionStatus() {
-      const { data, error } = await supabase
-        .from("auction_settings")
-        .select("status")
-        .order("id", { ascending: true })
-        .limit(1);
+    async function loadCurrentRoundAndMotorcycles() {
+      setIsLoadingCurrentRound(true);
+      setErrorMessage("");
 
-      if (error) {
-        setErrorMessage(error.message);
+      const { data: roundData, error: roundError } = await supabase
+        .from("auction_rounds")
+        .select("id, round_name, auction_date, status, is_current")
+        .eq("is_current", true)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (roundError) {
+        setErrorMessage(roundError.message);
+        setIsLoadingCurrentRound(false);
         return;
       }
 
-      if (!data || data.length === 0) {
-        setErrorMessage("ไม่พบสถานะการเสนอราคา");
+      const loadedRound = (roundData as CurrentAuctionRound) || null;
+
+      setCurrentRound(loadedRound);
+
+      if (!loadedRound) {
+        setAuctionStatus("closed");
+        setOffers([]);
+        setIsLoadingCurrentRound(false);
         return;
       }
 
-      setAuctionStatus(data[0].status);
-    }
+      setAuctionStatus(loadedRound.status === "open" ? "open" : "closed");
 
-    async function loadMotorcycles() {
+      if (loadedRound.status !== "open") {
+        setOffers([]);
+        setIsLoadingCurrentRound(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("motorcycles")
         .select(`
           id,
+          auction_round_id,
           lot_number,
           motorcycle_name,
           brand,
@@ -336,10 +386,12 @@ export default function MerchantPage() {
           )
         `)
         .eq("active", true)
+        .eq("auction_round_id", loadedRound.id)
         .order("lot_number");
 
       if (error) {
         setErrorMessage(error.message);
+        setIsLoadingCurrentRound(false);
         return;
       }
 
@@ -373,10 +425,10 @@ export default function MerchantPage() {
       }));
 
       setOffers(motorcycleOffersWithSavedPrices);
+      setIsLoadingCurrentRound(false);
     }
 
-    loadAuctionStatus();
-    loadMotorcycles();
+    loadCurrentRoundAndMotorcycles();
   }, []);
 
   useEffect(() => {
@@ -500,6 +552,8 @@ export default function MerchantPage() {
       merchantName,
       shopName,
       phone,
+      auctionRoundId: currentRound?.id || null,
+      auctionRoundName: currentRound?.round_name || "",
       offers: submittedOffers,
       isEditingSubmission: hasSubmitted,
       submittedMerchantId,
@@ -516,7 +570,10 @@ export default function MerchantPage() {
 
   const isLockedAfterSubmission = hasSubmitted && editableLotCount === 0;
   const canSubmit =
-    auctionStatus === "open" && (!hasSubmitted || editableLotCount > 0);
+    auctionStatus === "open" &&
+    Boolean(currentRound) &&
+    !isLoadingCurrentRound &&
+    (!hasSubmitted || editableLotCount > 0);
 
   const sortedOffers = useMemo(() => {
     return [...offers].sort((a, b) => a.lot.localeCompare(b.lot));
@@ -625,10 +682,10 @@ export default function MerchantPage() {
   }
 
   function jumpToStarredLot(lotNumber: string) {
-  setOfferFilter("all");
-  setSearchText(lotNumber);
-  setCurrentPage(1);
-}
+    setOfferFilter("all");
+    setSearchText(lotNumber);
+    setCurrentPage(1);
+  }
 
   function closeFilterView() {
     setSearchText("");
@@ -728,13 +785,33 @@ export default function MerchantPage() {
       </header>
 
       <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
-        {auctionStatus === "open" ? (
-          <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
-            <p className="font-semibold">เปิดรับราคา</p>
+        {isLoadingCurrentRound ? (
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 text-gray-700 sm:p-4">
+            <p className="font-semibold">กำลังโหลดรอบ Auction...</p>
           </div>
+        ) : currentRound ? (
+          auctionStatus === "open" ? (
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
+              <p className="font-semibold">เปิดรับราคา</p>
+              <p className="mt-1 text-sm">
+                รอบ: {currentRound.round_name || `Round ${currentRound.id}`}
+                {currentRound.auction_date
+                  ? ` • วันที่ ${formatThaiDate(currentRound.auction_date)}`
+                  : ""}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
+              <p className="font-semibold">ยังไม่เปิดรับราคา</p>
+              <p className="mt-1 text-sm">
+                รอบ: {currentRound.round_name || `Round ${currentRound.id}`} • สถานะ: {getRoundStatusLabel(currentRound.status)}
+              </p>
+            </div>
+          )
         ) : (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
-            <p className="font-semibold">ปิดรับราคา</p>
+          <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
+            <p className="font-semibold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+            <p className="mt-1 text-sm">กรุณารอผู้ดูแลสร้างและเปิดรอบ Auction ก่อน</p>
           </div>
         )}
 
@@ -914,7 +991,18 @@ export default function MerchantPage() {
 
           {offers.length === 0 && !errorMessage && (
             <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-              <p className="text-gray-600">กำลังโหลด...</p>
+              <p className="font-semibold text-gray-900">
+                {isLoadingCurrentRound
+                  ? "กำลังโหลด..."
+                  : currentRound && auctionStatus === "open"
+                    ? "ยังไม่มีรถในรอบ Auction นี้"
+                    : "ยังไม่เปิดรอบ Auction"}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {currentRound
+                  ? `รอบ: ${currentRound.round_name || `Round ${currentRound.id}`}`
+                  : "กรุณารอผู้ดูแลเปิดรอบ Auction"}
+              </p>
             </div>
           )}
 

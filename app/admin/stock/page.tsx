@@ -48,6 +48,7 @@ type StockMotorcycle = MotorcycleDetails & {
   cost_price: number | null;
   stock_status: StockStatus;
   current_auction_motorcycle_id: number | null;
+  current_auction_round_id: number | null;
   created_at: string;
   updated_at: string;
   stock_motorcycle_photos: StockPhoto[];
@@ -59,6 +60,14 @@ type StaffProfile = {
   role: string;
   active: boolean;
   expiresAt?: number;
+};
+
+type CurrentAuctionRound = {
+  id: number;
+  round_name: string | null;
+  auction_date: string | null;
+  status: string | null;
+  is_current: boolean | null;
 };
 
 type AuditLogInput = {
@@ -227,6 +236,14 @@ function getStatusBadge(status: StockStatus | string) {
   );
 }
 
+function getRoundStatusLabel(status?: string | null) {
+  if (status === "draft") return "เตรียมรอบ";
+  if (status === "open") return "เปิดรับราคา";
+  if (status === "closed") return "ปิดรอบ";
+  if (status === "archived") return "บันทึกประวัติแล้ว";
+  return status || "-";
+}
+
 function getDetailsFromStock(bike: StockMotorcycle): MotorcycleDetails {
   return {
     brand: bike.brand || "",
@@ -295,6 +312,8 @@ export default function AdminStockPage() {
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
+  const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(null);
+  const [isLoadingCurrentRound, setIsLoadingCurrentRound] = useState(true);
 
   useEffect(() => {
     setStaffProfile(getSavedStaffProfile());
@@ -390,6 +409,7 @@ export default function AdminStockPage() {
       stock_status: bike.stock_status,
       stock_status_thai: getStatusLabel(bike.stock_status),
       current_auction_motorcycle_id: bike.current_auction_motorcycle_id,
+      current_auction_round_id: bike.current_auction_round_id,
       photo_count: bike.stock_motorcycle_photos?.length || 0,
     };
   }
@@ -451,6 +471,28 @@ export default function AdminStockPage() {
     return photoRows.length;
   }
 
+  async function loadCurrentAuctionRound() {
+    setIsLoadingCurrentRound(true);
+
+    const { data, error } = await supabase
+      .from("auction_rounds")
+      .select("id, round_name, auction_date, status, is_current")
+      .eq("is_current", true)
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      setErrorMessage(error.message);
+      setCurrentRound(null);
+      setIsLoadingCurrentRound(false);
+      return;
+    }
+
+    setCurrentRound((data as CurrentAuctionRound) || null);
+    setIsLoadingCurrentRound(false);
+  }
+
   async function loadStockMotorcycles() {
     setIsLoading(true);
     setErrorMessage("");
@@ -481,6 +523,7 @@ export default function AdminStockPage() {
         repair_notes,
         stock_status,
         current_auction_motorcycle_id,
+        current_auction_round_id,
         created_at,
         updated_at,
         stock_motorcycle_photos (
@@ -714,18 +757,30 @@ export default function AdminStockPage() {
   async function sendToAuction(bike: StockMotorcycle) {
     if (!canManageAuctionFromStock) {
       alert(
-        "เจ้าหน้าที่รับรถสามารถเพิ่ม/แก้ไขรถในคลังได้ แต่ไม่สามารถนำรถเข้า Auction ได้"
+        "เจ้าหน้าที่รับรถสามารถเพิ่ม/แก้ไขรถในคลังได้ แต่ไม่สามารถนำรถเข้ารอบ Auction ได้"
       );
       return;
     }
 
-    if (bike.current_auction_motorcycle_id) {
-      alert("รถคันนี้ถูกนำเข้า Auction แล้ว");
+    if (!currentRound) {
+      alert("ยังไม่มีรอบ Auction ปัจจุบัน กรุณาสร้างรอบจากหน้า Admin ก่อน");
       return;
     }
 
+    if (currentRound.status === "closed" || currentRound.status === "archived") {
+      alert("รอบ Auction ปัจจุบันปิดแล้ว กรุณาเปิดรอบหรือสร้างรอบใหม่ก่อน");
+      return;
+    }
+
+    if (bike.current_auction_motorcycle_id) {
+      alert("รถคันนี้ถูกนำเข้ารอบ Auction แล้ว");
+      return;
+    }
+
+    const roundName = currentRound.round_name || `Round ${currentRound.id}`;
+
     const confirmSend = confirm(
-      `ต้องการนำ "${bike.motorcycle_name}" เข้า Auction ใช่หรือไม่?`
+      `ต้องการนำ "${bike.motorcycle_name}" เข้ารอบ "${roundName}" ใช่หรือไม่?`
     );
 
     if (!confirmSend) return;
@@ -763,6 +818,8 @@ export default function AdminStockPage() {
           active: true,
           image_url: firstPhoto,
           stock_motorcycle_id: bike.id,
+          auction_round_id: currentRound.id,
+          lot_sale_status: "in_auction",
         })
         .select()
         .single();
@@ -791,6 +848,7 @@ export default function AdminStockPage() {
         .update({
           stock_status: "in_auction",
           current_auction_motorcycle_id: auctionMotorcycle.id,
+          current_auction_round_id: currentRound.id,
           updated_at: new Date().toISOString(),
         })
         .eq("id", bike.id);
@@ -800,13 +858,15 @@ export default function AdminStockPage() {
       }
 
       await createAuditLog({
-        action: "stock_motorcycle_sent_to_auction",
+        action: "stock_motorcycle_sent_to_auction_round",
         targetType: "stock_motorcycle",
         targetId: String(bike.id),
         targetName: getStockTargetName(bike),
         details: {
           stock: getStockDetailPayload(bike),
           auction_motorcycle_id: auctionMotorcycle.id,
+          auction_round_id: currentRound.id,
+          auction_round_name: roundName,
           lot_number: lotNumber,
           copied_photo_count: bike.stock_motorcycle_photos?.length || 0,
         },
@@ -817,7 +877,7 @@ export default function AdminStockPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "เกิดข้อผิดพลาดระหว่างนำรถเข้า Auction";
+          : "เกิดข้อผิดพลาดระหว่างนำรถเข้ารอบ Auction";
 
       setErrorMessage(message);
     }
@@ -834,7 +894,7 @@ export default function AdminStockPage() {
     }
 
     if (bike.current_auction_motorcycle_id) {
-      alert("รถคันนี้ถูกนำเข้า Auction แล้ว แนะนำให้เปลี่ยนสถานะแทนการลบ");
+      alert("รถคันนี้ถูกนำเข้ารอบ Auction แล้ว แนะนำให้เปลี่ยนสถานะแทนการลบ");
       return;
     }
 
@@ -1049,6 +1109,7 @@ export default function AdminStockPage() {
 
   useEffect(() => {
     loadStockMotorcycles();
+    loadCurrentAuctionRound();
   }, []);
 
   return (
@@ -1068,7 +1129,7 @@ export default function AdminStockPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                เพิ่มรถเข้าคลัง เก็บข้อมูลต้นทุน รูปภาพ และเลือกนำเข้า Auction
+                เพิ่มรถเข้าคลัง เก็บข้อมูลต้นทุน รูปภาพ และเลือกนำเข้ารอบ Auction ปัจจุบัน
               </p>
 
               {isStockStaff && (
@@ -1079,7 +1140,10 @@ export default function AdminStockPage() {
             </div>
 
             <button
-              onClick={loadStockMotorcycles}
+              onClick={() => {
+                loadStockMotorcycles();
+                loadCurrentAuctionRound();
+              }}
               className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
             >
               โหลดใหม่
@@ -1092,6 +1156,75 @@ export default function AdminStockPage() {
               <p className="text-sm">{errorMessage}</p>
             </div>
           )}
+
+          <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+                  Current Auction Round
+                </p>
+
+                <h2 className="mt-1 text-xl font-bold text-gray-900">
+                  รอบ Auction ปัจจุบัน
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-600">
+                  รถที่นำเข้ารอบปัจจุบัน จากหน้านี้จะถูกผูกกับรอบปัจจุบัน
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadCurrentAuctionRound}
+                className="rounded-xl border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-gray-100"
+              >
+                โหลดรอบใหม่
+              </button>
+            </div>
+
+            {isLoadingCurrentRound ? (
+              <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
+                กำลังโหลดรอบ Auction ปัจจุบัน...
+              </div>
+            ) : currentRound ? (
+              <div className="mt-4 grid gap-3 rounded-2xl border bg-gray-50 p-4 md:grid-cols-4">
+                <div>
+                  <p className="text-sm text-gray-500">ชื่อรอบ</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    {currentRound.round_name || `Round ${currentRound.id}`}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">วันที่ประมูล</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    {currentRound.auction_date || "-"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">สถานะรอบ</p>
+                  <p className="mt-1 font-bold text-blue-700">
+                    {getRoundStatusLabel(currentRound.status)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">รหัสรอบ</p>
+                  <p className="mt-1 font-bold text-gray-900">
+                    #{currentRound.id}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+                <p className="font-bold">ยังไม่มีรอบ Auction ปัจจุบัน</p>
+                <p className="mt-1 text-sm">
+                  กรุณาไปหน้า Admin แล้วสร้างรอบ Auction ปัจจุบันก่อนนำรถเข้า Auction
+                </p>
+              </div>
+            )}
+          </section>
 
           <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
@@ -1137,7 +1270,7 @@ export default function AdminStockPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              รถที่เพิ่มในหน้านี้ยังไม่แสดงให้ร้านค้าเห็น จนกว่าจะนำเข้า Auction
+              รถที่เพิ่มในหน้านี้ยังไม่แสดงให้ร้านค้าเห็น จนกว่าจะนำเข้ารอบ Auction ปัจจุบัน
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1340,7 +1473,7 @@ export default function AdminStockPage() {
 
                               {bike.current_auction_motorcycle_id && (
                                 <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-                                  เข้า Auction แล้ว
+                                  เข้ารอบ Auction แล้ว
                                 </span>
                               )}
                             </div>
@@ -1394,10 +1527,10 @@ export default function AdminStockPage() {
                                   className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
                                 >
                                   {sendingToAuctionId === bike.id
-                                    ? "กำลังนำเข้า Auction..."
+                                    ? "กำลังนำเข้ารอบ..."
                                     : bike.current_auction_motorcycle_id
-                                      ? "เข้า Auction แล้ว"
-                                      : "นำเข้า Auction"}
+                                      ? "เข้ารอบ Auction แล้ว"
+                                      : "นำเข้ารอบปัจจุบัน"}
                                 </button>
 
                                 <button

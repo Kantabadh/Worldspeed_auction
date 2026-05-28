@@ -21,6 +21,8 @@ type DraftSubmission = {
   shopName: string;
   phone: string;
   offers: Offer[];
+  auctionRoundId?: number | null;
+  auctionRoundName?: string | null;
   isEditingSubmission?: boolean;
   submittedMerchantId?: number | null;
   merchantAccountId?: number | null;
@@ -51,6 +53,7 @@ type ExistingOfferRow = {
 type FinalOfferRow = {
   motorcycle_id: number;
   offer_price: number;
+  auction_round_id?: number | null;
   was_edited?: boolean | null;
   motorcycles: {
     id: number;
@@ -110,11 +113,15 @@ export default function SummaryPage() {
       );
   }
 
-  async function fetchFinalSubmittedOffers(submittedMerchantId: number) {
-    const { data, error } = await supabase
+  async function fetchFinalSubmittedOffers(
+    submittedMerchantId: number,
+    auctionRoundId?: number | null
+  ) {
+    let query = supabase
       .from("offers")
       .select(`
         motorcycle_id,
+        auction_round_id,
         offer_price,
         was_edited,
         motorcycles (
@@ -129,6 +136,12 @@ export default function SummaryPage() {
       `)
       .eq("merchant_id", submittedMerchantId)
       .order("motorcycle_id", { ascending: true });
+
+    if (auctionRoundId) {
+      query = query.eq("auction_round_id", auctionRoundId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw error;
@@ -148,8 +161,15 @@ export default function SummaryPage() {
     const accountId =
       draft.merchantAccountId || merchantSession?.merchantAccountId;
 
+    const auctionRoundId = draft.auctionRoundId ? Number(draft.auctionRoundId) : null;
+
     if (!accountId) {
       setErrorMessage("ไม่พบข้อมูลเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่");
+      return;
+    }
+
+    if (!auctionRoundId) {
+      setErrorMessage("ไม่พบรอบ Auction ปัจจุบัน กรุณากลับไปหน้าเสนอราคาใหม่");
       return;
     }
 
@@ -158,6 +178,7 @@ export default function SummaryPage() {
 
     const offersToSave = draft.offers.map((offer) => ({
       motorcycle_id: Number(offer.motorcycle_id),
+      auction_round_id: auctionRoundId,
       offer_price: Number(offer.price),
     }));
 
@@ -193,6 +214,7 @@ export default function SummaryPage() {
         .select("id, merchant_account_id")
         .eq("id", draft.submittedMerchantId)
         .eq("merchant_account_id", accountId)
+        .eq("auction_round_id", auctionRoundId)
         .limit(1);
 
       if (merchantCheckError) {
@@ -243,6 +265,7 @@ export default function SummaryPage() {
             "motorcycle_id, offer_price, was_edited, original_offer_price"
           )
           .eq("merchant_id", draft.submittedMerchantId)
+          .eq("auction_round_id", auctionRoundId)
           .in("motorcycle_id", submittedMotorcycleIds);
 
       if (existingOfferError) {
@@ -283,6 +306,7 @@ export default function SummaryPage() {
             updated_at: priceChanged ? new Date().toISOString() : null,
           })
           .eq("merchant_id", draft.submittedMerchantId)
+          .eq("auction_round_id", auctionRoundId)
           .eq("motorcycle_id", offer.motorcycle_id);
 
         if (updateOfferError) {
@@ -317,7 +341,8 @@ export default function SummaryPage() {
 
       try {
         finalOffers = await fetchFinalSubmittedOffers(
-          Number(draft.submittedMerchantId)
+          Number(draft.submittedMerchantId),
+          auctionRoundId
         );
       } catch (error) {
         setErrorMessage(
@@ -352,6 +377,7 @@ export default function SummaryPage() {
         .from("merchants")
         .select("id")
         .eq("merchant_account_id", accountId)
+        .eq("auction_round_id", auctionRoundId)
         .limit(1);
 
     if (existingMerchantError) {
@@ -375,6 +401,7 @@ export default function SummaryPage() {
         shop_name: draft.shopName,
         phone: draft.phone,
         merchant_account_id: accountId,
+        auction_round_id: auctionRoundId,
       })
       .select()
       .limit(1);
@@ -473,6 +500,12 @@ export default function SummaryPage() {
           <h1 className="mt-1 text-2xl font-bold text-gray-900">
             {draft.isEditingSubmission ? "ตรวจสอบราคาที่แก้ไข" : "ตรวจสอบราคา"}
           </h1>
+
+          {draft.auctionRoundName && (
+            <p className="mt-2 inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+              รอบ: {draft.auctionRoundName}
+            </p>
+          )}
 
           <p className="mt-2 text-sm text-gray-600">
             {draft.isEditingSubmission

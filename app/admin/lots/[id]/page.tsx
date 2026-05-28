@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
@@ -17,13 +17,24 @@ type Motorcycle = {
   motorcycle_name: string;
   cost_price: number | null;
   active: boolean;
+  stock_motorcycle_id: number | null;
+  auction_round_id: number | null;
+  lot_sale_status: string | null;
+  sold_price: number | null;
+  sold_to_merchant_id: number | null;
+  sold_at: string | null;
+  sold_by_email: string | null;
   motorcycle_photos: MotorcyclePhoto[];
 };
 
 type LotOffer = {
   id: number;
+  merchant_id: number;
   offer_price: number;
   submitted_at: string;
+  was_edited: boolean | null;
+  original_offer_price: number | null;
+  updated_at: string | null;
   merchants: {
     id: number;
     name: string;
@@ -31,6 +42,22 @@ type LotOffer = {
     phone: string;
     merchant_account_id: number | string | null;
   } | null;
+};
+
+type StaffProfile = {
+  id: string;
+  email: string;
+  role: string;
+  active: boolean;
+  expiresAt?: number;
+};
+
+type AuditLogInput = {
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  details?: Record<string, unknown>;
 };
 
 function getRank(offers: LotOffer[], index: number) {
@@ -77,11 +104,37 @@ function formatBaht(value: number | null | undefined) {
   return `${Number(value).toLocaleString()} บาท`;
 }
 
-function formatThaiDateTime(value: string) {
-  return new Date(value).toLocaleString("th-TH", {
+function formatThaiDateTime(value: string | null | undefined) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("th-TH", {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+function getSaleStatusLabel(status?: string | null) {
+  if (status === "in_auction") return "อยู่ในรอบประมูล";
+  if (status === "sold") return "ขายแล้ว";
+  if (status === "unsold") return "ไม่ขาย / กลับเข้าสต็อก";
+  if (status === "cancelled") return "ยกเลิก";
+  return status || "อยู่ในรอบประมูล";
+}
+
+function getSavedStaffProfile() {
+  const savedProfileText = localStorage.getItem("staffProfile");
+
+  if (!savedProfileText) return null;
+
+  try {
+    return JSON.parse(savedProfileText) as StaffProfile;
+  } catch {
+    return null;
+  }
 }
 
 export default function LotResultPage() {
@@ -92,7 +145,34 @@ export default function LotResultPage() {
   const [offers, setOffers] = useState<LotOffer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAllowingEditId, setIsAllowingEditId] = useState<number | null>(null);
+  const [isSellingOfferId, setIsSellingOfferId] = useState<number | null>(null);
+  const [isMarkingUnsold, setIsMarkingUnsold] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function createAuditLog({
+    action,
+    targetType,
+    targetId,
+    targetName,
+    details,
+  }: AuditLogInput) {
+    const staffProfile = getSavedStaffProfile();
+
+    const { error } = await supabase.from("admin_audit_logs").insert({
+      staff_id: staffProfile?.id || null,
+      staff_email: staffProfile?.email || null,
+      staff_role: staffProfile?.role || null,
+      action,
+      target_type: targetType || null,
+      target_id: targetId || null,
+      target_name: targetName || null,
+      details: details || {},
+    });
+
+    if (error) {
+      console.error("Audit log error:", error.message);
+    }
+  }
 
   async function loadLotResult() {
     setIsLoading(true);
@@ -107,6 +187,13 @@ export default function LotResultPage() {
         motorcycle_name,
         cost_price,
         active,
+        stock_motorcycle_id,
+        auction_round_id,
+        lot_sale_status,
+        sold_price,
+        sold_to_merchant_id,
+        sold_at,
+        sold_by_email,
         motorcycle_photos (
           id,
           image_url
@@ -135,8 +222,12 @@ export default function LotResultPage() {
       .select(
         `
         id,
+        merchant_id,
         offer_price,
         submitted_at,
+        was_edited,
+        original_offer_price,
+        updated_at,
         merchants (
           id,
           name,
@@ -179,6 +270,20 @@ export default function LotResultPage() {
   const offerGroups = getOfferGroupsByPrice(offers);
   const topThreeGroups = offerGroups.slice(0, 3);
 
+  const saleStatus = motorcycle?.lot_sale_status || "in_auction";
+  const isSold = saleStatus === "sold";
+  const isUnsold = saleStatus === "unsold";
+
+  const selectedSoldOffer = useMemo(() => {
+    if (!motorcycle?.sold_to_merchant_id) return null;
+
+    return (
+      offers.find(
+        (offer) => Number(offer.merchant_id) === Number(motorcycle.sold_to_merchant_id)
+      ) || null
+    );
+  }, [motorcycle?.sold_to_merchant_id, offers]);
+
   async function allowMerchantEdit(offer: LotOffer) {
     const merchantAccountId = offer.merchants?.merchant_account_id;
 
@@ -216,6 +321,195 @@ export default function LotResultPage() {
     setIsAllowingEditId(null);
   }
 
+  async function markLotSold(offer: LotOffer) {
+    if (!motorcycle) return;
+
+    if (isSold) {
+      alert("Lot นี้ถูกบันทึกว่าขายแล้ว");
+      return;
+    }
+
+    const staffProfile = getSavedStaffProfile();
+    const soldPrice = Number(offer.offer_price || 0);
+    const diff = soldPrice - cost;
+    const shopName = offer.merchants?.shop_name || offer.merchants?.name || "-";
+
+    const confirmSold = confirm(
+      `ยืนยันขาย Lot ${motorcycle.lot_number} ให้ "${shopName}" ใช่หรือไม่?\n\nราคา: ${soldPrice.toLocaleString()} บาท\nกำไรขั้นต้น: ${diff.toLocaleString()} บาท`
+    );
+
+    if (!confirmSold) return;
+
+    setIsSellingOfferId(offer.id);
+    setErrorMessage("");
+
+    try {
+      const { error: soldInsertError } = await supabase
+        .from("sold_motorcycles")
+        .insert({
+          auction_round_id: motorcycle.auction_round_id || null,
+          original_motorcycle_id: motorcycle.id,
+          original_stock_motorcycle_id: motorcycle.stock_motorcycle_id || null,
+          lot_number: motorcycle.lot_number,
+          motorcycle_name: motorcycle.motorcycle_name,
+          cost_price: cost,
+          sold_price: soldPrice,
+          diff,
+          winner_merchant_id: offer.merchant_id,
+          winner_shop_name: offer.merchants?.shop_name || "",
+          winner_contact_name: offer.merchants?.name || "",
+          winner_phone: offer.merchants?.phone || "",
+          sold_by_email: staffProfile?.email || null,
+          note: "ขายจากหน้าผลเสนอราคา Lot",
+        });
+
+      if (soldInsertError) {
+        throw new Error(`บันทึก Sold Archive ไม่สำเร็จ: ${soldInsertError.message}`);
+      }
+
+      const { error: motorcycleUpdateError } = await supabase
+        .from("motorcycles")
+        .update({
+          active: false,
+          lot_sale_status: "sold",
+          sold_price: soldPrice,
+          sold_to_merchant_id: offer.merchant_id,
+          sold_at: new Date().toISOString(),
+          sold_by_email: staffProfile?.email || null,
+        })
+        .eq("id", motorcycle.id);
+
+      if (motorcycleUpdateError) {
+        throw new Error(`อัปเดต Lot ไม่สำเร็จ: ${motorcycleUpdateError.message}`);
+      }
+
+      if (motorcycle.stock_motorcycle_id) {
+        const { error: stockUpdateError } = await supabase
+          .from("stock_motorcycles")
+          .update({
+            stock_status: "sold",
+            current_auction_motorcycle_id: null,
+            current_auction_round_id: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", motorcycle.stock_motorcycle_id);
+
+        if (stockUpdateError) {
+          throw new Error(`อัปเดตรถในคลังไม่สำเร็จ: ${stockUpdateError.message}`);
+        }
+      }
+
+      await createAuditLog({
+        action: "lot_marked_sold",
+        targetType: "motorcycle",
+        targetId: String(motorcycle.id),
+        targetName: `Lot ${motorcycle.lot_number} • ${motorcycle.motorcycle_name}`,
+        details: {
+          motorcycle_id: motorcycle.id,
+          stock_motorcycle_id: motorcycle.stock_motorcycle_id,
+          auction_round_id: motorcycle.auction_round_id,
+          lot_number: motorcycle.lot_number,
+          motorcycle_name: motorcycle.motorcycle_name,
+          sold_price: soldPrice,
+          cost_price: cost,
+          diff,
+          winner_merchant_id: offer.merchant_id,
+          winner_shop_name: offer.merchants?.shop_name || "",
+          winner_contact_name: offer.merchants?.name || "",
+          winner_phone: offer.merchants?.phone || "",
+        },
+      });
+
+      alert(`บันทึกขาย Lot ${motorcycle.lot_number} เรียบร้อยแล้ว`);
+      await loadLotResult();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "บันทึกขายไม่สำเร็จ";
+
+      setErrorMessage(message);
+    }
+
+    setIsSellingOfferId(null);
+  }
+
+  async function markLotUnsold() {
+    if (!motorcycle) return;
+
+    if (isSold) {
+      alert("Lot นี้ขายแล้ว ไม่สามารถย้ายกลับเข้าสต็อกได้จากหน้านี้");
+      return;
+    }
+
+    const confirmUnsold = confirm(
+      `ต้องการปิด Lot ${motorcycle.lot_number} เป็น "ไม่ขาย / กลับเข้าสต็อก" ใช่หรือไม่?\n\nระบบจะซ่อน Lot นี้จากหน้า Merchant และทำให้รถในคลังพร้อมนำไปรอบถัดไป`
+    );
+
+    if (!confirmUnsold) return;
+
+    setIsMarkingUnsold(true);
+    setErrorMessage("");
+
+    try {
+      const { error: motorcycleUpdateError } = await supabase
+        .from("motorcycles")
+        .update({
+          active: false,
+          lot_sale_status: "unsold",
+          sold_price: null,
+          sold_to_merchant_id: null,
+          sold_at: null,
+          sold_by_email: null,
+        })
+        .eq("id", motorcycle.id);
+
+      if (motorcycleUpdateError) {
+        throw new Error(`อัปเดต Lot ไม่สำเร็จ: ${motorcycleUpdateError.message}`);
+      }
+
+      if (motorcycle.stock_motorcycle_id) {
+        const { error: stockUpdateError } = await supabase
+          .from("stock_motorcycles")
+          .update({
+            stock_status: "ready_to_sell",
+            current_auction_motorcycle_id: null,
+            current_auction_round_id: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", motorcycle.stock_motorcycle_id);
+
+        if (stockUpdateError) {
+          throw new Error(`อัปเดตรถในคลังไม่สำเร็จ: ${stockUpdateError.message}`);
+        }
+      }
+
+      await createAuditLog({
+        action: "lot_marked_unsold",
+        targetType: "motorcycle",
+        targetId: String(motorcycle.id),
+        targetName: `Lot ${motorcycle.lot_number} • ${motorcycle.motorcycle_name}`,
+        details: {
+          motorcycle_id: motorcycle.id,
+          stock_motorcycle_id: motorcycle.stock_motorcycle_id,
+          auction_round_id: motorcycle.auction_round_id,
+          lot_number: motorcycle.lot_number,
+          motorcycle_name: motorcycle.motorcycle_name,
+          status_after: "unsold",
+          stock_status_after: "ready_to_sell",
+        },
+      });
+
+      alert(`ปิด Lot ${motorcycle.lot_number} และส่งกลับเข้าสต็อกเรียบร้อยแล้ว`);
+      await loadLotResult();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "ส่งกลับเข้าสต็อกไม่สำเร็จ";
+
+      setErrorMessage(message);
+    }
+
+    setIsMarkingUnsold(false);
+  }
+
   function exportLotOffersCsv() {
     if (!motorcycle) return;
 
@@ -223,12 +517,15 @@ export default function LotResultPage() {
       "อันดับ",
       "Lot",
       "รายการรถ",
+      "สถานะขาย",
       "ต้นทุน",
       "ราคาเสนอ",
       "กำไรขั้นต้น",
       "ผู้ติดต่อ",
       "ร้านค้า",
       "โทร",
+      "แก้ไขแล้ว",
+      "ราคาเดิม",
       "เวลาส่ง",
     ];
 
@@ -239,12 +536,15 @@ export default function LotResultPage() {
         getRank(offers, index),
         motorcycle.lot_number,
         motorcycle.motorcycle_name,
+        getSaleStatusLabel(motorcycle.lot_sale_status),
         cost || "",
         offerPrice,
         cost ? offerPrice - cost : "",
         offer.merchants?.name || "",
         offer.merchants?.shop_name || "",
         offer.merchants?.phone || "",
+        offer.was_edited ? "แก้ไขแล้ว" : "",
+        offer.original_offer_price || "",
         new Date(offer.submitted_at).toLocaleString("th-TH"),
       ];
     });
@@ -274,12 +574,16 @@ export default function LotResultPage() {
     const offerPrice = Number(offer.offer_price || 0);
     const profit = offerPrice - cost;
     const isTopWinner = highestPrice !== null && offerPrice === highestPrice;
+    const isSoldWinner =
+      isSold && Number(motorcycle?.sold_to_merchant_id) === Number(offer.merchant_id);
 
     return (
       <article
         key={offer.id}
         className={
-          isTopWinner
+          isSoldWinner
+            ? "rounded-2xl border border-purple-200 bg-purple-50 p-4 shadow-sm"
+            : isTopWinner
             ? "rounded-2xl border border-green-200 bg-green-50 p-4 shadow-sm"
             : "rounded-2xl border bg-white p-4 shadow-sm"
         }
@@ -288,12 +592,15 @@ export default function LotResultPage() {
           <div>
             <p
               className={
-                isTopWinner
+                isSoldWinner
+                  ? "text-sm font-bold text-purple-700"
+                  : isTopWinner
                   ? "text-sm font-bold text-green-700"
                   : "text-sm font-bold text-gray-700"
               }
             >
               อันดับ {rank === 1 ? "1 🏆" : rank}
+              {isSoldWinner ? " • ขายแล้ว" : ""}
             </p>
 
             <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -341,20 +648,39 @@ export default function LotResultPage() {
           <div className="flex justify-between gap-3">
             <span className="text-gray-500">เวลาส่ง</span>
             <span className="text-right font-medium text-gray-900">
-              {formatThaiDateTime(offer.submitted_at)}
+              {formatThaiDateTime(offer.updated_at || offer.submitted_at)}
             </span>
           </div>
+
+          {offer.was_edited && (
+            <div className="rounded-xl bg-yellow-100 px-3 py-2 text-xs font-bold text-yellow-800">
+              แก้ไขแล้ว
+              {offer.original_offer_price
+                ? ` • เดิม ${Number(offer.original_offer_price).toLocaleString()} บาท`
+                : ""}
+            </div>
+          )}
         </div>
 
-        <button
-          onClick={() => allowMerchantEdit(offer)}
-          disabled={isAllowingEditId === offer.id}
-          className="mt-3 w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isAllowingEditId === offer.id
-            ? "กำลังเปิดให้แก้..."
-            : "เปิดให้แก้ราคา"}
-        </button>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <button
+            onClick={() => markLotSold(offer)}
+            disabled={isSold || isUnsold || isSellingOfferId === offer.id}
+            className="rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {isSellingOfferId === offer.id ? "กำลังขาย..." : "ขายให้ร้านนี้"}
+          </button>
+
+          <button
+            onClick={() => allowMerchantEdit(offer)}
+            disabled={isSold || isUnsold || isAllowingEditId === offer.id}
+            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAllowingEditId === offer.id
+              ? "กำลังเปิดให้แก้..."
+              : "เปิดให้แก้ราคา"}
+          </button>
+        </div>
       </article>
     );
   }
@@ -400,15 +726,29 @@ export default function LotResultPage() {
                     </p>
                   </div>
 
-                  {motorcycle.active ? (
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                      แสดงอยู่
+                  <div className="flex flex-col items-start gap-2 sm:items-end">
+                    {isSold ? (
+                      <span className="rounded-full bg-purple-100 px-3 py-1 text-sm font-semibold text-purple-700">
+                        ขายแล้ว
+                      </span>
+                    ) : isUnsold ? (
+                      <span className="rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-800">
+                        ไม่ขาย / กลับเข้าสต็อก
+                      </span>
+                    ) : motorcycle.active ? (
+                      <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+                        แสดงอยู่
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
+                        ซ่อนอยู่
+                      </span>
+                    )}
+
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                      {getSaleStatusLabel(saleStatus)}
                     </span>
-                  ) : (
-                    <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                      ซ่อนอยู่
-                    </span>
-                  )}
+                  </div>
                 </div>
 
                 {motorcycle.motorcycle_photos?.length > 0 && (
@@ -478,6 +818,75 @@ export default function LotResultPage() {
                 </div>
               </section>
 
+              <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      จัดการสถานะขาย
+                    </h2>
+
+                    <p className="mt-1 text-sm text-gray-600">
+                      ใช้ปิด Lot หลังตัดสินใจขาย หรือส่งรถกลับเข้าสต็อกถ้าไม่ขาย
+                    </p>
+                  </div>
+
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700">
+                    {getSaleStatusLabel(saleStatus)}
+                  </span>
+                </div>
+
+                {isSold ? (
+                  <div className="mt-4 rounded-2xl border border-purple-200 bg-purple-50 p-4 text-purple-800">
+                    <p className="font-bold">Lot นี้ขายแล้ว</p>
+                    <p className="mt-1 text-sm">
+                      ราคา: {formatBaht(motorcycle.sold_price)} • ร้าน:{" "}
+                      {selectedSoldOffer?.merchants?.shop_name || "-"} • เวลา:{" "}
+                      {formatThaiDateTime(motorcycle.sold_at)}
+                    </p>
+                  </div>
+                ) : isUnsold ? (
+                  <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800">
+                    <p className="font-bold">Lot นี้ถูกส่งกลับเข้าสต็อกแล้ว</p>
+                    <p className="mt-1 text-sm">
+                      สามารถนำรถจากคลังเข้าสู่รอบถัดไปได้
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      onClick={() => {
+                        if (topWinnerOffers.length === 1) {
+                          markLotSold(topWinnerOffers[0]);
+                          return;
+                        }
+
+                        alert(
+                          "อันดับ 1 มีมากกว่า 1 ร้าน กรุณาเลือกขายให้ร้านจากตารางด้านล่าง"
+                        );
+                      }}
+                      disabled={
+                        offers.length === 0 ||
+                        topWinnerOffers.length !== 1 ||
+                        isSellingOfferId !== null
+                      }
+                      className="rounded-2xl bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      ยืนยันขายให้ร้านอันดับ 1
+                    </button>
+
+                    <button
+                      onClick={markLotUnsold}
+                      disabled={isMarkingUnsold}
+                      className="rounded-2xl border border-yellow-300 bg-yellow-50 px-5 py-3 font-semibold text-yellow-800 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isMarkingUnsold
+                        ? "กำลังส่งกลับ..."
+                        : "ไม่ขาย / กลับเข้าสต็อก"}
+                    </button>
+                  </div>
+                )}
+              </section>
+
               {topThreeGroups.length > 0 && (
                 <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
                   <h2 className="text-xl font-bold text-gray-900">
@@ -544,15 +953,27 @@ export default function LotResultPage() {
                                   {offer.merchants?.phone || "-"}
                                 </p>
 
-                                <button
-                                  onClick={() => allowMerchantEdit(offer)}
-                                  disabled={isAllowingEditId === offer.id}
-                                  className="mt-2 w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {isAllowingEditId === offer.id
-                                    ? "กำลังเปิด..."
-                                    : "เปิดให้แก้ราคา"}
-                                </button>
+                                <div className="mt-2 grid gap-2">
+                                  <button
+                                    onClick={() => markLotSold(offer)}
+                                    disabled={isSold || isUnsold || isSellingOfferId === offer.id}
+                                    className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                                  >
+                                    {isSellingOfferId === offer.id
+                                      ? "กำลังขาย..."
+                                      : "ขายให้ร้านนี้"}
+                                  </button>
+
+                                  <button
+                                    onClick={() => allowMerchantEdit(offer)}
+                                    disabled={isSold || isUnsold || isAllowingEditId === offer.id}
+                                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isAllowingEditId === offer.id
+                                      ? "กำลังเปิด..."
+                                      : "เปิดให้แก้ราคา"}
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -563,14 +984,14 @@ export default function LotResultPage() {
                 </section>
               )}
 
-              {hasTieWinner && (
+              {hasTieWinner && !isSold && !isUnsold && (
                 <section className="mt-5 rounded-3xl border border-orange-200 bg-orange-50 p-5 text-orange-800">
                   <p className="text-lg font-bold">
                     มีผู้เสนอราคาสูงสุดเท่ากัน {topWinnerOffers.length} ราย
                   </p>
 
                   <p className="mt-1 text-sm">
-                    ระบบจะแสดงเป็นอันดับ 1 ทั้งหมด และให้ตกลงกันภายหลัง
+                    ระบบจะแสดงเป็นอันดับ 1 ทั้งหมด กรุณาเลือกขายให้ร้านจากรายการด้านล่าง
                   </p>
                 </section>
               )}
@@ -630,6 +1051,7 @@ export default function LotResultPage() {
                             <th className="p-3">ผู้ติดต่อ</th>
                             <th className="p-3">ร้าน</th>
                             <th className="p-3">โทร</th>
+                            <th className="p-3">สถานะ</th>
                             <th className="p-3">เวลาส่ง</th>
                             <th className="p-3">จัดการ</th>
                           </tr>
@@ -643,12 +1065,18 @@ export default function LotResultPage() {
                             const isTopWinner =
                               highestPrice !== null &&
                               offerPrice === highestPrice;
+                            const isSoldWinner =
+                              isSold &&
+                              Number(motorcycle.sold_to_merchant_id) ===
+                                Number(offer.merchant_id);
 
                             return (
                               <tr
                                 key={offer.id}
                                 className={
-                                  isTopWinner
+                                  isSoldWinner
+                                    ? "border-b bg-purple-50"
+                                    : isTopWinner
                                     ? "border-b bg-green-50"
                                     : "border-b"
                                 }
@@ -686,19 +1114,55 @@ export default function LotResultPage() {
                                 </td>
 
                                 <td className="p-3">
-                                  {formatThaiDateTime(offer.submitted_at)}
+                                  {isSoldWinner ? (
+                                    <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-bold text-purple-700">
+                                      ขายแล้ว
+                                    </span>
+                                  ) : offer.was_edited ? (
+                                    <span className="rounded-full bg-yellow-100 px-2 py-1 text-xs font-bold text-yellow-800">
+                                      แก้ไขแล้ว
+                                    </span>
+                                  ) : (
+                                    "-"
+                                  )}
                                 </td>
 
                                 <td className="p-3">
-                                  <button
-                                    onClick={() => allowMerchantEdit(offer)}
-                                    disabled={isAllowingEditId === offer.id}
-                                    className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {isAllowingEditId === offer.id
-                                      ? "กำลังเปิด..."
-                                      : "เปิดให้แก้ราคา"}
-                                  </button>
+                                  {formatThaiDateTime(
+                                    offer.updated_at || offer.submitted_at
+                                  )}
+                                </td>
+
+                                <td className="p-3">
+                                  <div className="flex flex-col gap-2">
+                                    <button
+                                      onClick={() => markLotSold(offer)}
+                                      disabled={
+                                        isSold ||
+                                        isUnsold ||
+                                        isSellingOfferId === offer.id
+                                      }
+                                      className="rounded-xl bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                                    >
+                                      {isSellingOfferId === offer.id
+                                        ? "กำลังขาย..."
+                                        : "ขายให้ร้านนี้"}
+                                    </button>
+
+                                    <button
+                                      onClick={() => allowMerchantEdit(offer)}
+                                      disabled={
+                                        isSold ||
+                                        isUnsold ||
+                                        isAllowingEditId === offer.id
+                                      }
+                                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {isAllowingEditId === offer.id
+                                        ? "กำลังเปิด..."
+                                        : "เปิดให้แก้ราคา"}
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
