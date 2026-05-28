@@ -10,6 +10,9 @@ type AdminOffer = {
   motorcycle_id: number;
   offer_price: number;
   submitted_at: string;
+  was_edited: boolean | null;
+  original_offer_price: number | null;
+  updated_at: string | null;
   merchants: {
     name: string;
     shop_name: string;
@@ -65,6 +68,7 @@ type AuditLogInput = {
 type ArchiveResult = {
   roundId: number;
   roundName: string;
+  archivedLotCount: number;
   archivedOfferCount: number;
 } | null;
 
@@ -307,6 +311,9 @@ export default function AdminPage() {
         motorcycle_id,
         offer_price,
         submitted_at,
+        was_edited,
+        original_offer_price,
+        updated_at,
         merchants (
           name,
           shop_name,
@@ -608,88 +615,96 @@ export default function AdminPage() {
     return chunks;
   }
 
-  async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
+ async function archiveCurrentAuctionBeforeReset(): Promise<ArchiveResult> {
+  if (offers.length === 0) {
+    return null;
+  }
+
+  const { data, error } = await supabase.rpc("archive_current_auction", {
+    p_email: staffProfile?.email || null,
+    p_role: staffProfile?.role || null,
+    p_note: "บันทึกจากหน้า Admin Dashboard",
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const archiveRow = Array.isArray(data) ? data[0] : data;
+
+  if (!archiveRow) {
+    throw new Error("บันทึกประวัติไม่สำเร็จ: ไม่พบข้อมูลที่ส่งกลับจากฐานข้อมูล");
+  }
+
+  return {
+    roundId: Number(archiveRow.round_id),
+    roundName: String(archiveRow.round_name || "Auction Round"),
+    archivedLotCount: Number(archiveRow.archived_lot_count || 0),
+    archivedOfferCount: Number(archiveRow.archived_offer_count || 0),
+  };
+}
+
+  async function archiveCurrentAuctionOnly() {
+    if (staffProfile?.role !== "owner") {
+      setErrorMessage("เฉพาะบัญชี Owner เท่านั้นที่บันทึกประวัติรอบได้");
+      return;
+    }
+
     if (offers.length === 0) {
-      return null;
+      alert("ยังไม่มีข้อมูลเสนอราคาให้บันทึกประวัติ");
+      return;
     }
 
-    const archiveDate = new Date();
-    const roundName = `รอบวันที่ ${formatThaiDate(
-      archiveDate
-    )} เวลา ${formatThaiTime(archiveDate)}`;
+    const confirmArchive = confirm(
+      "ต้องการบันทึกประวัติรอบ Auction ปัจจุบันใช่หรือไม่? ระบบจะยังไม่ล้างข้อมูลปัจจุบัน"
+    );
 
-    const { data: roundData, error: roundError } = await supabase
-      .from("auction_rounds")
-      .insert({
-        round_name: roundName,
-        auction_status: auctionStatus,
-        exported_by_email: staffProfile?.email || null,
-        created_by_email: staffProfile?.email || null,
-        total_lots_with_offers: uniqueMotorcycles.size,
-        total_merchants: uniqueMerchants.size,
-        total_offers: offers.length,
-        total_highest_value: totalHighestOfferValue,
-        total_cost: totalCostForSubmittedLots,
-        total_gross_profit: totalGrossProfit,
-      })
-      .select("id")
-      .single();
+    if (!confirmArchive) return;
 
-    if (roundError || !roundData) {
-      throw new Error(
-        roundError?.message || "ไม่สามารถสร้างประวัติรอบการเสนอราคาได้"
-      );
-    }
+    setIsLoading(true);
+    setErrorMessage("");
 
-    const archiveRows = lotResults.flatMap((lot) => {
-      const groups = getOfferGroupsByPrice(lot.offers);
-      const cost = Number(lot.motorcycle?.cost_price || 0);
+    try {
+      const archiveResult = await archiveCurrentAuctionBeforeReset();
 
-      return groups.flatMap((group, groupIndex) => {
-        const rankNumber = groupIndex + 1;
-        const isTied = group.length >= 2;
-
-        return group.map((offer) => ({
-          auction_round_id: roundData.id,
-
-          original_offer_id: Number(offer.id),
-          original_merchant_id: Number(offer.merchant_id),
-          original_motorcycle_id: Number(offer.motorcycle_id),
-
-          lot_number: lot.motorcycle?.lot_number || "",
-          motorcycle_name: lot.motorcycle?.motorcycle_name || "",
-          cost_price: cost,
-
-          merchant_name: offer.merchants?.name || "",
-          shop_name: offer.merchants?.shop_name || "",
-          phone: offer.merchants?.phone || "",
-
-          offer_price: Number(offer.offer_price || 0),
-          submitted_at: offer.submitted_at,
-          rank_number: rankNumber,
-          is_tied: isTied,
-          gross_profit: Number(offer.offer_price || 0) - cost,
-        }));
+      await createAuditLog({
+        action: "auction_archived_only",
+        targetType: "auction_round",
+        targetId: archiveResult ? String(archiveResult.roundId) : undefined,
+        targetName: archiveResult?.roundName || "Auction Round",
+        details: {
+          archived_round_id: archiveResult?.roundId || null,
+          archived_round_name: archiveResult?.roundName || null,
+          archived_lot_count: archiveResult?.archivedLotCount || 0,
+          archived_offer_count: archiveResult?.archivedOfferCount || 0,
+          total_lots_with_offers: uniqueMotorcycles.size,
+          total_merchants: uniqueMerchants.size,
+          total_offers: offers.length,
+          total_highest_value: totalHighestOfferValue,
+          total_cost: totalCostForSubmittedLots,
+          total_gross_profit: totalGrossProfit,
+          reset_after_archive: false,
+        },
       });
-    });
 
-    const chunks = chunkArray(archiveRows, 500);
+      alert(
+        `บันทึกประวัติเรียบร้อยแล้ว\n${
+          archiveResult?.roundName || ""
+        }\nจำนวน Lot: ${
+          archiveResult?.archivedLotCount || 0
+        }\nจำนวนราคาเสนอ: ${archiveResult?.archivedOfferCount || 0}`
+      );
 
-    for (const chunk of chunks) {
-      const { error: archiveOffersError } = await supabase
-        .from("auction_round_offers")
-        .insert(chunk);
+      await loadDashboardData();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "เกิดข้อผิดพลาดระหว่างบันทึกประวัติ";
 
-      if (archiveOffersError) {
-        throw new Error(archiveOffersError.message);
-      }
+      setErrorMessage(message);
+      setIsLoading(false);
     }
-
-    return {
-      roundId: Number(roundData.id),
-      roundName,
-      archivedOfferCount: archiveRows.length,
-    };
   }
 
   async function resetAuctionData() {
@@ -783,6 +798,7 @@ export default function AdminPage() {
         details: {
           archived_round_id: archiveResult?.roundId || null,
           archived_round_name: archiveResult?.roundName || null,
+          archived_lot_count: archiveResult?.archivedLotCount || 0,
           archived_offer_count: archiveResult?.archivedOfferCount || 0,
           total_lots_with_offers_before_reset: uniqueMotorcycles.size,
           total_merchants_before_reset: uniqueMerchants.size,
@@ -1315,11 +1331,11 @@ export default function AdminPage() {
             </a>
 
             <a
-  href="/admin/merchant-receipts"
-  className="rounded-xl bg-green-600 px-4 py-3 text-center font-medium text-white hover:bg-green-700 sm:py-2"
->
-  พิมพ์ใบเสนอราคาของร้านค้า
-</a>
+              href="/admin/merchant-receipts"
+              className="rounded-xl bg-green-600 px-4 py-3 text-center font-medium text-white hover:bg-green-700 sm:py-2"
+            >
+              พิมพ์ใบเสนอราคาของร้านค้า
+            </a>
 
             {staffProfile?.role === "owner" && (
               <a
@@ -1368,8 +1384,27 @@ export default function AdminPage() {
               </p>
 
               <p className="mt-1 text-sm text-red-700">
-                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติและล้างราคาปัจจุบัน
+                ใช้เมื่อจบรอบ Auction แล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้างราคาปัจจุบัน
               </p>
+
+              <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <p className="font-semibold text-blue-800">
+                  บันทึกประวัติอย่างเดียว
+                </p>
+
+                <p className="mt-1 text-sm text-blue-700">
+                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูลการเสนอราคาปัจจุบัน
+                </p>
+
+                <button
+                  type="button"
+                  onClick={archiveCurrentAuctionOnly}
+                  disabled={isLoading || offers.length === 0}
+                  className="mt-3 rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 md:py-2"
+                >
+                  บันทึกประวัติรอบนี้
+                </button>
+              </div>
 
               <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                 <input
