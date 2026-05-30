@@ -122,6 +122,12 @@ export default function AdminHistoryDetailPage() {
       active: profile[0].active,
     });
 
+    if (updatedProfile.role !== "owner" && updatedProfile.role !== "admin") {
+      localStorage.removeItem("staffProfile");
+      window.location.href = "/staff-login";
+      return;
+    }
+
     setStaffProfile(updatedProfile);
     setIsCheckingStaff(false);
   }

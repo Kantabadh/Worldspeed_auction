@@ -63,6 +63,22 @@ type AuctionRoundOffer = {
   created_at: string;
 };
 
+type SoldMotorcycleRecord = {
+  original_motorcycle_id: number | null;
+  lot_number: string | null;
+  sold_price: number | null;
+  winner_shop_name: string | null;
+  winner_contact_name: string | null;
+  winner_phone: string | null;
+  note: string | null;
+};
+
+type UnsoldMotorcycleRecord = {
+  original_motorcycle_id: number | null;
+  lot_number: string | null;
+  note: string | null;
+};
+
 function formatBaht(value: number | null | undefined) {
   const numberValue = Number(value || 0);
 
@@ -135,6 +151,10 @@ export default function AdminHistoryPage() {
   const [selectedRoundId, setSelectedRoundId] = useState<number | null>(null);
   const [roundLots, setRoundLots] = useState<AuctionRoundLot[]>([]);
   const [roundOffers, setRoundOffers] = useState<AuctionRoundOffer[]>([]);
+  const [soldRecords, setSoldRecords] = useState<SoldMotorcycleRecord[]>([]);
+  const [unsoldRecords, setUnsoldRecords] = useState<UnsoldMotorcycleRecord[]>(
+    []
+  );
 
   const [searchText, setSearchText] = useState("");
   const [isLoadingRounds, setIsLoadingRounds] = useState(true);
@@ -254,8 +274,42 @@ export default function AdminHistoryPage() {
       return;
     }
 
+    const { data: soldData, error: soldError } = await supabase
+      .from("sold_motorcycles")
+      .select(
+        `
+        original_motorcycle_id,
+        lot_number,
+        sold_price,
+        winner_shop_name,
+        winner_contact_name,
+        winner_phone,
+        note
+      `
+      )
+      .eq("auction_round_id", roundId);
+
+    if (soldError) {
+      setErrorMessage(soldError.message);
+      setIsLoadingDetails(false);
+      return;
+    }
+
+    const { data: unsoldData, error: unsoldError } = await supabase
+      .from("unsold_motorcycles")
+      .select("original_motorcycle_id, lot_number, note")
+      .eq("auction_round_id", roundId);
+
+    if (unsoldError) {
+      setErrorMessage(unsoldError.message);
+      setIsLoadingDetails(false);
+      return;
+    }
+
     setRoundLots((lotData as AuctionRoundLot[]) || []);
     setRoundOffers((offerData as AuctionRoundOffer[]) || []);
+    setSoldRecords((soldData as SoldMotorcycleRecord[]) || []);
+    setUnsoldRecords((unsoldData as UnsoldMotorcycleRecord[]) || []);
     setIsLoadingDetails(false);
   }
 
@@ -305,6 +359,72 @@ export default function AdminHistoryPage() {
     return map;
   }, [roundOffers]);
 
+  const soldRecordByLotKey = useMemo(() => {
+    const map = new Map<string, SoldMotorcycleRecord>();
+
+    soldRecords.forEach((record) => {
+      if (record.original_motorcycle_id) {
+        map.set(`id:${record.original_motorcycle_id}`, record);
+      }
+      if (record.lot_number) {
+        map.set(`lot:${record.lot_number}`, record);
+      }
+    });
+
+    return map;
+  }, [soldRecords]);
+
+  const unsoldRecordByLotKey = useMemo(() => {
+    const map = new Map<string, UnsoldMotorcycleRecord>();
+
+    unsoldRecords.forEach((record) => {
+      if (record.original_motorcycle_id) {
+        map.set(`id:${record.original_motorcycle_id}`, record);
+      }
+      if (record.lot_number) {
+        map.set(`lot:${record.lot_number}`, record);
+      }
+    });
+
+    return map;
+  }, [unsoldRecords]);
+
+  function getLotFinalResult(lot: AuctionRoundLot) {
+    const idKey = lot.original_motorcycle_id
+      ? `id:${lot.original_motorcycle_id}`
+      : "";
+    const lotKey = lot.lot_number ? `lot:${lot.lot_number}` : "";
+    const soldRecord =
+      soldRecordByLotKey.get(idKey) || soldRecordByLotKey.get(lotKey);
+    const unsoldRecord =
+      unsoldRecordByLotKey.get(idKey) || unsoldRecordByLotKey.get(lotKey);
+
+    if (soldRecord) {
+      return {
+        status: "ขายแล้ว",
+        soldPrice: soldRecord.sold_price,
+        merchant: soldRecord.winner_shop_name || "-",
+        note: soldRecord.note || "",
+      };
+    }
+
+    if (unsoldRecord) {
+      return {
+        status: "ไม่ขาย / กลับเข้าสต็อก",
+        soldPrice: null,
+        merchant: "-",
+        note: unsoldRecord.note || "",
+      };
+    }
+
+    return {
+      status: "-",
+      soldPrice: null,
+      merchant: lot.winner_shop_name || "-",
+      note: "",
+    };
+  }
+
   function exportRoundLotsExcel() {
     if (!selectedRound) return;
 
@@ -316,25 +436,29 @@ export default function AdminHistoryPage() {
       "เลขตัวถัง",
       "มาจาก",
       "ทุน",
-      "ราคาสูงสุด",
-      "ผู้ชนะ",
-      "อันดับ 2",
-      "กำไรขั้นต้น",
+      "ราคาขาย",
+      "ผู้ซื้อ/ร้านค้า",
+      "สถานะผล",
+      "หมายเหตุ",
     ];
 
-    const rows = roundLots.map((lot) => [
-      lot.lot_number || "-",
-      lot.motorcycle_name || "-",
-      lot.brand || "-",
-      lot.model || "-",
-      lot.frame_number || "-",
-      lot.source_name || "-",
-      lot.cost_price == null ? "-" : Number(lot.cost_price || 0),
-      lot.highest_offer == null ? "-" : Number(lot.highest_offer || 0),
-      lot.winner_shop_name || "-",
-      lot.second_place_text || "-",
-      lot.diff == null ? "-" : Number(lot.diff || 0),
-    ]);
+    const rows = roundLots.map((lot) => {
+      const result = getLotFinalResult(lot);
+
+      return [
+        lot.lot_number || "-",
+        lot.motorcycle_name || "-",
+        lot.brand || "-",
+        lot.model || "-",
+        lot.frame_number || "-",
+        lot.source_name || "-",
+        lot.cost_price == null ? "-" : Number(lot.cost_price || 0),
+        result.soldPrice == null ? "-" : Number(result.soldPrice || 0),
+        result.merchant || "-",
+        result.status,
+        result.note || "-",
+      ];
+    });
 
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -537,12 +661,18 @@ export default function AdminHistoryPage() {
                                   </th>
                                   <th className="border p-3">ผู้ชนะ</th>
                                   <th className="border p-3">อันดับ 2</th>
+                                  <th className="border p-3">สถานะผล</th>
+                                  <th className="border p-3 text-right">ราคาขาย</th>
+                                  <th className="border p-3">หมายเหตุ</th>
                                   <th className="border p-3 text-right">กำไรขั้นต้น</th>
                                 </tr>
                               </thead>
 
                               <tbody>
-                                {roundLots.map((lot) => (
+                                {roundLots.map((lot) => {
+                                  const result = getLotFinalResult(lot);
+
+                                  return (
                                   <tr key={lot.id} className="hover:bg-gray-50">
                                     <td className="border p-3 font-bold">
                                       {lot.lot_number || "-"}
@@ -590,6 +720,18 @@ export default function AdminHistoryPage() {
                                       {lot.second_place_text || "-"}
                                     </td>
 
+                                    <td className="border p-3 font-semibold">
+                                      {result.status}
+                                    </td>
+
+                                    <td className="border p-3 text-right font-bold">
+                                      {formatBaht(result.soldPrice)}
+                                    </td>
+
+                                    <td className="border p-3 text-xs text-gray-600">
+                                      {result.note || "-"}
+                                    </td>
+
                                     <td
                                       className={
                                         Number(lot.diff || 0) >= 0
@@ -600,7 +742,8 @@ export default function AdminHistoryPage() {
                                       {formatBaht(lot.diff)}
                                     </td>
                                   </tr>
-                                ))}
+                                );
+                                })}
                               </tbody>
                             </table>
                           </div>

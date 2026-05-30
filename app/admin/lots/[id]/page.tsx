@@ -475,7 +475,7 @@ setIsAllowingEditId(null);
         const { error: stockUpdateError } = await supabase
           .from("stock_motorcycles")
           .update({
-            stock_status: "sold",
+            stock_status: "ขายแล้ว",
             current_auction_motorcycle_id: null,
             current_auction_round_id: null,
             updated_at: new Date().toISOString(),
@@ -562,6 +562,10 @@ setIsAllowingEditId(null);
 
     try {
             const staffProfile = getSavedStaffProfile();
+      const returnedAt = new Date().toISOString();
+      const returnNote = `กลับเข้าสต็อกจากรอบ ${
+        motorcycle.auction_round_id ? `#${motorcycle.auction_round_id}` : "-"
+      } วันที่ ${formatThaiDateTime(returnedAt)}`;
       const highestOffer = offers.length > 0 ? offers[0] : null;
       const highestOfferPrice = highestOffer
         ? Number(highestOffer.offer_price || 0)
@@ -585,7 +589,7 @@ setIsAllowingEditId(null);
           highest_contact_name: highestOffer?.merchants?.name || "",
           highest_phone: highestOffer?.merchants?.phone || "",
           returned_by_email: staffProfile?.email || null,
-          note: "ไม่ขาย / กลับเข้าสต็อกจากหน้าผลเสนอราคา Lot",
+          note: returnNote,
         });
 
       if (unsoldInsertError) {
@@ -614,10 +618,11 @@ setIsAllowingEditId(null);
         const { error: stockUpdateError } = await supabase
           .from("stock_motorcycles")
           .update({
-            stock_status: "ready_to_sell",
+            stock_status: "อยู่ในสต็อก",
             current_auction_motorcycle_id: null,
             current_auction_round_id: null,
-            updated_at: new Date().toISOString(),
+            notes: returnNote,
+            updated_at: returnedAt,
           })
           .eq("id", motorcycle.stock_motorcycle_id);
 
@@ -638,7 +643,8 @@ setIsAllowingEditId(null);
           lot_number: motorcycle.lot_number,
           motorcycle_name: motorcycle.motorcycle_name,
           status_after: "unsold",
-          stock_status_after: "ready_to_sell",
+          stock_status_after: "อยู่ในสต็อก",
+          return_note: returnNote,
         },
       });
 

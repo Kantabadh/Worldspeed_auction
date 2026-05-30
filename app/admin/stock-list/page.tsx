@@ -12,12 +12,16 @@ type StockPhoto = {
 
 type StockStatus =
   | "in_stock"
+  | "อยู่ในสต็อก"
   | "repairing"
   | "ready_to_sell"
   | "in_auction"
   | "อยู่ในรอบเสนอราคา"
   | "sold"
+  | "ขายแล้ว"
   | "cancelled";
+
+type StatusFilter = "all" | "in_stock" | "in_auction" | "sold" | "returned";
 
 type StockMotorcycle = {
   id: number;
@@ -89,11 +93,13 @@ type RoundMotorcycle = {
 
 const statusLabels: Record<string, string> = {
   in_stock: "อยู่ในสต็อก",
+  "อยู่ในสต็อก": "อยู่ในสต็อก",
   repairing: "กำลังซ่อม",
   ready_to_sell: "พร้อมขาย",
   in_auction: "อยู่ในรอบเสนอราคา",
   "อยู่ในรอบเสนอราคา": "อยู่ในรอบเสนอราคา",
   sold: "ขายแล้ว",
+  "ขายแล้ว": "ขายแล้ว",
   cancelled: "ยกเลิก",
 };
 
@@ -104,14 +110,27 @@ const statusBadges: Record<string, string> = {
   in_auction: "bg-blue-100 text-blue-700",
   "อยู่ในรอบเสนอราคา": "bg-blue-100 text-blue-700",
   sold: "bg-purple-100 text-purple-700",
+  "ขายแล้ว": "bg-purple-100 text-purple-700",
   cancelled: "bg-red-100 text-red-700",
 };
+
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "in_stock", label: "อยู่ในสต็อก" },
+  { value: "in_auction", label: "อยู่ในรอบเสนอราคา" },
+  { value: "sold", label: "ขายแล้ว" },
+  { value: "returned", label: "เคยกลับเข้าสต็อก" },
+];
 
 function getStatusLabel(status: string | null | undefined) {
   return status ? statusLabels[status] || status : "-";
 }
 
 function getStockLocationLabel(bike: StockMotorcycle) {
+  if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
+    return "ขายแล้ว";
+  }
+
   if (bike.current_auction_round_id || bike.current_auction_motorcycle_id) {
     return "อยู่ในรอบเสนอราคา";
   }
@@ -120,6 +139,10 @@ function getStockLocationLabel(bike: StockMotorcycle) {
 }
 
 function getStockLocationBadge(bike: StockMotorcycle) {
+  if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
+    return "bg-purple-100 text-purple-700";
+  }
+
   if (bike.current_auction_round_id || bike.current_auction_motorcycle_id) {
     return "bg-blue-100 text-blue-700";
   }
@@ -189,6 +212,7 @@ function canSendStockBikeToRound(bike: StockMotorcycle) {
   if (bike.stock_status === "in_auction") return false;
   if (bike.stock_status === "อยู่ในรอบเสนอราคา") return false;
   if (bike.stock_status === "sold") return false;
+  if (bike.stock_status === "ขายแล้ว") return false;
   if (bike.stock_status === "repairing") return false;
   if (bike.stock_status === "cancelled") return false;
   return true;
@@ -218,6 +242,10 @@ export default function AdminStockListPage() {
   );
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [returnedStockIds, setReturnedStockIds] = useState<Set<number>>(
+    new Set()
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -348,12 +376,35 @@ export default function AdminStockListPage() {
     setStockMotorcycles((data as StockMotorcycle[]) || []);
   }
 
+  async function loadReturnedStockIds() {
+    const { data, error } = await supabase
+      .from("unsold_motorcycles")
+      .select("original_stock_motorcycle_id");
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setReturnedStockIds(
+      new Set(
+        ((data || []) as { original_stock_motorcycle_id: number | null }[])
+          .map((item) => item.original_stock_motorcycle_id)
+          .filter((id): id is number => typeof id === "number")
+      )
+    );
+  }
+
   async function loadPageData() {
     setIsLoading(true);
     setErrorMessage("");
     setSuccessMessage("");
 
-    await Promise.all([loadCurrentAuctionRound(), loadStockMotorcycles()]);
+    await Promise.all([
+      loadCurrentAuctionRound(),
+      loadStockMotorcycles(),
+      loadReturnedStockIds(),
+    ]);
 
     setIsLoading(false);
   }
@@ -365,9 +416,28 @@ export default function AdminStockListPage() {
   const filteredStockMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
-    if (!keyword) return stockMotorcycles;
-
     return stockMotorcycles.filter((bike) => {
+      if (statusFilter === "in_stock" && getStockLocationLabel(bike) !== "อยู่ในสต็อก") {
+        return false;
+      }
+
+      if (
+        statusFilter === "in_auction" &&
+        getStockLocationLabel(bike) !== "อยู่ในรอบเสนอราคา"
+      ) {
+        return false;
+      }
+
+      if (statusFilter === "sold" && getStockLocationLabel(bike) !== "ขายแล้ว") {
+        return false;
+      }
+
+      if (statusFilter === "returned" && !returnedStockIds.has(bike.id)) {
+        return false;
+      }
+
+      if (!keyword) return true;
+
       const searchableText = [
         bike.stock_number,
         bike.motorcycle_name,
@@ -387,7 +457,7 @@ export default function AdminStockListPage() {
 
       return searchableText.includes(keyword);
     });
-  }, [stockMotorcycles, searchText]);
+  }, [stockMotorcycles, searchText, statusFilter, returnedStockIds]);
 
   const selectableIds = filteredStockMotorcycles
     .filter((bike) => canSendStockBikeToRound(bike))
@@ -829,6 +899,21 @@ export default function AdminStockListPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
+              {statusFilterOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setStatusFilter(option.value)}
+                  className={
+                    statusFilter === option.value
+                      ? "rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
+                      : "rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100"
+                  }
+                >
+                  {option.label}
+                </button>
+              ))}
+
               <button
                 type="button"
                 onClick={toggleAllVisible}
@@ -943,6 +1028,11 @@ export default function AdminStockListPage() {
                             {!canSend && (
                               <p className="mt-2 text-xs text-gray-500">
                                 ไม่พร้อมส่งเข้ารอบ
+                              </p>
+                            )}
+                            {returnedStockIds.has(bike.id) && (
+                              <p className="mt-2 text-xs font-semibold text-yellow-700">
+                                เคยกลับเข้าสต็อก
                               </p>
                             )}
                           </td>

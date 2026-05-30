@@ -72,6 +72,8 @@ type ArrangementMotorcycle = {
   active: boolean | null;
   lot_sale_status: string | null;
   auction_round_id: number | null;
+  sold_price: number | null;
+  sold_to_merchant_id: number | null;
 };
 
 type RoundLotMapping = {
@@ -94,6 +96,23 @@ type WinnerChooser = {
   offers: AdminOffer[];
   mode: "winner" | "runner-up";
 } | null;
+
+type SoldMotorcycleRecord = {
+  original_motorcycle_id: number | null;
+  sold_price: number | null;
+  winner_merchant_id: number | null;
+  winner_shop_name: string | null;
+  winner_contact_name: string | null;
+  winner_phone: string | null;
+  note: string | null;
+};
+
+type UnsoldMotorcycleRecord = {
+  original_motorcycle_id: number | null;
+  highest_offer: number | null;
+  highest_shop_name: string | null;
+  note: string | null;
+};
 
 function formatThaiDate(value: string | null | undefined) {
   if (!value) return "-";
@@ -171,7 +190,7 @@ function getOfferGroupsByPrice(offers: AdminOffer[]) {
 
 function getSaleStatusLabel(status?: string | null) {
   if (status === "sold") return "ขายแล้ว";
-  if (status === "unsold") return "กลับเข้าสต็อกแล้ว";
+  if (status === "unsold") return "ไม่ขาย / กลับเข้าสต็อก";
   return "รอดำเนินการ";
 }
 
@@ -203,12 +222,6 @@ function formatFileDate(dateInput: Date) {
   const minute = String(dateInput.getMinutes()).padStart(2, "0");
 
   return `${year}-${month}-${day}_${hour}-${minute}`;
-}
-
-function formatRoundFilePart(round: AuctionRound | null) {
-  return (round?.round_name || (round?.id ? `รอบ_${round.id}` : "รอบเสนอราคา"))
-    .replace(/[\\/:*?"<>|]/g, "")
-    .replace(/\s+/g, "_");
 }
 
 function getArrangementLotNumber(motorcycle: ArrangementMotorcycle | null) {
@@ -254,6 +267,10 @@ export default function AdminRoundDetailPage() {
   const [arrangementMotorcycles, setArrangementMotorcycles] = useState<
     ArrangementMotorcycle[]
   >([]);
+  const [soldRecords, setSoldRecords] = useState<SoldMotorcycleRecord[]>([]);
+  const [unsoldRecords, setUnsoldRecords] = useState<UnsoldMotorcycleRecord[]>(
+    []
+  );
   const [searchText, setSearchText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [actionMotorcycleId, setActionMotorcycleId] = useState<number | null>(
@@ -313,7 +330,9 @@ export default function AdminRoundDetailPage() {
         notes,
         active,
         lot_sale_status,
-        auction_round_id
+        auction_round_id,
+        sold_price,
+        sold_to_merchant_id
       `
       )
       .eq("auction_round_id", roundId);
@@ -444,10 +463,51 @@ export default function AdminRoundDetailPage() {
       return;
     }
 
+    const { data: soldData, error: soldError } = await supabase
+      .from("sold_motorcycles")
+      .select(
+        `
+        original_motorcycle_id,
+        sold_price,
+        winner_merchant_id,
+        winner_shop_name,
+        winner_contact_name,
+        winner_phone,
+        note
+      `
+      )
+      .eq("auction_round_id", roundId);
+
+    if (soldError) {
+      setErrorMessage(soldError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const { data: unsoldData, error: unsoldError } = await supabase
+      .from("unsold_motorcycles")
+      .select(
+        `
+        original_motorcycle_id,
+        highest_offer,
+        highest_shop_name,
+        note
+      `
+      )
+      .eq("auction_round_id", roundId);
+
+    if (unsoldError) {
+      setErrorMessage(unsoldError.message);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       await loadArrangementMotorcycles();
       setRound(roundData as AuctionRound);
       setOffers((offerData as unknown as AdminOffer[]) || []);
+      setSoldRecords((soldData as SoldMotorcycleRecord[]) || []);
+      setUnsoldRecords((unsoldData as UnsoldMotorcycleRecord[]) || []);
       setIsLoading(false);
     } catch (error) {
       setErrorMessage(
@@ -567,6 +627,80 @@ export default function AdminRoundDetailPage() {
     });
   }, [lotResults, searchText]);
 
+  const soldRecordByMotorcycleId = useMemo(() => {
+    const map = new Map<number, SoldMotorcycleRecord>();
+
+    soldRecords.forEach((record) => {
+      if (record.original_motorcycle_id) {
+        map.set(record.original_motorcycle_id, record);
+      }
+    });
+
+    return map;
+  }, [soldRecords]);
+
+  const unsoldRecordByMotorcycleId = useMemo(() => {
+    const map = new Map<number, UnsoldMotorcycleRecord>();
+
+    unsoldRecords.forEach((record) => {
+      if (record.original_motorcycle_id) {
+        map.set(record.original_motorcycle_id, record);
+      }
+    });
+
+    return map;
+  }, [unsoldRecords]);
+
+  function getLotFinalResult(lot: LotResult) {
+    const motorcycleId = lot.motorcycle?.id;
+    const soldRecord = motorcycleId
+      ? soldRecordByMotorcycleId.get(motorcycleId)
+      : undefined;
+    const unsoldRecord = motorcycleId
+      ? unsoldRecordByMotorcycleId.get(motorcycleId)
+      : undefined;
+    const saleStatus = lot.motorcycle?.lot_sale_status;
+
+    if (saleStatus === "sold" || soldRecord) {
+      const soldPrice =
+        soldRecord?.sold_price ?? lot.motorcycle?.sold_price ?? null;
+      const winnerOffer = lot.offers.find(
+        (offer) =>
+          Number(offer.merchant_id) ===
+          Number(
+            soldRecord?.winner_merchant_id ||
+              lot.motorcycle?.sold_to_merchant_id ||
+              0
+          )
+      );
+
+      return {
+        status: "ขายแล้ว",
+        price: soldPrice,
+        merchant:
+          soldRecord?.winner_shop_name ||
+          (winnerOffer ? getMerchantName(winnerOffer) : "-"),
+        note: soldRecord?.note || "",
+      };
+    }
+
+    if (saleStatus === "unsold" || unsoldRecord) {
+      return {
+        status: "ไม่ขาย / กลับเข้าสต็อก",
+        price: null,
+        merchant: "-",
+        note: unsoldRecord?.note || "",
+      };
+    }
+
+    return {
+      status: "รอดำเนินการ",
+      price: null,
+      merchant: "-",
+      note: "",
+    };
+  }
+
   const isRoundFinished = round?.status === "finished" || round?.status === "archived";
   const canFinishRound =
     !!round &&
@@ -648,7 +782,8 @@ export default function AdminRoundDetailPage() {
   async function markLotSold(
     lot: LotResult,
     offer: AdminOffer,
-    mode: "winner" | "runner-up"
+    mode: "winner" | "runner-up",
+    manualSelection = false
   ) {
     const motorcycle = lot.motorcycle;
 
@@ -670,9 +805,13 @@ export default function AdminRoundDetailPage() {
     }
 
     const confirmSold = confirm(
-      mode === "winner"
-        ? "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาสูงสุด?"
-        : "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 2?"
+      manualSelection
+        ? mode === "winner"
+          ? "ยืนยันขายรถล็อตนี้ให้ร้านที่เลือก?"
+          : "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 2 ที่เลือก?"
+        : mode === "winner"
+          ? "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาสูงสุด?"
+          : "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 2?"
     );
 
     if (!confirmSold) return;
@@ -752,7 +891,7 @@ export default function AdminRoundDetailPage() {
         const { error: stockUpdateError } = await supabase
           .from("stock_motorcycles")
           .update({
-            stock_status: "sold",
+            stock_status: "ขายแล้ว",
             current_auction_motorcycle_id: null,
             current_auction_round_id: null,
             updated_at: soldAt,
@@ -856,6 +995,11 @@ export default function AdminRoundDetailPage() {
         : null;
       const diff =
         highestOfferPrice !== null ? highestOfferPrice - cost : null;
+      const returnedAt = new Date().toISOString();
+      const roundName = round?.round_name || `รอบ #${roundId}`;
+      const returnNote = `กลับเข้าสต็อกจากรอบ ${roundName} วันที่ ${formatThaiDate(
+        returnedAt
+      )}`;
 
       const { error: unsoldInsertError } = await supabase
         .from("unsold_motorcycles")
@@ -873,7 +1017,7 @@ export default function AdminRoundDetailPage() {
           highest_contact_name: highestOffer?.merchants?.name || "",
           highest_phone: highestOffer?.merchants?.phone || "",
           returned_by_email: staffProfile?.email || null,
-          note: "ไม่ขาย / กลับเข้าสต็อกจากหน้ารายละเอียดรอบเสนอราคา",
+          note: returnNote,
         });
 
       if (unsoldInsertError) {
@@ -882,7 +1026,6 @@ export default function AdminRoundDetailPage() {
         );
       }
 
-      const returnedAt = new Date().toISOString();
       const { error: motorcycleUpdateError } = await supabase
         .from("motorcycles")
         .update({
@@ -903,9 +1046,10 @@ export default function AdminRoundDetailPage() {
         const { error: stockUpdateError } = await supabase
           .from("stock_motorcycles")
           .update({
-            stock_status: "ready_to_sell",
+            stock_status: "อยู่ในสต็อก",
             current_auction_motorcycle_id: null,
             current_auction_round_id: null,
+            notes: returnNote,
             updated_at: returnedAt,
           })
           .eq("id", motorcycle.stock_motorcycle_id);
@@ -929,7 +1073,8 @@ export default function AdminRoundDetailPage() {
           lot_number: displayLotNumber,
           motorcycle_name: motorcycle.motorcycle_name,
           status_after: "unsold",
-          stock_status_after: "ready_to_sell",
+          stock_status_after: "อยู่ในสต็อก",
+          return_note: returnNote,
         },
       });
 
@@ -952,31 +1097,27 @@ export default function AdminRoundDetailPage() {
 
     const rows = filteredLotResults.map((lot) => {
       const cost = Number(lot.motorcycle?.cost_price || 0);
-      const profit = lot.highestPrice ? lot.highestPrice - cost : 0;
+      const result = getLotFinalResult(lot);
 
       return [
         getArrangementLotNumber(lot.motorcycle),
         lot.motorcycle?.motorcycle_name || "-",
-        lot.highestPrice || "",
-        cost || "",
-        lot.highestPrice ? profit : "",
-        lot.offers.length,
-        lot.topOffers.map(getMerchantName).join(" / ") || "-",
-        lot.topOffers.map(getMerchantPhone).join(" / ") || "-",
-        round.round_name || `รอบ #${round.id}`,
+        cost || "-",
+        result.price == null ? "-" : result.price,
+        result.merchant || "-",
+        result.status,
+        result.note || "-",
       ];
     });
 
     const headers = [
       "ล็อต",
-      "รุ่นรถ",
-      "ราคาสูงสุด",
+      "รถ",
       "ต้นทุน",
-      "กำไรขั้นต้น",
-      "จำนวนราคา",
-      "ผู้เสนอราคาสูงสุด",
-      "เบอร์โทร",
-      "รอบเสนอราคา",
+      "ราคาขาย",
+      "ผู้ซื้อ/ร้านค้า",
+      "สถานะผล",
+      "หมายเหตุ",
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -986,12 +1127,10 @@ export default function AdminRoundDetailPage() {
       { wch: 12 },
       { wch: 28 },
       { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 12 },
       { wch: 28 },
-      { wch: 20 },
       { wch: 28 },
+      { wch: 24 },
+      { wch: 42 },
     ];
 
     sheet["!autofilter"] = {
@@ -1010,70 +1149,6 @@ export default function AdminRoundDetailPage() {
     XLSX.writeFile(
       workbook,
       `ราคาสูงสุดแต่ละล็อต_${roundFileName}_${formatFileDate(new Date())}.xlsx`
-    );
-  }
-
-  function exportArrangementExcel() {
-    if (!round) return;
-
-    const sortedMotorcycles = sortArrangementMotorcycles(arrangementMotorcycles);
-    const headers = [
-      "ลำดับ",
-      "ล็อต",
-      "ยี่ห้อ",
-      "รุ่น",
-      "เลขตัวถัง",
-      "เลขเครื่อง",
-      "สี",
-      "แหล่งที่มา",
-      "ต้นทุน",
-      "หมายเหตุ",
-      "รอบเสนอราคา",
-      "วันที่ประมูล",
-    ];
-
-    const rows = sortedMotorcycles.map((motorcycle, index) => [
-      index + 1,
-      getArrangementLotNumber(motorcycle),
-      motorcycle.brand || "",
-      motorcycle.model || motorcycle.motorcycle_name || "",
-      motorcycle.frame_number || "",
-      motorcycle.engine_number || "",
-      motorcycle.color || "",
-      motorcycle.source_name || "",
-      Number(motorcycle.cost_price || 0) || "",
-      motorcycle.notes || "",
-      round.round_name || `รอบ #${round.id}`,
-      formatThaiDate(round.auction_date),
-    ]);
-
-    const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-
-    sheet["!cols"] = [
-      { wch: 8 },
-      { wch: 12 },
-      { wch: 16 },
-      { wch: 24 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 14 },
-      { wch: 20 },
-      { wch: 14 },
-      { wch: 28 },
-      { wch: 28 },
-      { wch: 18 },
-    ];
-
-    (sheet as XLSX.WorkSheet & { "!freeze"?: { ySplit: number } })[
-      "!freeze"
-    ] = { ySplit: 1 };
-
-    XLSX.utils.book_append_sheet(workbook, sheet, "จัดเรียงล็อต");
-
-    XLSX.writeFile(
-      workbook,
-      `จัดเรียงล็อต_${formatRoundFilePart(round)}.xlsx`
     );
   }
 
@@ -1103,15 +1178,6 @@ export default function AdminRoundDetailPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={exportArrangementExcel}
-                disabled={!round || arrangementMotorcycles.length === 0}
-                className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                ดาวน์โหลด Excel จัดเรียงล็อต
-              </button>
-
               <button
                 type="button"
                 onClick={loadRoundDetail}
@@ -1249,7 +1315,7 @@ export default function AdminRoundDetailPage() {
 
             {!isLoading && lotResults.length > 0 && (
               <div className="mt-4 overflow-x-auto rounded-2xl border">
-                <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1700px] border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
                       <th className="border p-3">ล็อต</th>
@@ -1262,6 +1328,10 @@ export default function AdminRoundDetailPage() {
                       <th className="border p-3 text-right">กำไรขั้นต้น</th>
                       <th className="border p-3 text-right">จำนวนราคา</th>
                       <th className="border p-3">ผู้เสนอราคาสูงสุด</th>
+                      <th className="border p-3">ผลสรุป</th>
+                      <th className="border p-3 text-right">ราคาขาย</th>
+                      <th className="border p-3">ผู้ซื้อ/ร้านค้า</th>
+                      <th className="border p-3">หมายเหตุ</th>
                       <th className="border p-3">จัดการ</th>
                     </tr>
                   </thead>
@@ -1280,6 +1350,8 @@ export default function AdminRoundDetailPage() {
                       const isRowUpdating =
                         actionMotorcycleId === lot.motorcycle?.id;
                       const hasWinnerTie = winnerGroup.length > 1;
+                      const hasRunnerUpTie = runnerUpGroup.length > 1;
+                      const finalResult = getLotFinalResult(lot);
 
                       return (
                         <tr key={lot.lotKey} className="hover:bg-gray-50">
@@ -1316,6 +1388,12 @@ export default function AdminRoundDetailPage() {
                                   ราคาเท่ากัน
                                 </span>
                               )}
+
+                              {hasRunnerUpTie && !isFinalized && (
+                                <span className="inline-flex whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                  อันดับ 2 เท่ากัน
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1344,6 +1422,24 @@ export default function AdminRoundDetailPage() {
                           <td className="border p-3">
                             {lot.topOffers.map(getMerchantName).join(" / ") ||
                               "-"}
+                          </td>
+
+                          <td className="border p-3 font-semibold">
+                            {finalResult.status}
+                          </td>
+
+                          <td className="border p-3 text-right font-bold">
+                            {finalResult.price == null
+                              ? "-"
+                              : formatMoney(finalResult.price)}
+                          </td>
+
+                          <td className="border p-3">
+                            {finalResult.merchant || "-"}
+                          </td>
+
+                          <td className="border p-3 text-xs text-gray-600">
+                            {finalResult.note || "-"}
                           </td>
 
                           <td className="border p-3">
@@ -1382,7 +1478,7 @@ export default function AdminRoundDetailPage() {
                                 </button>
                               )}
 
-                              {runnerUpGroup.length > 1 && !isFinalized ? (
+                              {hasRunnerUpTie && !isFinalized ? (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -1395,7 +1491,7 @@ export default function AdminRoundDetailPage() {
                                   disabled={isRoundFinished || isRowUpdating}
                                   className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                                 >
-                                  เลือกที่ 2
+                                  เลือกอันดับ 2
                                 </button>
                               ) : (
                                 <button
@@ -1503,7 +1599,8 @@ export default function AdminRoundDetailPage() {
                           markLotSold(
                             winnerChooser.lot,
                             offer,
-                            winnerChooser.mode
+                            winnerChooser.mode,
+                            true
                           )
                         }
                         disabled={

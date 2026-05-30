@@ -1186,12 +1186,12 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
         <section className="mt-5">
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <h3 className="font-bold text-gray-900">งานหลัก</h3>
+              <h3 className="font-bold text-gray-900">เตรียมก่อนประมูล</h3>
 
               <div className="mt-3 grid gap-3">
                 <a
                   href="/admin/stock"
-                  className="rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700"
+                  className="rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white shadow-sm hover:bg-blue-700"
                 >
                   เพิ่มรถเข้าคลัง
                 </a>
@@ -1199,62 +1199,35 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 {staffProfile?.role !== "stock_staff" && (
                   <a
                     href="/admin/stock-list"
-                    className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                   >
-                    รายการรถในคลัง / เลือกรถเข้ารอบเสนอราคา
+                    เลือกรถเข้ารอบเสนอราคา
                   </a>
                 )}
 
                 <a
+                  href="/admin/motorcycles"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
+                >
+                  รายการรถในรอบเสนอราคา
+                </a>
+
+                <a
                   href="/admin/rounds"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                 >
-                  รอบเสนอราคา
-                </a>
-
-                <a
-                  href="/admin/merchant-receipts"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
-                >
-                  พิมพ์ใบเสนอราคา
+                  จัดการรอบเสนอราคา
                 </a>
               </div>
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <h3 className="font-bold text-gray-900">ผลและประวัติ</h3>
-
-              <div className="mt-3 grid gap-3">
-                <a
-                  href="/admin/sold"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
-                >
-                  รถที่ขายแล้ว
-                </a>
-
-                <a
-                  href="/admin/unsold"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
-                >
-                  รถที่กลับเข้าสต็อก
-                </a>
-
-                <a
-                  href="/admin/history"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
-                >
-                  ประวัติรอบเสนอราคา
-                </a>
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <h3 className="font-bold text-gray-900">จัดการระบบ</h3>
+              <h3 className="font-bold text-gray-900">ระหว่างเสนอราคา</h3>
 
               <div className="mt-3 grid gap-3">
                 <a
                   href="/admin/merchants"
-                  className="relative rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                  className="relative rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                 >
                   ร้านค้า
 
@@ -1266,15 +1239,35 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 </a>
 
                 <a
-                  href="/admin/motorcycles"
-                  className="rounded-xl border px-4 py-3 text-center font-medium text-gray-700 hover:bg-gray-100"
+                  href="/admin/merchant-receipts"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                 >
-                  รายการรถในรอบเสนอราคา
+                  พิมพ์ใบเสนอราคา
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+              <h3 className="font-bold text-gray-900">ปิดรอบและประวัติ</h3>
+
+              <div className="mt-3 grid gap-3">
+                <a
+                  href="/admin/rounds"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
+                >
+                  ผลรอบเสนอราคา / ตัดสินผล
+                </a>
+
+                <a
+                  href="/admin/history"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
+                >
+                  ประวัติรอบเสนอราคา
                 </a>
 
                 <a
                   href="/admin/audit-logs"
-                  className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                 >
                   ประวัติการทำงาน
                 </a>
@@ -1282,7 +1275,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 {staffProfile?.role === "owner" && (
                   <a
                     href="/admin/staff"
-                    className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                   >
                     ตั้งค่า Owner
                   </a>
@@ -1296,17 +1289,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
         {isLoading && (
           <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
             <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
-          </div>
-        )}
-
-        {!isLoading && !errorMessage && offers.length === 0 && (
-          <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
-            <p className="font-semibold text-gray-900">
-              ยังไม่มีร้านค้าเสนอราคา
-            </p>
-            <p className="mt-1 text-sm text-gray-600">
-              เมื่อร้านค้าส่งราคาแล้ว ข้อมูลสรุปจะแสดงที่นี่
-            </p>
           </div>
         )}
 
