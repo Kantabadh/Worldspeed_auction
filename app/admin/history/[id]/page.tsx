@@ -17,14 +17,9 @@ type AuctionRound = {
   id: number;
   round_name: string;
   auction_status: string | null;
-  exported_by_email: string | null;
-  created_by_email: string | null;
   total_lots_with_offers: number;
   total_merchants: number;
   total_offers: number;
-  total_highest_value: number;
-  total_cost: number;
-  total_gross_profit: number;
   created_at: string;
 };
 
@@ -162,14 +157,9 @@ export default function AdminHistoryDetailPage() {
         id,
         round_name,
         auction_status,
-        exported_by_email,
-        created_by_email,
         total_lots_with_offers,
         total_merchants,
         total_offers,
-        total_highest_value,
-        total_cost,
-        total_gross_profit,
         created_at
       `)
       .eq("id", roundId)
@@ -305,6 +295,8 @@ export default function AdminHistoryDetailPage() {
   function getThaiAuctionStatus(status: string | null) {
     if (status === "open") return "เปิดรับราคา";
     if (status === "closed") return "ปิดรับราคา";
+    if (status === "finished") return "จบรอบแล้ว";
+    if (status === "archived") return "บันทึกประวัติแล้ว";
     return "-";
   }
 
@@ -365,18 +357,6 @@ export default function AdminHistoryDetailPage() {
   });
 
   const totalLots = lotGroups.length;
-
-  const totalHighestValue = lotGroups.reduce((sum, lot) => {
-    return sum + Number(lot.highest_offer || 0);
-  }, 0);
-
-  const totalCost = lotGroups.reduce((sum, lot) => {
-    return sum + Number(lot.cost_price || 0);
-  }, 0);
-
-  const totalGrossProfit = lotGroups.reduce((sum, lot) => {
-    return sum + Number(lot.gross_profit_from_highest || 0);
-  }, 0);
 
   function exportExcel() {
     if (!round) {
@@ -450,26 +430,6 @@ export default function AdminHistoryDetailPage() {
       {
         รายการ: "จำนวนราคาเสนอทั้งหมด",
         ข้อมูล: offers.length,
-      },
-      {
-        รายการ: "มูลค่าสูงสุดรวม",
-        ข้อมูล: totalHighestValue,
-      },
-      {
-        รายการ: "ต้นทุนรวม",
-        ข้อมูล: totalCost,
-      },
-      {
-        รายการ: "กำไรขั้นต้นรวม",
-        ข้อมูล: totalGrossProfit,
-      },
-      {
-        รายการ: "ผู้บันทึก",
-        ข้อมูล: round.created_by_email || round.exported_by_email || "-",
-      },
-      {
-        รายการ: "ผู้ดาวน์โหลด",
-        ข้อมูล: staffProfile?.email || "-",
       },
       {
         รายการ: "วันที่ดาวน์โหลด",
@@ -575,7 +535,7 @@ export default function AdminHistoryDetailPage() {
 
         {!isLoading && round && (
           <>
-            <section className="grid gap-4 md:grid-cols-4">
+            <section className="grid gap-4 md:grid-cols-2">
               <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
                 <p className="text-sm font-medium text-gray-500">
                   ล็อตที่มีราคา
@@ -600,35 +560,6 @@ export default function AdminHistoryDetailPage() {
                 <p className="text-sm text-gray-500">รายการ</p>
               </div>
 
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-                <p className="text-sm font-medium text-gray-500">
-                  มูลค่าสูงสุดรวม
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-green-700">
-                  {totalHighestValue.toLocaleString()}
-                </p>
-
-                <p className="text-sm text-gray-500">บาท</p>
-              </div>
-
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-                <p className="text-sm font-medium text-gray-500">
-                  กำไรขั้นต้นรวม
-                </p>
-
-                <p
-                  className={
-                    totalGrossProfit >= 0
-                      ? "mt-2 text-2xl font-bold text-green-700"
-                      : "mt-2 text-2xl font-bold text-red-700"
-                  }
-                >
-                  {totalGrossProfit.toLocaleString()}
-                </p>
-
-                <p className="text-sm text-gray-500">บาท</p>
-              </div>
             </section>
 
             <section className="mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
@@ -652,16 +583,6 @@ export default function AdminHistoryDetailPage() {
                     <p>
                       <span className="font-semibold">สถานะตอนบันทึก:</span>{" "}
                       {getThaiAuctionStatus(round.auction_status)}
-                    </p>
-
-                    <p>
-                      <span className="font-semibold">ผู้บันทึก:</span>{" "}
-                      {round.created_by_email || round.exported_by_email || "-"}
-                    </p>
-
-                    <p>
-                      <span className="font-semibold">ต้นทุนรวม:</span>{" "}
-                      {totalCost.toLocaleString()} บาท
                     </p>
 
                     <p>

@@ -233,7 +233,7 @@ export default function AdminUnsoldPage() {
       "โทร",
       "ราคาสูงสุด",
       "ต้นทุน",
-      "diff",
+      "กำไรขั้นต้น",
       "วันที่กลับเข้าสต็อก",
       "ผู้ดำเนินการ",
       "หมายเหตุ",
@@ -342,7 +342,7 @@ export default function AdminUnsoldPage() {
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">diff รวม</p>
+              <p className="text-sm text-gray-500">กำไรขั้นต้นรวม</p>
               <p
                 className={
                   totalDiff >= 0
@@ -451,7 +451,7 @@ export default function AdminUnsoldPage() {
                         </div>
 
                         <div className="rounded-xl bg-gray-50 p-3">
-                          <p className="text-xs text-gray-500">diff รวม</p>
+                          <p className="text-xs text-gray-500">กำไรขั้นต้นรวม</p>
                           <p
                             className={
                               group.totalDiff >= 0
@@ -483,7 +483,7 @@ export default function AdminUnsoldPage() {
                                     ต้นทุน
                                   </th>
                                   <th className="border p-3 text-right">
-                                    diff
+                                    กำไรขั้นต้น
                                   </th>
                                   <th className="border p-3">วันที่กลับ</th>
                                   <th className="border p-3">
@@ -589,7 +589,7 @@ export default function AdminUnsoldPage() {
                                     </p>
                                   </div>
                                   <div>
-                                    <p className="text-gray-500">diff</p>
+                                    <p className="text-gray-500">กำไรขั้นต้น</p>
                                     <p
                                       className={
                                         Number(item.diff || 0) >= 0
@@ -628,7 +628,7 @@ export default function AdminUnsoldPage() {
                       <th className="border p-3">ร้านเสนอสูงสุด</th>
                       <th className="border p-3 text-right">ราคาสูงสุด</th>
                       <th className="border p-3 text-right">ต้นทุน</th>
-                      <th className="border p-3 text-right">diff</th>
+                      <th className="border p-3 text-right">กำไรขั้นต้น</th>
                       <th className="border p-3">ผู้ดำเนินการ</th>
                     </tr>
                   </thead>

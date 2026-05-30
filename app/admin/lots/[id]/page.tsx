@@ -215,7 +215,51 @@ export default function LotResultPage() {
       return;
     }
 
-    setMotorcycle(motorcycleData[0] as Motorcycle);
+    const loadedMotorcycle = motorcycleData[0] as Motorcycle;
+    let displayLotNumber = loadedMotorcycle.lot_number;
+
+    if (loadedMotorcycle.auction_round_id) {
+      let mappingData:
+        | { round_lot_number?: string | null; lot_number?: string | null }
+        | null = null;
+
+      const mappingResult = await supabase
+        .from("auction_round_lots")
+        .select("round_lot_number, lot_number")
+        .eq("auction_round_id", loadedMotorcycle.auction_round_id)
+        .eq("original_motorcycle_id", loadedMotorcycle.id)
+        .limit(1);
+
+      if (!mappingResult.error && mappingResult.data?.[0]) {
+        mappingData = mappingResult.data[0] as {
+          round_lot_number?: string | null;
+          lot_number?: string | null;
+        };
+      } else {
+        const fallbackMappingResult = await supabase
+          .from("auction_round_lots")
+          .select("lot_number")
+          .eq("auction_round_id", loadedMotorcycle.auction_round_id)
+          .eq("original_motorcycle_id", loadedMotorcycle.id)
+          .limit(1);
+
+        if (!fallbackMappingResult.error && fallbackMappingResult.data?.[0]) {
+          mappingData = fallbackMappingResult.data[0] as {
+            lot_number?: string | null;
+          };
+        }
+      }
+
+      displayLotNumber =
+        mappingData?.round_lot_number ||
+        mappingData?.lot_number ||
+        displayLotNumber;
+    }
+
+    setMotorcycle({
+      ...loadedMotorcycle,
+      lot_number: displayLotNumber,
+    });
 
     const { data: offerData, error: offerError } = await supabase
       .from("offers")

@@ -657,7 +657,7 @@ export default function AdminAuditLogsPage() {
       const cost = getNumberDetail(details, "cost_price", 0);
       const diff = getNumberDetail(details, "diff", 0);
 
-      return `ต้นทุน ${Number(cost || 0).toLocaleString()} บาท • diff ${Number(
+      return `ต้นทุน ${Number(cost || 0).toLocaleString()} บาท • กำไรขั้นต้น ${Number(
         diff || 0
       ).toLocaleString()} บาท`;
     }
@@ -724,7 +724,7 @@ export default function AdminAuditLogsPage() {
         );
 
         return syncedToAuction
-          ? `แก้ไขข้อมูลคลัง • เพิ่มรูปใหม่ ${photoCount} รูป • เชื่อมกับ Auction ID ${linkedAuctionId}`
+          ? `แก้ไขข้อมูลคลัง • เพิ่มรูปใหม่ ${photoCount} รูป • เชื่อมกับรหัสรายการรถในรอบเสนอราคา ${linkedAuctionId}`
           : `แก้ไขข้อมูลคลัง • เพิ่มรูปใหม่ ${photoCount} รูป`;
       }
 
@@ -742,7 +742,7 @@ export default function AdminAuditLogsPage() {
       );
       const copiedPhotoCount = getNumberDetail(details, "copied_photo_count", 0);
 
-      return `สร้าง Auction Motorcycle ID ${auctionMotorcycleId} • คัดลอกรูป ${copiedPhotoCount} รูป`;
+      return `สร้างรหัสรายการรถในรอบเสนอราคา ${auctionMotorcycleId} • คัดลอกรูป ${copiedPhotoCount} รูป`;
     }
 
     if (log.action === "stock_motorcycle_photo_deleted") {

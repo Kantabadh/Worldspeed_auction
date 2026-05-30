@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import * as XLSX from "xlsx";
 import StaffGuard from "@/components/StaffGuard";
 
 type AdminOffer = {
@@ -53,12 +52,6 @@ type LotResult = {
   highestPrice: number;
 };
 
-type StockMotorcycleSummary = {
-  id: number;
-  cost_price: number | null;
-  stock_status: string;
-};
-
 type AuditLogInput = {
   action: string;
   targetType?: string;
@@ -87,7 +80,6 @@ type CurrentAuctionRound = {
 };
 
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
-
 function getStaffRoleLabel(role: string) {
   if (role === "owner") return "Owner";
   if (role === "admin") return "Admin";
@@ -101,19 +93,7 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [totalMotorcycles, setTotalMotorcycles] = useState(0);
-  const [activeMotorcycles, setActiveMotorcycles] = useState(0);
-  const [soldRoundMotorcycles, setSoldRoundMotorcycles] = useState(0);
-  const [unsoldRoundMotorcycles, setUnsoldRoundMotorcycles] = useState(0);
   const [pendingMerchantRequests, setPendingMerchantRequests] = useState(0);
-
-  const [totalStockMotorcycles, setTotalStockMotorcycles] = useState(0);
-  const [readyStockMotorcycles, setReadyStockMotorcycles] = useState(0);
-  const [inAuctionStockMotorcycles, setInAuctionStockMotorcycles] = useState(0);
-  const [soldStockMotorcycles, setSoldStockMotorcycles] = useState(0);
-  const [totalStockCost, setTotalStockCost] = useState(0);
-
-  const [auctionStatus, setAuctionStatus] = useState("open");
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
   const [isCheckingStaff, setIsCheckingStaff] = useState(true);
@@ -265,62 +245,6 @@ export default function AdminPage() {
     }
   }
 
-  async function loadAuctionStatus() {
-    const { data, error } = await supabase
-      .from("auction_settings")
-      .select("id, status")
-      .order("id", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    if (!data) {
-      setErrorMessage("ไม่พบสถานะการเสนอราคา");
-      return;
-    }
-
-    setAuctionStatus(data.status);
-  }
-
-  async function toggleAuctionStatus() {
-    setIsUpdatingStatus(true);
-    setErrorMessage("");
-
-    const oldStatus = auctionStatus;
-    const newStatus = auctionStatus === "open" ? "closed" : "open";
-
-    const { error } = await supabase
-      .from("auction_settings")
-      .update({ status: newStatus })
-      .eq("auction_name", "Main Motorcycle Auction");
-
-    if (error) {
-      setErrorMessage(error.message);
-      setIsUpdatingStatus(false);
-      return;
-    }
-
-    await createAuditLog({
-      action: "auction_status_changed",
-      targetType: "auction",
-      targetId: "Main Motorcycle Auction",
-      targetName: "Main Motorcycle Auction",
-      details: {
-        old_status: oldStatus,
-        new_status: newStatus,
-        old_status_thai: getThaiAuctionStatus(oldStatus),
-        new_status_thai: getThaiAuctionStatus(newStatus),
-      },
-    });
-
-    setAuctionStatus(newStatus);
-    setIsUpdatingStatus(false);
-  }
-
   async function loadOffers(roundId?: number | null) {
     setIsLoading(true);
     setErrorMessage("");
@@ -380,15 +304,12 @@ export default function AdminPage() {
   async function loadMotorcycleCounts(roundId?: number | null) {
     if (!roundId) {
       setTotalMotorcycles(0);
-      setActiveMotorcycles(0);
-      setSoldRoundMotorcycles(0);
-      setUnsoldRoundMotorcycles(0);
       return;
     }
 
     const { data, error } = await supabase
       .from("motorcycles")
-      .select("id, active, auction_round_id, lot_sale_status")
+      .select("id")
       .eq("auction_round_id", roundId);
 
     if (error) {
@@ -399,17 +320,6 @@ export default function AdminPage() {
     const motorcycles = data || [];
 
     setTotalMotorcycles(motorcycles.length);
-    setActiveMotorcycles(
-      motorcycles.filter((motorcycle) => motorcycle.active).length
-    );
-    setSoldRoundMotorcycles(
-      motorcycles.filter((motorcycle) => motorcycle.lot_sale_status === "sold")
-        .length
-    );
-    setUnsoldRoundMotorcycles(
-      motorcycles.filter((motorcycle) => motorcycle.lot_sale_status === "unsold")
-        .length
-    );
   }
 
   async function loadPendingMerchantRequests() {
@@ -426,56 +336,15 @@ export default function AdminPage() {
     setPendingMerchantRequests(data?.length || 0);
   }
 
-  async function loadStockSummary() {
-    const { data, error } = await supabase
-      .from("stock_motorcycles")
-      .select("id, cost_price, stock_status");
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    const stockMotorcycles = (data as StockMotorcycleSummary[]) || [];
-
-    setTotalStockMotorcycles(stockMotorcycles.length);
-
-    setReadyStockMotorcycles(
-      stockMotorcycles.filter(
-        (motorcycle) => motorcycle.stock_status === "ready_to_sell"
-      ).length
-    );
-
-    setInAuctionStockMotorcycles(
-      stockMotorcycles.filter(
-        (motorcycle) => motorcycle.stock_status === "in_auction"
-      ).length
-    );
-
-    setSoldStockMotorcycles(
-      stockMotorcycles.filter(
-        (motorcycle) => motorcycle.stock_status === "sold"
-      ).length
-    );
-
-    const totalCost = stockMotorcycles.reduce((sum, motorcycle) => {
-      return sum + Number(motorcycle.cost_price || 0);
-    }, 0);
-
-    setTotalStockCost(totalCost);
-  }
-
   async function loadDashboardData() {
     setIsLoading(true);
 
     const round = await loadCurrentAuctionRound();
 
     await Promise.all([
-      loadAuctionStatus(),
       loadOffers(round?.id || null),
       loadMotorcycleCounts(round?.id || null),
       loadPendingMerchantRequests(),
-      loadStockSummary(),
     ]);
   }
 
@@ -610,6 +479,11 @@ export default function AdminPage() {
       return;
     }
 
+    if (currentRound.status === "finished" || currentRound.status === "archived") {
+      alert("รอบนี้จบแล้ว ไม่สามารถเปลี่ยนสถานะได้");
+      return;
+    }
+
     if (staffProfile?.role !== "owner" && staffProfile?.role !== "admin") {
       setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่เปลี่ยนสถานะรอบได้");
       return;
@@ -664,15 +538,13 @@ export default function AdminPage() {
         if (settingError) {
           throw new Error(settingError.message);
         }
-
-        setAuctionStatus(newStatus === "open" ? "open" : "closed");
       }
 
       await createAuditLog({
         action: "auction_round_status_changed",
         targetType: "auction_round",
         targetId: String(currentRound.id),
-        targetName: currentRound.round_name || `Round ${currentRound.id}`,
+        targetName: currentRound.round_name || `รอบ #${currentRound.id}`,
         details: {
           old_status: currentRound.status,
           new_status: newStatus,
@@ -764,82 +636,11 @@ export default function AdminPage() {
 
   const totalGrossProfit = totalHighestOfferValue - totalCostForSubmittedLots;
 
-  function getOfferGroupsByPrice(offerList: AdminOffer[]) {
-    const sortedOffers = [...offerList].sort(
-      (a, b) => Number(b.offer_price) - Number(a.offer_price)
-    );
-
-    const groups: AdminOffer[][] = [];
-
-    sortedOffers.forEach((offer) => {
-      const lastGroup = groups[groups.length - 1];
-
-      if (
-        lastGroup &&
-        Number(lastGroup[0].offer_price) === Number(offer.offer_price)
-      ) {
-        lastGroup.push(offer);
-      } else {
-        groups.push([offer]);
-      }
-    });
-
-    return groups;
-  }
-
-  function getGroupText(group?: AdminOffer[]) {
-    if (!group || group.length === 0) return "";
-
-    return group
-      .map((offer) => {
-        const shop = offer.merchants?.shop_name || "-";
-        const contact = offer.merchants?.name || "-";
-        const phone = offer.merchants?.phone || "-";
-
-        return `${shop} (${contact}, ${phone})`;
-      })
-      .join(" / ");
-  }
-
-  function getGroupPrice(group?: AdminOffer[]) {
-    if (!group || group.length === 0) return "";
-
-    return Number(group[0].offer_price || 0);
-  }
-
-  function getGrossProfit(price: number | string, cost: number) {
-    const numericPrice = Number(price || 0);
-
-    if (!numericPrice) return "";
-
-    return numericPrice - cost;
-  }
-
-  function getTieNote(groups: AdminOffer[][]) {
-    const notes = groups
-      .slice(0, 3)
-      .map((group, index) => {
-        if (group.length >= 2) {
-          return `อันดับ ${index + 1} ร่วม ${group.length} ราย`;
-        }
-
-        return "";
-      })
-      .filter(Boolean);
-
-    return notes.join(" / ");
-  }
-
-  function getThaiAuctionStatus(status: string) {
-    if (status === "open") return "เปิดรับราคา";
-    if (status === "closed") return "ปิดรับราคา";
-    return status || "-";
-  }
-
   function getRoundStatusLabel(status?: string | null) {
     if (status === "draft") return "เตรียมรอบ";
     if (status === "open") return "เปิดรับราคา";
     if (status === "closed") return "ปิดรอบ";
+    if (status === "finished") return "จบรอบแล้ว";
     if (status === "archived") return "บันทึกประวัติแล้ว";
     return status || "-";
   }
@@ -854,29 +655,6 @@ export default function AdminPage() {
       month: "2-digit",
       day: "2-digit",
     });
-  }
-
-  function formatThaiTime(dateInput: string | Date) {
-    const date = new Date(dateInput);
-
-    if (Number.isNaN(date.getTime())) return "";
-
-    return date.toLocaleTimeString("th-TH", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  }
-
-  function formatExcelFileDateTime(dateInput: Date) {
-    const buddhistYear = dateInput.getFullYear() + 543;
-    const month = String(dateInput.getMonth() + 1).padStart(2, "0");
-    const day = String(dateInput.getDate()).padStart(2, "0");
-    const hour = String(dateInput.getHours()).padStart(2, "0");
-    const minute = String(dateInput.getMinutes()).padStart(2, "0");
-
-    return `${buddhistYear}-${month}-${day}_${hour}-${minute}`;
   }
 
   function chunkArray<T>(items: T[], size: number) {
@@ -912,7 +690,7 @@ export default function AdminPage() {
 
     return {
       roundId: Number(archiveRow.round_id),
-      roundName: String(archiveRow.round_name || "Auction Round"),
+      roundName: String(archiveRow.round_name || "รอบเสนอราคา"),
       archivedLotCount: Number(archiveRow.archived_lot_count || 0),
       archivedOfferCount: Number(archiveRow.archived_offer_count || 0),
     };
@@ -945,7 +723,7 @@ export default function AdminPage() {
         action: "auction_archived_only",
         targetType: "auction_round",
         targetId: archiveResult ? String(archiveResult.roundId) : undefined,
-        targetName: archiveResult?.roundName || "Auction Round",
+        targetName: archiveResult?.roundName || "รอบเสนอราคา",
         details: {
           archived_round_id: archiveResult?.roundId || null,
           archived_round_name: archiveResult?.roundName || null,
@@ -1148,7 +926,7 @@ export default function AdminPage() {
           : "Main Motorcycle Auction",
         targetName: archiveResult
           ? archiveResult.roundName
-          : "Main Motorcycle Auction",
+          : "รอบเสนอราคาหลัก",
         details: {
           archived_round_id: archiveResult?.roundId || null,
           archived_round_name: archiveResult?.roundName || null,
@@ -1197,279 +975,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
     }
   }
 
-  function getMerchantKey(offer: AdminOffer) {
-    return (
-      offer.merchants?.phone ||
-      offer.merchants?.shop_name ||
-      offer.merchants?.name ||
-      `merchant-${offer.merchant_id}`
-    );
-  }
-
-  function getMerchantLabel(offer: AdminOffer) {
-    return (
-      offer.merchants?.shop_name ||
-      offer.merchants?.name ||
-      offer.merchants?.phone ||
-      `ร้านค้า ${offer.merchant_id}`
-    );
-  }
-
-  function getUniqueMerchantColumns() {
-    const merchantMap = new Map<string, string>();
-    const usedLabels = new Map<string, number>();
-
-    offers.forEach((offer) => {
-      const key = getMerchantKey(offer);
-      const baseLabel = getMerchantLabel(offer);
-
-      if (merchantMap.has(key)) return;
-
-      const usedCount = usedLabels.get(baseLabel) || 0;
-      usedLabels.set(baseLabel, usedCount + 1);
-
-      const label =
-        usedCount === 0 ? baseLabel : `${baseLabel} (${usedCount + 1})`;
-
-      merchantMap.set(key, label);
-    });
-
-    return Array.from(merchantMap.entries())
-      .map(([key, label]) => ({ key, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, "th"));
-  }
-
-  function getShopOnlyText(group?: AdminOffer[]) {
-    if (!group || group.length === 0) return "";
-
-    return group
-      .map((offer) => offer.merchants?.shop_name || offer.merchants?.name || "-")
-      .join(" / ");
-  }
-
-  function getRankText(group?: AdminOffer[]) {
-    if (!group || group.length === 0) return "";
-
-    const price = Number(group[0].offer_price || 0).toLocaleString();
-
-    return group
-      .map((offer) => {
-        const shop = offer.merchants?.shop_name || offer.merchants?.name || "-";
-        return `${shop} ${price}`;
-      })
-      .join(" / ");
-  }
-
-  function exportAuctionExcel() {
-    const exportDate = new Date();
-    const exportFileDateTime = formatExcelFileDateTime(exportDate);
-
-    const merchantColumns = getUniqueMerchantColumns();
-
-    const headers = [
-      "ลำดับ",
-      "Lot",
-      "ยี่ห้อ",
-      "รุ่น",
-      "รหัสรุ่น",
-      "เลขถัง",
-      "ทะเบียน",
-      "วันจดทะเบียน",
-      "ปี",
-      "ซื้อ/เทิร์น",
-      "มาจาก",
-      "ทุน",
-      ...merchantColumns.map((merchant) => merchant.label),
-      "MAX",
-      "WINNER",
-      "อันดับ 2",
-      "diff",
-    ];
-
-    const rows = lotResults.map((lot, index) => {
-      const motorcycle = lot.motorcycle;
-      const cost = Number(motorcycle?.cost_price || 0);
-      const groups = getOfferGroupsByPrice(lot.offers);
-
-      const rank1 = groups[0];
-      const rank2 = groups[1];
-
-      const row: (string | number)[] = [
-        index + 1,
-        motorcycle?.lot_number || "",
-        motorcycle?.brand || "",
-        motorcycle?.model || motorcycle?.motorcycle_name || "",
-        motorcycle?.engine_number || "",
-        motorcycle?.frame_number || "",
-        motorcycle?.license_plate || "",
-        motorcycle?.purchase_date ? formatThaiDate(motorcycle.purchase_date) : "",
-        motorcycle?.year || "",
-        motorcycle?.acquisition_type || "",
-        motorcycle?.source_name || "",
-        cost || "",
-      ];
-
-      merchantColumns.forEach((merchant) => {
-        const merchantOffers = lot.offers.filter(
-          (offer) => getMerchantKey(offer) === merchant.key
-        );
-
-        if (merchantOffers.length === 0) {
-          row.push("");
-          return;
-        }
-
-        const highestMerchantOffer = merchantOffers.reduce(
-          (bestOffer, offer) => {
-            return Number(offer.offer_price || 0) >
-              Number(bestOffer.offer_price || 0)
-              ? offer
-              : bestOffer;
-          },
-          merchantOffers[0]
-        );
-
-        row.push(Number(highestMerchantOffer.offer_price || 0));
-      });
-
-      row.push(lot.highestPrice || "");
-      row.push(getShopOnlyText(rank1));
-      row.push(getRankText(rank2));
-      row.push(lot.highestPrice ? lot.highestPrice - cost : "");
-
-      return row;
-    });
-
-    const exportInfoRows = [
-      ["รอบเสนอราคา", currentRound?.round_name || "-"],
-      [
-        "วันที่เสนอราคา",
-        currentRound?.auction_date ? formatThaiDate(currentRound.auction_date) : "-",
-      ],
-      ["รหัสรอบ", currentRound?.id ? `#${currentRound.id}` : "-"],
-      ["วันที่ดาวน์โหลด", formatThaiDate(exportDate)],
-      ["เวลาดาวน์โหลด", formatThaiTime(exportDate)],
-      ["ผู้ดาวน์โหลด", staffProfile?.email || "-"],
-      ["สิทธิ์ผู้ดาวน์โหลด", staffProfile?.role || "-"],
-      ["สถานะการเสนอราคา", getThaiAuctionStatus(auctionStatus)],
-      ["จำนวนล็อตที่มีราคา", uniqueMotorcycles.size],
-      ["จำนวนร้านค้าที่ส่งราคา", uniqueMerchants.size],
-      ["จำนวนราคาที่ส่งทั้งหมด", offers.length],
-      ["มูลค่าสูงสุดรวม", totalHighestOfferValue],
-      ["ต้นทุนรวม", totalCostForSubmittedLots],
-      ["กำไรขั้นต้นรวม", totalGrossProfit],
-    ];
-
-    const workbook = XLSX.utils.book_new();
-
-    const resultSheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const exportInfoSheet = XLSX.utils.aoa_to_sheet([
-      ["รายการ", "ข้อมูล"],
-      ...exportInfoRows,
-    ]);
-
-    resultSheet["!cols"] = [
-      { wch: 8 },
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 22 },
-      { wch: 14 },
-      { wch: 22 },
-      { wch: 16 },
-      { wch: 18 },
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 16 },
-      { wch: 12 },
-      ...merchantColumns.map(() => ({ wch: 14 })),
-      { wch: 14 },
-      { wch: 22 },
-      { wch: 24 },
-      { wch: 14 },
-    ];
-
-    exportInfoSheet["!cols"] = [{ wch: 28 }, { wch: 36 }];
-
-    resultSheet["!autofilter"] = {
-      ref: XLSX.utils.encode_range({
-        s: { r: 0, c: 0 },
-        e: { r: Math.max(rows.length, 1), c: headers.length - 1 },
-      }),
-    };
-
-    XLSX.utils.book_append_sheet(workbook, resultSheet, "ผลเสนอราคา");
-    XLSX.utils.book_append_sheet(workbook, exportInfoSheet, "ข้อมูลการดาวน์โหลด");
-
-    const roundFileName = (currentRound?.round_name || "current-round")
-      .replace(/[\\/:*?"<>|]/g, "")
-      .replace(/\s+/g, "-");
-
-    XLSX.writeFile(
-      workbook,
-      `ผลเสนอราคา_${roundFileName}_${exportFileDateTime}.xlsx`
-    );
-  }
-
-  function SummaryCard({
-    label,
-    value,
-    subText,
-    valueClassName = "text-gray-900",
-  }: {
-    label: string;
-    value: string | number;
-    subText?: string;
-    valueClassName?: string;
-  }) {
-    return (
-      <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 sm:p-4 xl:p-5">
-        <p className="text-xs font-medium leading-5 text-gray-500 sm:text-sm">
-          {label}
-        </p>
-
-        <p
-          className={`mt-1 break-words text-2xl font-bold leading-tight sm:text-3xl ${valueClassName}`}
-        >
-          {value}
-        </p>
-
-        {subText && (
-          <p className="mt-1 text-xs leading-5 text-gray-500 sm:text-sm">
-            {subText}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  function StockCard({
-    label,
-    value,
-    unit,
-    className,
-    valueClassName,
-  }: {
-    label: string;
-    value: string | number;
-    unit: string;
-    className: string;
-    valueClassName: string;
-  }) {
-    return (
-      <div className={`rounded-2xl p-3 ring-1 sm:p-4 ${className}`}>
-        <p className="text-xs font-medium leading-5 sm:text-sm">{label}</p>
-
-        <p
-          className={`mt-1 break-words text-2xl font-bold sm:text-3xl ${valueClassName}`}
-        >
-          {value}
-        </p>
-
-        <p className="mt-1 text-xs sm:text-sm">{unit}</p>
-      </div>
-    );
-  }
-
   if (isCheckingStaff) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
@@ -1493,7 +998,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
   return (
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
-      <header className="border-b bg-white px-4 py-4 shadow-sm sm:py-5">
+      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 px-4 py-4 shadow-sm backdrop-blur sm:py-5">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
@@ -1510,12 +1015,22 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             </p>
           </div>
 
-          <button
-            onClick={logoutStaff}
-            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
-          >
-            ออกจากระบบ
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              โหลดใหม่
+            </button>
+
+            <button
+              onClick={logoutStaff}
+              className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+            >
+              ออกจากระบบ
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1571,12 +1086,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
               </p>
             </div>
 
-            <button
-              onClick={loadCurrentAuctionRound}
-              className="rounded-xl border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-gray-100"
-            >
-              โหลดรอบใหม่
-            </button>
           </div>
 
           {currentRound ? (
@@ -1585,7 +1094,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 <div>
                   <p className="text-sm text-gray-500">ชื่อรอบ</p>
                   <p className="mt-1 font-bold text-gray-900">
-                    {currentRound.round_name || `Round ${currentRound.id}`}
+                    {currentRound.round_name || `รอบ #${currentRound.id}`}
                   </p>
                 </div>
 
@@ -1674,150 +1183,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                สถานะการเสนอราคา
-              </p>
-
-              <h2
-                className={
-                  auctionStatus === "open"
-                    ? "mt-1 text-2xl font-bold text-green-600 sm:text-3xl"
-                    : "mt-1 text-2xl font-bold text-red-600 sm:text-3xl"
-                }
-              >
-                {auctionStatus === "open" ? "เปิดรับราคา" : "ปิดรับราคา"}
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-600">
-                {auctionStatus === "open"
-                  ? "ร้านค้าสามารถส่งราคาได้"
-                  : "ร้านค้าไม่สามารถส่งราคาได้"}
-              </p>
-            </div>
-
-            <button
-              onClick={toggleAuctionStatus}
-              disabled={isUpdatingStatus}
-              className={
-                auctionStatus === "open"
-                  ? "w-full rounded-2xl bg-red-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
-                  : "w-full rounded-2xl bg-green-600 px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
-              }
-            >
-              {isUpdatingStatus
-                ? "กำลังอัปเดต..."
-                : auctionStatus === "open"
-                  ? "ปิดรับราคา"
-                  : "เปิดรับราคา"}
-            </button>
-          </div>
-        </section>
-
-        <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
-          <SummaryCard label="ราคาที่ส่งทั้งหมด" value={offers.length} />
-          <SummaryCard label="ร้านค้าที่ส่ง" value={uniqueMerchants.size} />
-          <SummaryCard label="ล็อตที่มีราคา" value={uniqueMotorcycles.size} />
-          <SummaryCard
-            label="ล็อตทั้งหมด"
-            value={totalMotorcycles}
-            subText={`เปิดอยู่: ${activeMotorcycles}`}
-          />
-          <SummaryCard
-            label="ขายแล้ว"
-            value={soldRoundMotorcycles}
-            subText="ล็อตในรอบนี้"
-            valueClassName="text-purple-700"
-          />
-          <SummaryCard
-            label="กลับเข้าสต็อก"
-            value={unsoldRoundMotorcycles}
-            subText="ล็อตในรอบนี้"
-            valueClassName="text-yellow-700"
-          />
-          <SummaryCard
-            label="รออนุมัติ"
-            value={pendingMerchantRequests}
-            subText="ร้านค้า"
-            valueClassName={
-              pendingMerchantRequests > 0 ? "text-red-600" : "text-gray-900"
-            }
-          />
-          <SummaryCard
-            label="มูลค่าสูงสุด"
-            value={totalHighestOfferValue.toLocaleString()}
-            subText="บาท"
-          />
-          <SummaryCard
-            label="กำไรขั้นต้น"
-            value={totalGrossProfit.toLocaleString()}
-            subText="บาท"
-            valueClassName={
-              totalGrossProfit >= 0 ? "text-green-700" : "text-red-700"
-            }
-          />
-        </section>
-
-        <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
-              ภาพรวมคลังรถ
-            </p>
-
-            <h2 className="mt-1 text-lg font-bold text-gray-900 sm:text-xl">
-              สรุปคลังรถบริษัท
-            </h2>
-
-            <p className="mt-1 text-sm text-gray-600">
-              ภาพรวมรถทั้งหมดในคลังก่อนเลือกนำเข้ารอบเสนอราคา
-            </p>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-            <StockCard
-              label="รถในคลังทั้งหมด"
-              value={totalStockMotorcycles}
-              unit="คัน"
-              className="bg-gray-50 text-gray-700 ring-gray-200"
-              valueClassName="text-gray-900"
-            />
-
-            <StockCard
-              label="พร้อมขาย"
-              value={readyStockMotorcycles}
-              unit="คัน"
-              className="bg-green-50 text-green-700 ring-green-200"
-              valueClassName="text-green-700"
-            />
-
-            <StockCard
-              label="อยู่ในการประมูล"
-              value={inAuctionStockMotorcycles}
-              unit="คัน"
-              className="bg-blue-50 text-blue-700 ring-blue-200"
-              valueClassName="text-blue-700"
-            />
-
-            <StockCard
-              label="ขายแล้ว"
-              value={soldStockMotorcycles}
-              unit="คัน"
-              className="bg-purple-50 text-purple-700 ring-purple-200"
-              valueClassName="text-purple-700"
-            />
-
-            <StockCard
-              label="ต้นทุนรวมในคลัง"
-              value={totalStockCost.toLocaleString()}
-              unit="บาท"
-              className="bg-orange-50 text-orange-700 ring-orange-200"
-              valueClassName="text-xl text-orange-700 sm:text-2xl"
-            />
-          </div>
-        </section>
-
         <section className="mt-5">
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
@@ -1828,8 +1193,17 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   href="/admin/stock"
                   className="rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700"
                 >
-                  คลังรถและรอบเสนอราคา
+                  เพิ่มรถเข้าคลัง
                 </a>
+
+                {staffProfile?.role !== "stock_staff" && (
+                  <a
+                    href="/admin/stock-list"
+                    className="rounded-xl border px-4 py-3 text-center font-medium hover:bg-gray-100"
+                  >
+                    รายการรถในคลัง / เลือกรถเข้ารอบเสนอราคา
+                  </a>
+                )}
 
                 <a
                   href="/admin/rounds"
@@ -1914,71 +1288,9 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   </a>
                 )}
 
-                <button
-                  onClick={loadDashboardData}
-                  className="rounded-xl border px-4 py-3 font-medium hover:bg-gray-100"
-                >
-                  โหลดใหม่
-                </button>
               </div>
             </div>
           </div>
-
-          {staffProfile?.role === "owner" && (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-              <p className="font-semibold text-red-800">
-                Owner: บันทึกประวัติและล้างข้อมูล
-              </p>
-
-              <p className="mt-1 text-sm text-red-700">
-                ใช้เมื่อจบรอบเสนอราคาแล้ว ต้องการเก็บประวัติ หรือเก็บประวัติพร้อมล้างรอบเสนอราคาปัจจุบัน
-              </p>
-
-              <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <p className="font-semibold text-blue-800">
-                  บันทึกประวัติอย่างเดียว
-                </p>
-
-                <p className="mt-1 text-sm text-blue-700">
-                  ใช้สำหรับเก็บประวัติรอบนี้ก่อน โดยยังไม่ล้างข้อมูลรอบเสนอราคาปัจจุบัน
-                </p>
-
-                <button
-                  type="button"
-                  onClick={archiveCurrentAuctionOnly}
-                  disabled={isLoading || !currentRound || totalMotorcycles === 0}
-                  className="mt-3 rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 md:py-2"
-                >
-                  บันทึกประวัติรอบนี้
-                </button>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                <input
-                  type="password"
-                  className="rounded-xl border px-4 py-3 outline-none focus:ring-2 focus:ring-red-600 md:py-2"
-                  placeholder="รหัสผ่าน Owner"
-                  value={resetPassword}
-                  onChange={(event) => setResetPassword(event.target.value)}
-                />
-
-                <input
-                  type="text"
-                  className="rounded-xl border px-4 py-3 outline-none focus:ring-2 focus:ring-red-600 md:py-2"
-                  placeholder='พิมพ์ "RESET AUCTION"'
-                  value={resetPhrase}
-                  onChange={(event) => setResetPhrase(event.target.value)}
-                />
-
-                <button
-                  onClick={resetAuctionData}
-                  className="rounded-xl bg-red-600 px-4 py-3 font-medium text-white hover:bg-red-700 md:py-2"
-                >
-                  บันทึกและล้าง
-                </button>
-              </div>
-            </div>
-          )}
         </section>
 
         {isLoading && (
@@ -1998,165 +1310,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           </div>
         )}
 
-        {!isLoading && lotResults.length > 0 && (
-          <section className="mt-6 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  ราคาสูงสุดแต่ละล็อต
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                  แสดงราคาสูงสุด ต้นทุน และกำไรขั้นต้นของแต่ละล็อต
-                </p>
-              </div>
-
-              <button
-                onClick={exportAuctionExcel}
-                className="rounded-xl bg-black px-4 py-2 font-medium text-white"
-              >
-                ดาวน์โหลด Excel
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {lotResults.map((lot) => {
-                const cost = Number(lot.motorcycle?.cost_price || 0);
-                const profit = Number(lot.highestPrice || 0) - cost;
-                const groups = getOfferGroupsByPrice(lot.offers);
-                const tieNote = getTieNote(groups);
-
-                return (
-                  <article
-                    key={lot.lotKey}
-                    className="rounded-2xl border bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Lot {lot.motorcycle?.lot_number || "-"}
-                        </p>
-
-                        <h3 className="mt-1 text-lg font-bold text-gray-900">
-                          {lot.motorcycle?.motorcycle_name || "-"}
-                        </h3>
-
-                        {tieNote && (
-                          <p className="mt-1 text-sm font-semibold text-orange-700">
-                            {tieNote}
-                          </p>
-                        )}
-                      </div>
-
-                      {lot.motorcycle?.id && (
-                        <a
-                          href={`/admin/lots/${lot.motorcycle.id}`}
-                          className="rounded-xl border px-4 py-2 text-sm font-medium hover:bg-gray-100"
-                        >
-                          ดูรายละเอียด
-                        </a>
-                      )}
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                      <div className="rounded-2xl bg-gray-50 p-3">
-                        <p className="text-xs text-gray-500">ราคาสูงสุด</p>
-                        <p className="mt-1 break-words text-xl font-bold text-green-700 sm:text-2xl">
-                          {lot.highestPrice.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-500">บาท</p>
-                      </div>
-
-                      <div className="rounded-2xl bg-gray-50 p-3">
-                        <p className="text-xs text-gray-500">ต้นทุน</p>
-                        <p className="mt-1 break-words text-xl font-bold text-gray-900 sm:text-2xl">
-                          {cost.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-500">บาท</p>
-                      </div>
-
-                      <div className="rounded-2xl bg-gray-50 p-3">
-                        <p className="text-xs text-gray-500">กำไรขั้นต้น</p>
-                        <p
-                          className={
-                            profit >= 0
-                              ? "mt-1 break-words text-xl font-bold text-green-700 sm:text-2xl"
-                              : "mt-1 break-words text-xl font-bold text-red-700 sm:text-2xl"
-                          }
-                        >
-                          {profit.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-500">บาท</p>
-                      </div>
-
-                      <div className="rounded-2xl bg-gray-50 p-3">
-                        <p className="text-xs text-gray-500">จำนวนราคา</p>
-                        <p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
-                          {lot.offers.length}
-                        </p>
-                        <p className="text-xs text-gray-500">รายการ</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      {groups.slice(0, 3).map((group, groupIndex) => (
-                        <div
-                          key={`${lot.lotKey}-${groupIndex}`}
-                          className={
-                            groupIndex === 0
-                              ? "rounded-2xl border border-green-200 bg-green-50 p-3"
-                              : "rounded-2xl border bg-gray-50 p-3"
-                          }
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p
-                              className={
-                                groupIndex === 0
-                                  ? "font-bold text-green-800"
-                                  : "font-bold text-gray-900"
-                              }
-                            >
-                              อันดับ {groupIndex + 1}
-                              {group.length >= 2
-                                ? ` ร่วม ${group.length} ราย`
-                                : ""}
-                            </p>
-
-                            <p
-                              className={
-                                groupIndex === 0
-                                  ? "font-bold text-green-800"
-                                  : "font-bold text-gray-900"
-                              }
-                            >
-                              {Number(
-                                group[0]?.offer_price || 0
-                              ).toLocaleString()}{" "}
-                              บาท
-                            </p>
-                          </div>
-
-                          <div className="mt-2 space-y-1">
-                            {group.map((offer) => (
-                              <p
-                                key={offer.id}
-                                className="text-sm leading-6 text-gray-700"
-                              >
-                                {offer.merchants?.shop_name || "-"} •{" "}
-                                {offer.merchants?.name || "-"} •{" "}
-                                {offer.merchants?.phone || "-"}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
       </section>
       </main>
     </StaffGuard>

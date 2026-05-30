@@ -25,6 +25,8 @@ type ReceiptOffer = {
     id: number;
     lot_number: string;
     motorcycle_name: string;
+    round_lot_number?: string | null;
+    sort_order?: number | null;
   } | null;
 };
 
@@ -43,6 +45,13 @@ type CurrentAuctionRound = {
   round_name: string | null;
   auction_date: string | null;
   status: string | null;
+};
+
+type RoundLotMapping = {
+  original_motorcycle_id: number | null;
+  lot_number: string | null;
+  round_lot_number?: string | null;
+  sort_order?: number | null;
 };
 
 function formatThaiDateTime(value: string) {
@@ -87,7 +96,7 @@ function formatBaht(value: number) {
 function getRoundDisplayName(round: CurrentAuctionRound | null) {
   if (!round) return "-";
 
-  return round.round_name || `Round ${round.id}`;
+  return round.round_name || `รอบ #${round.id}`;
 }
 
 function getRoundDateText(round: CurrentAuctionRound | null) {
@@ -195,7 +204,53 @@ export default function AdminMerchantReceiptsPage() {
       return;
     }
 
-    setOffers((data as unknown as ReceiptOffer[]) || []);
+    let mappingRows: RoundLotMapping[] = [];
+    const mappingResult = await supabase
+      .from("auction_round_lots")
+      .select("original_motorcycle_id, lot_number, round_lot_number, sort_order")
+      .eq("auction_round_id", loadedRound.id);
+
+    if (!mappingResult.error) {
+      mappingRows = (mappingResult.data as unknown as RoundLotMapping[]) || [];
+    } else {
+      const fallbackMappingResult = await supabase
+        .from("auction_round_lots")
+        .select("original_motorcycle_id, lot_number")
+        .eq("auction_round_id", loadedRound.id);
+
+      if (!fallbackMappingResult.error) {
+        mappingRows =
+          (fallbackMappingResult.data as unknown as RoundLotMapping[]) || [];
+      }
+    }
+
+    const mappingByMotorcycleId = new Map<number, RoundLotMapping>();
+    mappingRows.forEach((mapping) => {
+      if (mapping.original_motorcycle_id) {
+        mappingByMotorcycleId.set(mapping.original_motorcycle_id, mapping);
+      }
+    });
+
+    const offersWithRoundLots = ((data as unknown as ReceiptOffer[]) || []).map(
+      (offer) => {
+        const motorcycleId = Number(offer.motorcycles?.id || offer.motorcycle_id);
+        const mapping = mappingByMotorcycleId.get(motorcycleId);
+
+        return {
+          ...offer,
+          motorcycles: offer.motorcycles
+            ? {
+                ...offer.motorcycles,
+                round_lot_number:
+                  mapping?.round_lot_number || mapping?.lot_number || null,
+                sort_order: mapping?.sort_order || null,
+              }
+            : offer.motorcycles,
+        };
+      }
+    );
+
+    setOffers(offersWithRoundLots);
     setSelectedMerchantId(null);
     setIsLoading(false);
   }
@@ -278,8 +333,17 @@ export default function AdminMerchantReceiptsPage() {
 
   const sortedSelectedOffers = selectedGroup
     ? [...selectedGroup.offers].sort((a, b) => {
-        const lotA = a.motorcycles?.lot_number || "";
-        const lotB = b.motorcycles?.lot_number || "";
+        const sortA = a.motorcycles?.sort_order;
+        const sortB = b.motorcycles?.sort_order;
+
+        if (sortA && sortB) return sortA - sortB;
+        if (sortA) return -1;
+        if (sortB) return 1;
+
+        const lotA =
+          a.motorcycles?.round_lot_number || a.motorcycles?.lot_number || "";
+        const lotB =
+          b.motorcycles?.round_lot_number || b.motorcycles?.lot_number || "";
 
         return lotA.localeCompare(lotB, "th", {
           numeric: true,
@@ -651,7 +715,9 @@ export default function AdminMerchantReceiptsPage() {
                                 </td>
 
                                 <td className="border border-black p-2 font-bold">
-                                  {offer.motorcycles?.lot_number || "-"}
+                                  {offer.motorcycles?.round_lot_number ||
+                                    offer.motorcycles?.lot_number ||
+                                    "-"}
                                 </td>
 
                                 <td className="border border-black p-2">

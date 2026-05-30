@@ -235,7 +235,7 @@ export default function AdminSoldPage() {
       "โทร",
       "ราคาขาย",
       "ต้นทุน",
-      "diff",
+      "กำไรขั้นต้น",
       "วันที่ขาย",
       "ผู้ยืนยันขาย",
       "หมายเหตุ",
@@ -482,7 +482,7 @@ export default function AdminSoldPage() {
                                   <th className="border p-3 text-right">
                                     ต้นทุน
                                   </th>
-                                  <th className="border p-3 text-right">diff</th>
+                                  <th className="border p-3 text-right">กำไรขั้นต้น</th>
                                   <th className="border p-3">วันที่ขาย</th>
                                   <th className="border p-3">ผู้ยืนยัน</th>
                                 </tr>
@@ -592,7 +592,7 @@ export default function AdminSoldPage() {
                                   </p>
 
                                   <p className="mt-1">
-                                    <span className="text-gray-500">diff: </span>
+                                    <span className="text-gray-500">กำไรขั้นต้น: </span>
                                     <span
                                       className={
                                         Number(item.diff || 0) >= 0

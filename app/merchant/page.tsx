@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 
 type MotorcyclePhoto = {
   id: number;
+  motorcycle_id: number;
   image_url: string;
 };
 
@@ -25,7 +26,7 @@ type Motorcycle = {
   tax_expiry: string | null;
   condition: string | null;
   notes: string | null;
-  motorcycle_photos: MotorcyclePhoto[];
+  motorcycle_photos?: MotorcyclePhoto[];
 };
 
 type Offer = {
@@ -78,6 +79,13 @@ type CurrentAuctionRound = {
 
 type OfferFilter = "all" | "empty" | "priced" | "editable" | "starred";
 
+type RoundLotMapping = {
+  original_motorcycle_id: number | null;
+  lot_number: string | null;
+  round_lot_number?: string | null;
+  sort_order?: number | null;
+};
+
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
 
@@ -113,6 +121,9 @@ export default function MerchantPage() {
 
   const [galleryPhotos, setGalleryPhotos] = useState<MotorcyclePhoto[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [loadedThumbnailIds, setLoadedThumbnailIds] = useState<
+    Record<number, boolean>
+  >({});
 
   function saveMerchantSession(session: MerchantSession) {
     localStorage.setItem(
@@ -145,6 +156,7 @@ export default function MerchantPage() {
     if (status === "draft") return "ยังไม่เปิดรับราคา";
     if (status === "open") return "เปิดรับราคา";
     if (status === "closed") return "ปิดรับราคาแล้ว";
+    if (status === "finished") return "จบรอบแล้ว";
     if (status === "archived") return "บันทึกประวัติแล้ว";
     return status || "-";
   }
@@ -164,7 +176,7 @@ export default function MerchantPage() {
   }
 
   function getRoundDisplayName(round: CurrentAuctionRound) {
-    return round.round_name || `Round ${round.id}`;
+    return round.round_name || `รอบ #${round.id}`;
   }
 
   function getRoundDateText(round: CurrentAuctionRound) {
@@ -176,6 +188,7 @@ export default function MerchantPage() {
   function getRoundClosedMessage(status?: string | null) {
     if (status === "draft") return "รอบนี้ยังไม่เปิดรับราคา";
     if (status === "closed") return "รอบนี้ปิดรับราคาแล้ว";
+    if (status === "finished") return "รอบนี้จบรอบแล้ว";
     if (status === "archived") return "รอบนี้บันทึกประวัติแล้ว";
     return "รอบนี้ยังไม่เปิดให้เสนอราคา";
   }
@@ -183,6 +196,7 @@ export default function MerchantPage() {
   function getRoundClosedDetail(status?: string | null) {
     if (status === "draft") return "กรุณารอเจ้าหน้าที่เปิดรับราคา";
     if (status === "closed") return "กรุณารอรอบถัดไป";
+    if (status === "finished") return "กรุณารอรอบถัดไป";
     if (status === "archived") return "กรุณารอรอบถัดไป";
     return "กรุณารอเจ้าหน้าที่เปิดรับราคา";
   }
@@ -431,11 +445,7 @@ export default function MerchantPage() {
           registration_status,
           tax_expiry,
           condition,
-          notes,
-          motorcycle_photos (
-            id,
-            image_url
-          )
+          notes
         `)
         .eq("active", true)
         .eq("auction_round_id", loadedRound.id)
@@ -447,10 +457,43 @@ export default function MerchantPage() {
         return;
       }
 
+      let mappingRows: RoundLotMapping[] = [];
+      const mappingResult = await supabase
+        .from("auction_round_lots")
+        .select("original_motorcycle_id, lot_number, round_lot_number, sort_order")
+        .eq("auction_round_id", loadedRound.id);
+
+      if (!mappingResult.error) {
+        mappingRows = (mappingResult.data as unknown as RoundLotMapping[]) || [];
+      } else {
+        const fallbackMappingResult = await supabase
+          .from("auction_round_lots")
+          .select("original_motorcycle_id, lot_number")
+          .eq("auction_round_id", loadedRound.id);
+
+        if (!fallbackMappingResult.error) {
+          mappingRows =
+            (fallbackMappingResult.data as unknown as RoundLotMapping[]) || [];
+        }
+      }
+
+      const mappingByMotorcycleId = new Map<number, RoundLotMapping>();
+      mappingRows.forEach((mapping) => {
+        if (mapping.original_motorcycle_id) {
+          mappingByMotorcycleId.set(mapping.original_motorcycle_id, mapping);
+        }
+      });
+
       const motorcycleOffers =
         data?.map((bike: Motorcycle) => ({
           motorcycle_id: Number(bike.id),
-          lot: bike.lot_number,
+          lot:
+            mappingByMotorcycleId.get(Number(bike.id))?.round_lot_number ||
+            mappingByMotorcycleId.get(Number(bike.id))?.lot_number ||
+            bike.lot_number ||
+            String(bike.id),
+          sortOrder:
+            mappingByMotorcycleId.get(Number(bike.id))?.sort_order || null,
           motorcycle: bike.motorcycle_name,
           brand: bike.brand || "",
           model: bike.model || "",
@@ -464,9 +507,16 @@ export default function MerchantPage() {
           tax_expiry: bike.tax_expiry || "",
           condition: bike.condition || "",
           notes: bike.notes || "",
-          photos: bike.motorcycle_photos || [],
+          photos: [],
           price: "",
         })) || [];
+
+      motorcycleOffers.sort((a, b) => {
+        if (a.sortOrder && b.sortOrder) return a.sortOrder - b.sortOrder;
+        if (a.sortOrder) return -1;
+        if (b.sortOrder) return 1;
+        return a.lot.localeCompare(b.lot, "th", { numeric: true });
+      });
 
       const savedPricesText = localStorage.getItem("merchantOfferPrices");
       const savedPrices = savedPricesText ? JSON.parse(savedPricesText) : {};
@@ -478,6 +528,40 @@ export default function MerchantPage() {
 
       setOffers(motorcycleOffersWithSavedPrices);
       setIsLoadingCurrentRound(false);
+
+      const motorcycleIds = motorcycleOffersWithSavedPrices.map((offer) =>
+        Number(offer.motorcycle_id)
+      );
+
+      if (motorcycleIds.length === 0) return;
+
+      const { data: photoData, error: photoError } = await supabase
+        .from("motorcycle_photos")
+        .select("id, motorcycle_id, image_url")
+        .in("motorcycle_id", motorcycleIds)
+        .order("id", { ascending: true });
+
+      if (photoError) {
+        console.error("โหลดรูปภาพรถไม่สำเร็จ", photoError);
+        return;
+      }
+
+      const photosByMotorcycleId = new Map<number, MotorcyclePhoto[]>();
+
+      ((photoData as MotorcyclePhoto[] | null) || []).forEach((photo) => {
+        const motorcycleId = Number(photo.motorcycle_id);
+        const currentPhotos = photosByMotorcycleId.get(motorcycleId) || [];
+
+        currentPhotos.push(photo);
+        photosByMotorcycleId.set(motorcycleId, currentPhotos);
+      });
+
+      setOffers((currentOffers) =>
+        currentOffers.map((offer) => ({
+          ...offer,
+          photos: photosByMotorcycleId.get(Number(offer.motorcycle_id)) || [],
+        }))
+      );
     }
 
     loadCurrentRoundAndMotorcycles();
@@ -974,24 +1058,24 @@ export default function MerchantPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl bg-gray-50 p-3">
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-gray-50 px-2 py-2 text-center">
               <p className="text-xs text-gray-500">รถทั้งหมด</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">
+              <p className="mt-1 text-lg font-bold leading-none text-gray-900">
                 {offers.length}
               </p>
             </div>
 
-            <div className="rounded-2xl bg-green-50 p-3">
+            <div className="rounded-xl bg-green-50 px-2 py-2 text-center">
               <p className="text-xs text-green-700">ใส่ราคาแล้ว</p>
-              <p className="mt-1 text-xl font-bold text-green-700">
+              <p className="mt-1 text-lg font-bold leading-none text-green-700">
                 {enteredOfferCount}
               </p>
             </div>
 
-            <div className="rounded-2xl bg-orange-50 p-3">
+            <div className="rounded-xl bg-orange-50 px-2 py-2 text-center">
               <p className="text-xs text-orange-700">แก้ไขได้</p>
-              <p className="mt-1 text-xl font-bold text-orange-700">
+              <p className="mt-1 text-lg font-bold leading-none text-orange-700">
                 {editableLotCount}
               </p>
             </div>
@@ -1098,7 +1182,8 @@ export default function MerchantPage() {
                     .map(Number)
                     .includes(Number(offer.motorcycle_id));
 
-                  const firstPhoto = offer.photos[0];
+                  const visiblePhotos = offer.photos.slice(0, 2);
+                  const hasMorePhotos = offer.photos.length > visiblePhotos.length;
 
                   const lotCanEdit = canEditThisLot(
                     Number(offer.motorcycle_id)
@@ -1115,28 +1200,64 @@ export default function MerchantPage() {
                           : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
                       }
                     >
-                      {firstPhoto ? (
-                        <button
-                          type="button"
-                          onClick={() => openGallery(offer.photos, 0)}
-                          className="relative block w-full overflow-hidden bg-gray-100"
+                      {visiblePhotos.length > 0 ? (
+                        <div
+                          className={
+                            visiblePhotos.length === 1
+                              ? "grid grid-cols-1 gap-2 bg-gray-100 p-2"
+                              : "grid grid-cols-2 gap-2 bg-gray-100 p-2"
+                          }
                         >
-                          <img
-                           src={firstPhoto.image_url}
-                          alt={`${offer.motorcycle} photo`}
-                          className="h-48 w-full bg-white object-contain sm:h-64"
-                          />
+                          {visiblePhotos.map((photo, photoIndex) => {
+                            const isThumbnailLoaded =
+                              loadedThumbnailIds[photo.id] || false;
 
-                          {offer.photos.length > 1 && (
-                            <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                              {offer.photos.length} รูป
-                            </span>
-                          )}
+                            return (
+                              <button
+                                key={photo.id}
+                                type="button"
+                                onClick={() => openGallery(offer.photos, photoIndex)}
+                                className={
+                                  visiblePhotos.length === 1
+                                    ? "relative block aspect-[16/10] w-full overflow-hidden rounded-2xl bg-gray-200"
+                                    : "relative block aspect-[4/3] w-full overflow-hidden rounded-2xl bg-gray-200"
+                                }
+                              >
+                                {!isThumbnailLoaded && (
+                                  <span className="absolute inset-0 flex items-center justify-center text-sm font-medium text-gray-500">
+                                    กำลังโหลดรูป
+                                  </span>
+                                )}
 
-                          <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white">
-                            ดูรูป
-                          </span>
-                        </button>
+                                <img
+                                  src={photo.image_url}
+                                  alt={`${offer.motorcycle} photo ${photoIndex + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  width={240}
+                                  height={180}
+                                  onLoad={() =>
+                                    setLoadedThumbnailIds((currentIds) => ({
+                                      ...currentIds,
+                                      [photo.id]: true,
+                                    }))
+                                  }
+                                  className={
+                                    isThumbnailLoaded
+                                      ? "h-full w-full object-cover opacity-100 transition-opacity"
+                                      : "h-full w-full object-cover opacity-0 transition-opacity"
+                                  }
+                                />
+
+                                {hasMorePhotos && photoIndex === 1 && (
+                                  <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-3 py-1 text-xs font-semibold text-white">
+                                    +{offer.photos.length - 2} รูป
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       ) : (
                         <div className="flex h-32 items-center justify-center bg-gray-100 text-sm text-gray-500">
                           ไม่มีรูป
@@ -1214,15 +1335,6 @@ export default function MerchantPage() {
                             {isDetailOpen ? "ซ่อนรายละเอียด ▲" : "ดูรายละเอียด ▼"}
                           </button>
 
-                          {offer.photos.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => openGallery(offer.photos, 0)}
-                              className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
-                            >
-                              ดูรูปทั้งหมด
-                            </button>
-                          )}
                         </div>
 
                         {isDetailOpen && (
@@ -1438,6 +1550,10 @@ export default function MerchantPage() {
           <img
            src={galleryPhotos[galleryIndex].image_url}
            alt="Motorcycle photo"
+            loading="lazy"
+            decoding="async"
+            width={1200}
+            height={900}
             className="max-h-[92vh] max-w-full bg-white object-contain"
            style={{
              width: "auto",

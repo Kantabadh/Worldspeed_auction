@@ -74,7 +74,8 @@ function formatThaiDateTime(value: string | null | undefined) {
 function getRoundStatusLabel(status?: string | null) {
   if (status === "draft") return "เตรียมรอบ";
   if (status === "open") return "เปิดรับราคา";
-  if (status === "closed") return "ปิดรอบ";
+  if (status === "closed") return "ปิดรับราคา";
+  if (status === "finished") return "จบรอบแล้ว";
   if (status === "archived") return "บันทึกประวัติแล้ว";
   return status || "-";
 }
@@ -82,6 +83,7 @@ function getRoundStatusLabel(status?: string | null) {
 function getStatusBadgeClass(status?: string | null) {
   if (status === "open") return "bg-green-100 text-green-700";
   if (status === "closed") return "bg-red-100 text-red-700";
+  if (status === "finished") return "bg-purple-100 text-purple-700";
   if (status === "archived") return "bg-purple-100 text-purple-700";
   return "bg-gray-100 text-gray-700";
 }
@@ -204,7 +206,7 @@ export default function AdminRoundsPage() {
 
   async function setAsCurrentRound(round: AuctionRound) {
     const confirmSet = confirm(
-      `ต้องการตั้ง "${round.round_name || `Round ${round.id}`}" เป็นรอบปัจจุบันใช่หรือไม่?`
+      `ต้องการตั้ง "${round.round_name || `รอบ #${round.id}`}" เป็นรอบปัจจุบันใช่หรือไม่?`
     );
 
     if (!confirmSet) return;
@@ -240,7 +242,7 @@ export default function AdminRoundsPage() {
       action: "auction_round_set_current",
       targetType: "auction_round",
       targetId: String(round.id),
-      targetName: round.round_name || `Round ${round.id}`,
+      targetName: round.round_name || `รอบ #${round.id}`,
       details: {
         round_id: round.id,
         round_name: round.round_name,
@@ -261,7 +263,7 @@ export default function AdminRoundsPage() {
     status: "draft" | "open" | "closed"
   ) {
     const confirmUpdate = confirm(
-      `ต้องการเปลี่ยนสถานะ "${round.round_name || `Round ${round.id}`}" เป็น "${getRoundStatusLabel(status)}" ใช่หรือไม่?`
+      `ต้องการเปลี่ยนสถานะ "${round.round_name || `รอบ #${round.id}`}" เป็น "${getRoundStatusLabel(status)}" ใช่หรือไม่?`
     );
 
     if (!confirmUpdate) return;
@@ -324,7 +326,7 @@ export default function AdminRoundsPage() {
       action: "auction_round_status_changed",
       targetType: "auction_round",
       targetId: String(round.id),
-      targetName: round.round_name || `Round ${round.id}`,
+      targetName: round.round_name || `รอบ #${round.id}`,
       details: {
         round_id: round.id,
         round_name: round.round_name,
@@ -345,7 +347,7 @@ export default function AdminRoundsPage() {
   }
 
   return (
-    <StaffGuard>
+    <StaffGuard allowedRoles={["owner", "admin"]}>
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
           <BackButton />
@@ -466,7 +468,7 @@ export default function AdminRoundsPage() {
                       <tr key={round.id} className="hover:bg-gray-50">
                         <td className="border p-3">
                           <p className="font-bold text-gray-900">
-                            {round.round_name || `Round ${round.id}`}
+                            {round.round_name || `รอบ #${round.id}`}
                           </p>
                           <p className="text-xs text-gray-500">
                             ID #{round.id} • สร้าง{" "}
@@ -547,8 +549,15 @@ export default function AdminRoundsPage() {
                             </button>
 
                             <a
-                              href="/admin/history"
+                              href={`/admin/rounds/${round.id}`}
                               className="rounded-lg bg-black px-3 py-2 text-xs font-bold text-white hover:bg-gray-800"
+                            >
+                              ดูรายละเอียด
+                            </a>
+
+                            <a
+                              href="/admin/history"
+                              className="rounded-lg border bg-white px-3 py-2 text-xs font-bold hover:bg-gray-100"
                             >
                               ดูประวัติ
                             </a>

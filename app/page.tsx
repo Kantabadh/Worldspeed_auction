@@ -21,7 +21,7 @@ export default function HomePage() {
             </h1>
 
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-gray-600 sm:mt-4 sm:text-lg sm:leading-8 md:text-xl">
-              ระบบสำหรับร้านค้าเสนอราคารถจักรยานยนต์ และผู้ดูแลระบบจัดการรายการ Auction
+              ระบบสำหรับร้านค้าเสนอราคารถจักรยานยนต์ และผู้ดูแลระบบจัดการรายการรอบเสนอราคา
             </p>
           </div>
 
@@ -66,7 +66,7 @@ export default function HomePage() {
               </h2>
 
               <p className="mt-2 text-sm leading-7 text-gray-600 sm:mt-3 sm:text-base">
-                จัดการคลังรถ รายการ Auction ร้านค้า ราคาเสนอ และตรวจสอบผลการเสนอราคา
+                จัดการคลังรถ รายการรอบเสนอราคา ร้านค้า ราคาเสนอ และตรวจสอบผลการเสนอราคา
               </p>
 
               <div className="mt-5 sm:mt-7">

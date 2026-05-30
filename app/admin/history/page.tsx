@@ -4,19 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
+import * as XLSX from "xlsx";
 
 type AuctionRound = {
   id: number;
   round_name: string | null;
-  archived_at: string;
-  archived_by_email: string | null;
-  archived_by_role: string | null;
+  auction_date: string | null;
+  status: string | null;
+  created_at: string | null;
+  closed_at: string | null;
+  archived_at: string | null;
   total_lots: number | null;
   total_merchants: number | null;
-  total_offers: number | null;
-  total_highest_offer: number | null;
-  total_cost: number | null;
-  total_gross_profit: number | null;
   note: string | null;
 };
 
@@ -118,8 +117,17 @@ function formatThaiTime(value: string | null | undefined) {
   });
 }
 
-function escapeCsvCell(value: string | number | null | undefined) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+function getRoundHistoryDate(round: AuctionRound | null) {
+  return round?.archived_at || round?.closed_at || round?.created_at || null;
+}
+
+function getRoundStatusLabel(status?: string | null) {
+  if (status === "finished") return "จบรอบแล้ว";
+  if (status === "archived") return "บันทึกประวัติแล้ว";
+  if (status === "closed") return "ปิดรับราคา";
+  if (status === "open") return "เปิดรับราคา";
+  if (status === "draft") return "เตรียมรอบ";
+  return status || "-";
 }
 
 export default function AdminHistoryPage() {
@@ -143,19 +151,18 @@ export default function AdminHistoryPage() {
         `
         id,
         round_name,
+        auction_date,
+        status,
+        created_at,
+        closed_at,
         archived_at,
-        archived_by_email,
-        archived_by_role,
         total_lots,
         total_merchants,
-        total_offers,
-        total_highest_offer,
-        total_cost,
-        total_gross_profit,
         note
       `
       )
-      .order("archived_at", { ascending: false });
+      .or("status.in.(finished,archived),archived_at.not.is.null")
+      .order("id", { ascending: false });
 
     if (error) {
       setErrorMessage(error.message);
@@ -267,10 +274,8 @@ export default function AdminHistoryPage() {
     return rounds.filter((round) => {
       const text = [
         round.round_name,
-        round.archived_by_email,
-        round.archived_by_role,
         round.note,
-        formatThaiDateTime(round.archived_at),
+        formatThaiDateTime(getRoundHistoryDate(round)),
       ]
         .filter(Boolean)
         .join(" ")
@@ -279,18 +284,6 @@ export default function AdminHistoryPage() {
       return text.includes(keyword);
     });
   }, [rounds, searchText]);
-
-  const totalHighestAllRounds = rounds.reduce((sum, round) => {
-    return sum + Number(round.total_highest_offer || 0);
-  }, 0);
-
-  const totalCostAllRounds = rounds.reduce((sum, round) => {
-    return sum + Number(round.total_cost || 0);
-  }, 0);
-
-  const totalProfitAllRounds = rounds.reduce((sum, round) => {
-    return sum + Number(round.total_gross_profit || 0);
-  }, 0);
 
   const offersByLotNumber = useMemo(() => {
     const map = new Map<string, AuctionRoundOffer[]>();
@@ -312,112 +305,57 @@ export default function AdminHistoryPage() {
     return map;
   }, [roundOffers]);
 
-  function exportRoundLotsCsv() {
-    if (!selectedRound) return;
-
-    const headers = [
-      "ลำดับ",
-      "ล็อต",
-      "ยี่ห้อ",
-      "รุ่น",
-      "ชื่อรถ",
-      "เลขถัง",
-      "ทะเบียน",
-      "ปี",
-      "ซื้อ/เทิร์น",
-      "มาจาก",
-      "ทุน",
-      "ราคาสูงสุด",
-      "ผู้ชนะ",
-      "เบอร์ผู้ชนะ",
-      "อันดับ 2",
-      "diff",
-    ];
-
-    const rows = roundLots.map((lot, index) => [
-      index + 1,
-      lot.lot_number || "",
-      lot.brand || "",
-      lot.model || "",
-      lot.motorcycle_name || "",
-      lot.frame_number || "",
-      lot.license_plate || "",
-      lot.year || "",
-      lot.acquisition_type || "",
-      lot.source_name || "",
-      Number(lot.cost_price || 0),
-      Number(lot.highest_offer || 0),
-      lot.winner_shop_name || "",
-      lot.winner_phone || "",
-      lot.second_place_text || "",
-      Number(lot.diff || 0),
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map(escapeCsvCell).join(","))
-      .join("\n");
-
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `auction-history-round-${selectedRound.id}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
-  }
-
-  function exportRoundOffersCsv() {
+  function exportRoundLotsExcel() {
     if (!selectedRound) return;
 
     const headers = [
       "ล็อต",
       "รถ",
-      "ร้านค้า",
-      "ผู้ติดต่อ",
-      "โทร",
-      "ราคาเสนอ",
-      "เวลาส่ง",
-      "แก้ไขแล้ว",
-      "ราคาเดิม",
-      "เวลาแก้ไข",
+      "ยี่ห้อ",
+      "รุ่น",
+      "เลขตัวถัง",
+      "มาจาก",
+      "ทุน",
+      "ราคาสูงสุด",
+      "ผู้ชนะ",
+      "อันดับ 2",
+      "กำไรขั้นต้น",
     ];
 
-    const rows = roundOffers.map((offer) => [
-      offer.lot_number || "",
-      offer.motorcycle_name || "",
-      offer.shop_name || "",
-      offer.merchant_name || "",
-      offer.phone || "",
-      Number(offer.offer_price || 0),
-      formatThaiDateTime(offer.submitted_at),
-      offer.was_edited ? "แก้ไขแล้ว" : "",
-      offer.original_offer_price ? Number(offer.original_offer_price) : "",
-      offer.updated_at ? formatThaiDateTime(offer.updated_at) : "",
+    const rows = roundLots.map((lot) => [
+      lot.lot_number || "-",
+      lot.motorcycle_name || "-",
+      lot.brand || "-",
+      lot.model || "-",
+      lot.frame_number || "-",
+      lot.source_name || "-",
+      lot.cost_price == null ? "-" : Number(lot.cost_price || 0),
+      lot.highest_offer == null ? "-" : Number(lot.highest_offer || 0),
+      lot.winner_shop_name || "-",
+      lot.second_place_text || "-",
+      lot.diff == null ? "-" : Number(lot.diff || 0),
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map(escapeCsvCell).join(","))
-      .join("\n");
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
+    sheet["!cols"] = [
+      { wch: 10 },
+      { wch: 28 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 14 },
+    ];
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `auction-history-offers-round-${selectedRound.id}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
+    XLSX.utils.book_append_sheet(workbook, sheet, "สรุปผลรอบนี้");
+    XLSX.writeFile(workbook, `สรุปผลรอบ_${selectedRound.id}.xlsx`);
   }
-
   return (
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
@@ -453,43 +391,6 @@ export default function AdminHistoryPage() {
               <p className="text-sm">{errorMessage}</p>
             </div>
           )}
-
-          <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">จำนวนรอบ</p>
-              <p className="mt-2 text-2xl font-bold text-gray-900">
-                {rounds.length}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">มูลค่าสูงสุดรวม</p>
-              <p className="mt-2 break-words text-xl font-bold text-green-700">
-                {formatBaht(totalHighestAllRounds)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">ต้นทุนรวม</p>
-              <p className="mt-2 break-words text-xl font-bold text-orange-700">
-                {formatBaht(totalCostAllRounds)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">กำไรขั้นต้นรวม</p>
-              <p
-                className={
-                  totalProfitAllRounds >= 0
-                    ? "mt-2 break-words text-xl font-bold text-green-700"
-                    : "mt-2 break-words text-xl font-bold text-red-700"
-                }
-              >
-                {formatBaht(totalProfitAllRounds)}
-              </p>
-            </div>
-          </section>
-
           <div className="mt-5 grid gap-4 lg:grid-cols-[380px_1fr]">
             <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
               <h2 className="text-lg font-bold text-gray-900">
@@ -498,7 +399,7 @@ export default function AdminHistoryPage() {
 
               <input
                 className="mt-4 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="ค้นหารอบ / ผู้บันทึก / หมายเหตุ"
+                placeholder="ค้นหารอบ / หมายเหตุ"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -515,7 +416,7 @@ export default function AdminHistoryPage() {
                     ยังไม่มีประวัติรอบเสนอราคา
                   </p>
                   <p className="mt-1 text-sm text-gray-600">
-                    ให้ Owner กด “บันทึกประวัติรอบนี้” จากหน้า Admin ก่อน
+                    เมื่อจบรอบเสนอราคาแล้ว รอบจะแสดงในหน้านี้โดยอัตโนมัติ
                   </p>
                 </div>
               )}
@@ -539,10 +440,10 @@ export default function AdminHistoryPage() {
                       </p>
 
                       <p className="mt-1 text-xs text-gray-500">
-                        {formatThaiDateTime(round.archived_at)}
+                        {formatThaiDateTime(getRoundHistoryDate(round))}
                       </p>
 
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
                         <div className="rounded-xl bg-gray-100 p-2">
                           <p className="font-bold text-gray-900">
                             {formatNumber(round.total_lots)}
@@ -557,21 +458,7 @@ export default function AdminHistoryPage() {
                           <p className="text-gray-500">ร้าน</p>
                         </div>
 
-                        <div className="rounded-xl bg-gray-100 p-2">
-                          <p className="font-bold text-gray-900">
-                            {formatNumber(round.total_offers)}
-                          </p>
-                          <p className="text-gray-500">ราคา</p>
-                        </div>
                       </div>
-
-                      <p className="mt-3 text-sm font-semibold text-green-700">
-                        สูงสุดรวม: {formatBaht(round.total_highest_offer)}
-                      </p>
-
-                      <p className="mt-1 text-xs text-gray-500">
-                        บันทึกโดย: {round.archived_by_email || "-"}
-                      </p>
                     </button>
                   );
                 })}
@@ -603,18 +490,16 @@ export default function AdminHistoryPage() {
                       </h2>
 
                       <p className="mt-1 text-sm text-gray-600">
-                        บันทึกเมื่อ {formatThaiDateTime(selectedRound.archived_at)}
-                      </p>
-
-                      <p className="mt-1 text-sm text-gray-600">
-                        บันทึกโดย {selectedRound.archived_by_email || "-"} •{" "}
-                        {selectedRound.archived_by_role || "-"}
+                        บันทึกเมื่อ {formatThaiDateTime(getRoundHistoryDate(selectedRound))}
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                        {getRoundStatusLabel(selectedRound.status)}
+                      </span>
                       <button
-                        onClick={exportRoundLotsCsv}
+                        onClick={exportRoundLotsExcel}
                         disabled={roundLots.length === 0}
                         className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-300"
                       >
@@ -622,50 +507,6 @@ export default function AdminHistoryPage() {
                       </button>
                     </div>
                   </div>
-
-                  <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">ล็อต</p>
-                      <p className="mt-1 text-xl font-bold">
-                        {formatNumber(selectedRound.total_lots)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">ร้านค้า</p>
-                      <p className="mt-1 text-xl font-bold">
-                        {formatNumber(selectedRound.total_merchants)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">ราคาเสนอ</p>
-                      <p className="mt-1 text-xl font-bold">
-                        {formatNumber(selectedRound.total_offers)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">มูลค่าสูงสุด</p>
-                      <p className="mt-1 text-lg font-bold text-green-700">
-                        {formatBaht(selectedRound.total_highest_offer)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">กำไรขั้นต้น</p>
-                      <p
-                        className={
-                          Number(selectedRound.total_gross_profit || 0) >= 0
-                            ? "mt-1 text-lg font-bold text-green-700"
-                            : "mt-1 text-lg font-bold text-red-700"
-                        }
-                      >
-                        {formatBaht(selectedRound.total_gross_profit)}
-                      </p>
-                    </div>
-                  </section>
-
                   {isLoadingDetails ? (
                     <div className="mt-5 rounded-2xl bg-gray-50 p-5 text-gray-600">
                       กำลังโหลดรายละเอียด...
@@ -696,7 +537,7 @@ export default function AdminHistoryPage() {
                                   </th>
                                   <th className="border p-3">ผู้ชนะ</th>
                                   <th className="border p-3">อันดับ 2</th>
-                                  <th className="border p-3 text-right">diff</th>
+                                  <th className="border p-3 text-right">กำไรขั้นต้น</th>
                                 </tr>
                               </thead>
 

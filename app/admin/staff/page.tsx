@@ -24,7 +24,7 @@ function getStaffRoleLabel(role: StaffRole | string) {
 
 function getStaffRoleDescription(role: StaffRole | string) {
   if (role === "owner") return "สิทธิ์สูงสุด จัดการทุกอย่างได้";
-  if (role === "admin") return "จัดการ Auction ร้านค้า ราคาเสนอ และ Export";
+  if (role === "admin") return "จัดการรอบเสนอราคา ร้านค้า ราคาเสนอ และดาวน์โหลดไฟล์";
   if (role === "stock_staff") return "เพิ่ม/แก้ไขข้อมูลรถในคลังเท่านั้น";
   return "-";
 }
