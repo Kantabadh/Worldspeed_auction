@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -35,11 +36,29 @@ type DetailKey = keyof MotorcycleDetails;
 type Motorcycle = MotorcycleDetails & {
   id: number;
   lot_number: string;
+  round_lot_number?: string | null;
+  sort_order?: number | null;
+  auction_round_id?: number | null;
   motorcycle_name: string;
   cost_price: number | null;
   active: boolean;
   created_at: string;
   motorcycle_photos: MotorcyclePhoto[];
+};
+
+type CurrentAuctionRound = {
+  id: number;
+  round_name: string | null;
+  auction_date: string | null;
+  status: string | null;
+  is_current: boolean | null;
+};
+
+type RoundLotMapping = {
+  original_motorcycle_id: number | null;
+  lot_number: string | null;
+  round_lot_number?: string | null;
+  sort_order?: number | null;
 };
 
 type StaffProfile = {
@@ -161,6 +180,75 @@ function formatMoneyInput(value: number | null) {
   return String(value);
 }
 
+function formatThaiDate(value: string | null | undefined) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleDateString("th-TH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatChecklistFileDate(value: string | null | undefined) {
+  const text = formatThaiDate(value);
+
+  if (text === "-") return "ไม่ระบุวันที่";
+
+  return text.replace(/\s+/g, "_").replace(/[\\/:*?"<>|]/g, "");
+}
+
+function cleanOptionalText(value: string | null | undefined) {
+  return value?.trim() || "";
+}
+
+function getRoundLotDisplay(bike: Motorcycle) {
+  return (
+    cleanOptionalText(bike.round_lot_number) ||
+    cleanOptionalText(bike.lot_number) ||
+    "-"
+  );
+}
+
+function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
+  const sortA = a.sort_order;
+  const sortB = b.sort_order;
+
+  if (
+    sortA !== null &&
+    sortA !== undefined &&
+    sortB !== null &&
+    sortB !== undefined
+  ) {
+    const sortResult = Number(sortA) - Number(sortB);
+
+    if (sortResult !== 0) return sortResult;
+  }
+
+  if (sortA !== null && sortA !== undefined) return -1;
+  if (sortB !== null && sortB !== undefined) return 1;
+
+  const lotResult = getRoundLotDisplay(a).localeCompare(
+    getRoundLotDisplay(b),
+    "th",
+    { numeric: true }
+  );
+
+  if (lotResult !== 0) return lotResult;
+
+  return (
+    (a.brand || "").localeCompare(b.brand || "", "th", { numeric: true }) ||
+    (a.model || "").localeCompare(b.model || "", "th", { numeric: true }) ||
+    (a.frame_number || "").localeCompare(b.frame_number || "", "th", {
+      numeric: true,
+    })
+  );
+}
+
 function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
   return {
     brand: bike.brand || "",
@@ -196,6 +284,9 @@ export default function AdminMotorcyclesPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
 
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
+  const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(
+    null
+  );
 
   const [lotNumber, setLotNumber] = useState("");
   const [motorcycleName, setMotorcycleName] = useState("");
@@ -337,12 +428,28 @@ export default function AdminMotorcyclesPage() {
     setIsLoading(true);
     setErrorMessage("");
 
+    const { data: roundData, error: roundError } = await supabase
+      .from("auction_rounds")
+      .select("id, round_name, auction_date, status, is_current")
+      .eq("is_current", true)
+      .maybeSingle();
+
+    if (roundError) {
+      setErrorMessage(roundError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const activeRound = (roundData as CurrentAuctionRound | null) || null;
+    setCurrentRound(activeRound);
+
     const { data, error } = await supabase
       .from("motorcycles")
       .select(
         `
         id,
         lot_number,
+        auction_round_id,
         motorcycle_name,
         cost_price,
         brand,
@@ -375,7 +482,39 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
-    setMotorcycles((data as Motorcycle[]) || []);
+    let roundLotByMotorcycleId = new Map<number, RoundLotMapping>();
+
+    if (activeRound) {
+      const { data: roundLotData, error: roundLotError } = await supabase
+        .from("auction_round_lots")
+        .select("original_motorcycle_id, lot_number, round_lot_number, sort_order")
+        .eq("auction_round_id", activeRound.id);
+
+      if (roundLotError) {
+        setErrorMessage(roundLotError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      roundLotByMotorcycleId = new Map(
+        ((roundLotData as RoundLotMapping[]) || [])
+          .filter((item) => item.original_motorcycle_id)
+          .map((item) => [Number(item.original_motorcycle_id), item])
+      );
+    }
+
+    const mergedMotorcycles = ((data as Motorcycle[]) || []).map((bike) => {
+      const mapping = roundLotByMotorcycleId.get(bike.id);
+
+      return {
+        ...bike,
+        round_lot_number:
+          mapping?.round_lot_number || mapping?.lot_number || null,
+        sort_order: mapping?.sort_order ?? null,
+      };
+    });
+
+    setMotorcycles(mergedMotorcycles.sort(sortChecklistMotorcycles));
     setIsLoading(false);
   }
 
@@ -670,6 +809,75 @@ export default function AdminMotorcyclesPage() {
     );
   }
 
+  function exportChecklistExcel() {
+    if (!currentRound) {
+      alert("ยังไม่มีรอบเสนอราคาปัจจุบัน");
+      return;
+    }
+
+    const checklistMotorcycles = motorcycles
+      .filter((bike) => bike.auction_round_id === currentRound.id)
+      .sort(sortChecklistMotorcycles);
+
+    if (checklistMotorcycles.length === 0) {
+      alert("ยังไม่มีรถในรอบเสนอราคาปัจจุบัน");
+      return;
+    }
+
+    const headers = [
+      "ลำดับ",
+      "ล็อต",
+      "ยี่ห้อ",
+      "รุ่น",
+      "เลขตัวถัง",
+      "เลขเครื่อง",
+      "สี",
+      "ทะเบียน",
+      "มาจาก",
+      "หมายเหตุ",
+      "ช่องตรวจสอบ",
+    ];
+
+    const rows = checklistMotorcycles.map((bike, index) => [
+      index + 1,
+      getRoundLotDisplay(bike),
+      bike.brand || "-",
+      bike.model || "-",
+      bike.frame_number || "-",
+      bike.engine_number || "-",
+      bike.color || "-",
+      bike.license_plate || "-",
+      bike.source_name || "-",
+      bike.notes || "",
+      "",
+    ]);
+
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    sheet["!cols"] = [
+      { wch: 8 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 24 },
+      { wch: 24 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 34 },
+      { wch: 16 },
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, sheet, "จัดเรียงล็อต");
+    XLSX.writeFile(
+      workbook,
+      `จัดเรียงล็อต_รอบวันที่_${formatChecklistFileDate(
+        currentRound.auction_date
+      )}.xlsx`
+    );
+  }
+
   function renderDetailInputs(
     value: MotorcycleDetails,
     setValue: Dispatch<SetStateAction<MotorcycleDetails>>
@@ -863,17 +1071,6 @@ export default function AdminMotorcyclesPage() {
     setCurrentPage(1);
   }, [searchText, statusFilter]);
 
-  const activeCount = motorcycles.filter((bike) => bike.active).length;
-  const hiddenCount = motorcycles.filter((bike) => !bike.active).length;
-
-  const totalPhotos = motorcycles.reduce((sum, bike) => {
-    return sum + (bike.motorcycle_photos?.length || 0);
-  }, 0);
-
-  const totalCost = motorcycles.reduce((sum, bike) => {
-    return sum + Number(bike.cost_price || 0);
-  }, 0);
-
   const filteredMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
@@ -884,7 +1081,7 @@ export default function AdminMotorcyclesPage() {
         (statusFilter === "hidden" && !bike.active);
 
       const searchableText = [
-        bike.lot_number,
+        getRoundLotDisplay(bike),
         bike.motorcycle_name,
         bike.brand,
         bike.model,
@@ -945,23 +1142,34 @@ export default function AdminMotorcyclesPage() {
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                รายการรถจักรยานยนต์
+                รายการรถในรอบเสนอราคา
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                เพิ่มรถ อัปโหลดรูป แก้ไขรายละเอียด ต้นทุน และเปิด/ซ่อนรายการ
+                ตรวจสอบรถที่ถูกเลือกเข้ารอบปัจจุบัน และดาวน์โหลด Excel สำหรับจัดเรียงรถจริงก่อนวันประมูล
               </p>
               <p className="mt-2 text-sm font-medium text-amber-700">
-                การเพิ่มรถใหม่ให้ทำผ่านหน้า คลังรถและรอบเสนอราคา เท่านั้น
+                การเพิ่มรถใหม่ให้ทำผ่านหน้า เพิ่มรถเข้าคลัง เท่านั้น
               </p>
             </div>
 
-            <button
-              onClick={loadMotorcycles}
-              className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
-            >
-              โหลดใหม่
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={exportChecklistExcel}
+                disabled={!currentRound}
+                className="rounded-xl bg-black px-4 py-2 font-medium text-white shadow hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                ดาวน์โหลด Excel จัดเรียงล็อต
+              </button>
+
+              <button
+                onClick={loadMotorcycles}
+                className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
+              >
+                โหลดใหม่
+              </button>
+            </div>
           </div>
 
           {errorMessage && (
@@ -977,52 +1185,6 @@ export default function AdminMotorcyclesPage() {
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {motorcycles.length}
               </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">เปิดใช้งาน</p>
-              <p className="mt-2 text-3xl font-bold text-green-600">
-                {activeCount}
-              </p>
-              <p className="mt-1 text-sm text-gray-500">ซ่อน: {hiddenCount}</p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">รูปทั้งหมด</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">
-                {totalPhotos}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">ต้นทุนรวม</p>
-              <p className="mt-2 text-2xl font-bold text-orange-700">
-                {totalCost.toLocaleString()}
-              </p>
-              <p className="text-sm text-gray-500">บาท</p>
-            </div>
-          </section>
-
-          <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-amber-800">
-                  รายการรถในรอบเสนอราคา
-                </p>
-                <h2 className="mt-1 text-xl font-bold text-gray-900">
-                  การเพิ่มรถใหม่ให้ทำผ่านหน้า คลังรถและรอบเสนอราคา เท่านั้น
-                </h2>
-                <p className="mt-1 text-sm text-gray-700">
-                  หน้านี้ใช้ดู แก้ไข ซ่อน หรือจัดการรถที่ถูกส่งเข้ารอบเสนอราคาแล้ว
-                </p>
-              </div>
-
-              <a
-                href="/admin/stock"
-                className="rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white shadow hover:bg-gray-800"
-              >
-                ไปหน้า คลังรถและรอบเสนอราคา
-              </a>
             </div>
           </section>
 
@@ -1226,7 +1388,7 @@ export default function AdminMotorcyclesPage() {
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
                               <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                                ล็อต {bike.lot_number}
+                                ล็อต {getRoundLotDisplay(bike)}
                               </p>
 
                               <h3 className="mt-1 text-lg font-bold text-gray-900">

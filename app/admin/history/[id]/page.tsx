@@ -605,13 +605,6 @@ export default function AdminHistoryDetailPage() {
                   >
                     โหลดใหม่
                   </button>
-
-                  <button
-                    onClick={exportExcel}
-                    className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-                  >
-                    ดาวน์โหลด Excel
-                  </button>
                 </div>
               </div>
             </section>

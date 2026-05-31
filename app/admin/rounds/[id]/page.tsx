@@ -1098,13 +1098,38 @@ export default function AdminRoundDetailPage() {
     const rows = filteredLotResults.map((lot) => {
       const cost = Number(lot.motorcycle?.cost_price || 0);
       const result = getLotFinalResult(lot);
+      const highestOffer = lot.offers[0] || null;
+      const highestPrice = highestOffer
+        ? Number(highestOffer.offer_price || 0)
+        : null;
+      const runnerUpOffer = highestPrice
+        ? lot.offers.find(
+            (offer) => Number(offer.offer_price || 0) < highestPrice
+          )
+        : null;
+      const actualSoldPrice = result.price == null ? null : Number(result.price);
+      const grossProfit =
+        actualSoldPrice === null ? null : actualSoldPrice - cost;
 
       return [
         getArrangementLotNumber(lot.motorcycle),
         lot.motorcycle?.motorcycle_name || "-",
+        lot.motorcycle?.brand || "-",
+        lot.motorcycle?.model || "-",
+        lot.motorcycle?.frame_number || "-",
         cost || "-",
-        result.price == null ? "-" : result.price,
+        highestPrice || "-",
+        lot.topOffers.length > 0
+          ? lot.topOffers.map(getMerchantName).join(", ")
+          : "-",
+        runnerUpOffer
+          ? `${getMerchantName(runnerUpOffer)} (${Number(
+              runnerUpOffer.offer_price || 0
+            ).toLocaleString()})`
+          : "-",
+        actualSoldPrice === null ? "-" : actualSoldPrice,
         result.merchant || "-",
+        grossProfit === null ? "-" : grossProfit,
         result.status,
         result.note || "-",
       ];
@@ -1113,9 +1138,16 @@ export default function AdminRoundDetailPage() {
     const headers = [
       "ล็อต",
       "รถ",
+      "ยี่ห้อ",
+      "รุ่น",
+      "เลขตัวถัง",
       "ต้นทุน",
-      "ราคาขาย",
-      "ผู้ซื้อ/ร้านค้า",
+      "ราคาสูงสุด",
+      "ผู้เสนอราคาสูงสุด",
+      "อันดับ 2",
+      "ราคาขายจริง",
+      "ผู้ซื้อจริง",
+      "กำไรขั้นต้น",
       "สถานะผล",
       "หมายเหตุ",
     ];
@@ -1126,9 +1158,16 @@ export default function AdminRoundDetailPage() {
     sheet["!cols"] = [
       { wch: 12 },
       { wch: 28 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 24 },
+      { wch: 14 },
       { wch: 14 },
       { wch: 28 },
+      { wch: 32 },
+      { wch: 16 },
       { wch: 28 },
+      { wch: 16 },
       { wch: 24 },
       { wch: 42 },
     ];
@@ -1140,7 +1179,7 @@ export default function AdminRoundDetailPage() {
       }),
     };
 
-    XLSX.utils.book_append_sheet(workbook, sheet, "ราคาสูงสุดแต่ละล็อต");
+    XLSX.utils.book_append_sheet(workbook, sheet, "ผลราคา");
 
     const roundFileName = (round.round_name || `round-${round.id}`)
       .replace(/[\\/:*?"<>|]/g, "")
@@ -1148,7 +1187,7 @@ export default function AdminRoundDetailPage() {
 
     XLSX.writeFile(
       workbook,
-      `ราคาสูงสุดแต่ละล็อต_${roundFileName}_${formatFileDate(new Date())}.xlsx`
+      `ผลราคา_${roundFileName}_${formatFileDate(new Date())}.xlsx`
     );
   }
 

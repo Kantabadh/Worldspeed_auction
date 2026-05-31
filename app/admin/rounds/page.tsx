@@ -382,7 +382,7 @@ export default function AdminRoundsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
               <p className="text-sm text-gray-500">จำนวนรอบทั้งหมด</p>
               <p className="mt-2 text-2xl font-bold text-gray-900">
@@ -403,13 +403,6 @@ export default function AdminRoundsPage() {
                 {currentRound ? getRoundStatusLabel(currentRound.status) : "-"}
               </p>
             </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm text-gray-500">วันที่ประมูล</p>
-              <p className="mt-2 text-lg font-bold text-gray-900">
-                {formatThaiDate(currentRound?.auction_date)}
-              </p>
-            </div>
           </section>
 
           <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
@@ -426,7 +419,7 @@ export default function AdminRoundsPage() {
 
               <input
                 className="w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black md:w-96"
-                placeholder="ค้นหารอบ / วันที่ / ผู้บันทึก"
+                placeholder="ค้นหารอบ / ผู้บันทึก"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -449,11 +442,10 @@ export default function AdminRoundsPage() {
 
             {!isLoading && filteredRounds.length > 0 && (
               <div className="mt-4 overflow-x-auto rounded-2xl border">
-                <table className="min-w-[1200px] w-full border-collapse text-left text-sm">
+                <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
-                      <th className="border p-3">รอบ</th>
-                      <th className="border p-3">วันที่ประมูล</th>
+                      <th className="border p-3">รอบเสนอราคา</th>
                       <th className="border p-3">สถานะ</th>
                       <th className="border p-3 text-center">ปัจจุบัน</th>
                       <th className="border p-3 text-right">ล็อต</th>
@@ -474,10 +466,6 @@ export default function AdminRoundsPage() {
                             ID #{round.id} • สร้าง{" "}
                             {formatThaiDateTime(round.created_at)}
                           </p>
-                        </td>
-
-                        <td className="border p-3">
-                          {formatThaiDate(round.auction_date)}
                         </td>
 
                         <td className="border p-3">

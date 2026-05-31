@@ -1082,7 +1082,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
               </h2>
 
               <p className="mt-1 text-sm text-gray-600">
-                ใช้สำหรับแยกรอบประมูลรายเดือน เช่น เสาร์แรกของเดือน
+                ใช้ควบคุมรอบที่ร้านค้ากำลังเสนอราคา
               </p>
             </div>
 
@@ -1090,20 +1090,11 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 
           {currentRound ? (
             <div className="mt-4 rounded-2xl border bg-gray-50 p-4">
-              <div className="grid gap-4 md:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <p className="text-sm text-gray-500">ชื่อรอบ</p>
                   <p className="mt-1 font-bold text-gray-900">
                     {currentRound.round_name || `รอบ #${currentRound.id}`}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm text-gray-500">วันที่ประมูล</p>
-                  <p className="mt-1 font-bold text-gray-900">
-                    {currentRound.auction_date
-                      ? formatThaiDate(currentRound.auction_date)
-                      : "-"}
                   </p>
                 </div>
 

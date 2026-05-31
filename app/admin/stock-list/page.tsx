@@ -21,7 +21,7 @@ type StockStatus =
   | "ขายแล้ว"
   | "cancelled";
 
-type StatusFilter = "all" | "in_stock" | "in_auction" | "sold" | "returned";
+type StatusFilter = "all" | "in_stock" | "in_auction" | "sold";
 
 type StockMotorcycle = {
   id: number;
@@ -115,11 +115,10 @@ const statusBadges: Record<string, string> = {
 };
 
 const statusFilterOptions: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "ทั้งหมด" },
-  { value: "in_stock", label: "อยู่ในสต็อก" },
+  { value: "in_stock", label: "พร้อมเลือกรอบ" },
   { value: "in_auction", label: "อยู่ในรอบเสนอราคา" },
   { value: "sold", label: "ขายแล้ว" },
-  { value: "returned", label: "เคยกลับเข้าสต็อก" },
+  { value: "all", label: "ทั้งหมด" },
 ];
 
 function getStatusLabel(status: string | null | undefined) {
@@ -148,6 +147,17 @@ function getStockLocationBadge(bike: StockMotorcycle) {
   }
 
   return "bg-gray-100 text-gray-700";
+}
+
+function isAvailableStockBike(bike: StockMotorcycle) {
+  const isInStockStatus =
+    bike.stock_status === "อยู่ในสต็อก" || bike.stock_status === "in_stock";
+
+  return (
+    isInStockStatus &&
+    bike.current_auction_round_id === null &&
+    bike.current_auction_motorcycle_id === null
+  );
 }
 
 function getRoundStatusLabel(status?: string | null) {
@@ -207,15 +217,7 @@ function getErrorMessage(error: unknown) {
 }
 
 function canSendStockBikeToRound(bike: StockMotorcycle) {
-  if (bike.current_auction_motorcycle_id) return false;
-  if (bike.current_auction_round_id) return false;
-  if (bike.stock_status === "in_auction") return false;
-  if (bike.stock_status === "อยู่ในรอบเสนอราคา") return false;
-  if (bike.stock_status === "sold") return false;
-  if (bike.stock_status === "ขายแล้ว") return false;
-  if (bike.stock_status === "repairing") return false;
-  if (bike.stock_status === "cancelled") return false;
-  return true;
+  return isAvailableStockBike(bike);
 }
 
 function formatRoundLotNumber(index: number) {
@@ -242,7 +244,7 @@ export default function AdminStockListPage() {
   );
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("in_stock");
   const [returnedStockIds, setReturnedStockIds] = useState<Set<number>>(
     new Set()
   );
@@ -413,11 +415,15 @@ export default function AdminStockListPage() {
     loadPageData();
   }, []);
 
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [statusFilter]);
+
   const filteredStockMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
     return stockMotorcycles.filter((bike) => {
-      if (statusFilter === "in_stock" && getStockLocationLabel(bike) !== "อยู่ในสต็อก") {
+      if (statusFilter === "in_stock" && !isAvailableStockBike(bike)) {
         return false;
       }
 
@@ -429,10 +435,6 @@ export default function AdminStockListPage() {
       }
 
       if (statusFilter === "sold" && getStockLocationLabel(bike) !== "ขายแล้ว") {
-        return false;
-      }
-
-      if (statusFilter === "returned" && !returnedStockIds.has(bike.id)) {
         return false;
       }
 
@@ -460,10 +462,16 @@ export default function AdminStockListPage() {
   }, [stockMotorcycles, searchText, statusFilter, returnedStockIds]);
 
   const selectableIds = filteredStockMotorcycles
-    .filter((bike) => canSendStockBikeToRound(bike))
+    .filter((bike) => statusFilter === "in_stock" && canSendStockBikeToRound(bike))
     .map((bike) => bike.id);
 
   function toggleSelection(stockMotorcycleId: number) {
+    if (statusFilter !== "in_stock") return;
+
+    const bike = stockMotorcycles.find((item) => item.id === stockMotorcycleId);
+
+    if (!bike || !canSendStockBikeToRound(bike)) return;
+
     setSelectedIds((current) =>
       current.includes(stockMotorcycleId)
         ? current.filter((id) => id !== stockMotorcycleId)
@@ -822,7 +830,7 @@ export default function AdminStockListPage() {
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
-                Owner/Admin ใช้หน้านี้เลือกรถจากคลังเพื่อส่งเข้ารอบเสนอราคาปัจจุบัน
+                แสดงเฉพาะรถที่พร้อมเลือกเข้ารอบเสนอราคาเป็นค่าเริ่มต้น
               </p>
             </div>
 
@@ -868,12 +876,12 @@ export default function AdminStockListPage() {
               <button
                 type="button"
                 onClick={sendSelectedToRound}
-                disabled={isSending || selectedIds.length === 0}
+                disabled={
+                  isSending || statusFilter !== "in_stock" || selectedIds.length === 0
+                }
                 className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
               >
-                {isSending
-                  ? "กำลังส่งเข้ารอบ..."
-                  : `ส่งเข้ารอบเสนอราคา (${selectedIds.length})`}
+                {isSending ? "กำลังส่งเข้ารอบ..." : "ส่งเข้ารอบเสนอราคา"}
               </button>
             </div>
           </section>
@@ -886,7 +894,7 @@ export default function AdminStockListPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  เลือกรถที่พร้อมขายและยังไม่อยู่ในรอบเสนอราคา
+                  เลือกรถที่พร้อมเข้ารอบจากแท็บพร้อมเลือกรอบ
                 </p>
               </div>
 
@@ -917,7 +925,7 @@ export default function AdminStockListPage() {
               <button
                 type="button"
                 onClick={toggleAllVisible}
-                disabled={selectableIds.length === 0}
+                disabled={statusFilter !== "in_stock" || selectableIds.length === 0}
                 className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100 disabled:opacity-50"
               >
                 เลือกรถที่พร้อมส่งทั้งหมด
@@ -961,7 +969,9 @@ export default function AdminStockListPage() {
 
                   <tbody>
                     {filteredStockMotorcycles.map((bike) => {
-                      const canSend = canSendStockBikeToRound(bike);
+                      const canSend =
+                        statusFilter === "in_stock" &&
+                        canSendStockBikeToRound(bike);
                       const isSelected = selectedIds.includes(bike.id);
                       const thumbnail =
                         bike.stock_motorcycle_photos?.[0]?.image_url || null;

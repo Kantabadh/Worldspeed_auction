@@ -622,13 +622,6 @@ export default function AdminHistoryPage() {
                       <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
                         {getRoundStatusLabel(selectedRound.status)}
                       </span>
-                      <button
-                        onClick={exportRoundLotsExcel}
-                        disabled={roundLots.length === 0}
-                        className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-300"
-                      >
-                        ดาวน์โหลดสรุปผลรอบนี้
-                      </button>
                     </div>
                   </div>
                   {isLoadingDetails ? (
