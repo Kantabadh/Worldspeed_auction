@@ -20,6 +20,21 @@ type FinalSubmission = {
   isUpdatedSubmission?: boolean;
 };
 
+const THAI_MONTHS = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+];
+
 export default function SuccessPage() {
   const [submission, setSubmission] = useState<FinalSubmission | null>(null);
 
@@ -48,16 +63,33 @@ export default function SuccessPage() {
   function getSubmissionDateTime(submittedAt?: string) {
     if (!submittedAt) return "-";
 
+    const numericThaiDate = submittedAt.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,?\s+)?(.*)$/
+    );
+
+    if (numericThaiDate) {
+      const day = Number(numericThaiDate[1]);
+      const month = Number(numericThaiDate[2]);
+      const year = Number(numericThaiDate[3]);
+      const time = numericThaiDate[4]?.trim();
+      const displayYear = year < 2400 ? year + 543 : year;
+      const monthName = THAI_MONTHS[month - 1];
+
+      if (day && monthName && year) {
+        return `${day} ${monthName} ${displayYear}${time ? ` เวลา ${time}` : ""}`;
+      }
+    }
+
     const date = new Date(submittedAt);
 
     if (Number.isNaN(date.getTime())) {
       return submittedAt;
     }
 
-    return date.toLocaleString("th-TH", {
-      dateStyle: "long",
-      timeStyle: "medium",
-    });
+    const year = date.getFullYear();
+    const displayYear = year < 2400 ? year + 543 : year;
+
+    return `${date.getDate()} ${THAI_MONTHS[date.getMonth()]} ${displayYear} เวลา ${date.toLocaleTimeString("th-TH")}`;
   }
 
   if (!submission) {
@@ -105,7 +137,7 @@ export default function SuccessPage() {
           </h1>
 
           <p className="mt-3 text-green-50">
-            ระบบบันทึกราคาของร้านเรียบร้อยแล้ว
+            เจ้าหน้าที่จะพิมพ์ใบเสนอราคาของร้านค้าให้
           </p>
         </div>
 
@@ -134,14 +166,14 @@ export default function SuccessPage() {
               </div>
 
               <div>
-                <p className="text-sm font-medium text-gray-500">จำนวนล็อต</p>
+                <p className="text-sm font-medium text-gray-500">จำนวน</p>
                 <p className="mt-1 font-bold text-gray-900">
                   {submission.offers.length} รายการ
                 </p>
               </div>
 
               <div className="sm:col-span-2">
-                <p className="text-sm font-medium text-gray-500">เวลาส่งราคา</p>
+                <p className="text-sm font-medium text-gray-500">เวลา</p>
                 <p className="mt-1 font-bold text-gray-900">
                   {getSubmissionDateTime(submission.submittedAt)}
                 </p>
@@ -157,19 +189,12 @@ export default function SuccessPage() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-800">
-            <p className="font-bold">ไม่ต้องพิมพ์ใบยืนยันเอง</p>
-            <p className="mt-1 text-sm">
-              เจ้าหน้าที่จะเป็นผู้พิมพ์ใบเสนอราคาจากหน้าผู้ดูแลระบบให้
-            </p>
-          </div>
-
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <button
               onClick={goBackToMerchantPage}
               className="rounded-2xl border px-5 py-3 font-semibold hover:bg-gray-100"
             >
-              กลับไปดูรายการที่ส่ง
+              ย้อนกลับ
             </button>
 
             <button

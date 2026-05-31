@@ -99,20 +99,14 @@ function getRoundDisplayName(round: CurrentAuctionRound | null) {
   return round.round_name || `รอบ #${round.id}`;
 }
 
-function getRoundDateText(round: CurrentAuctionRound | null) {
-  if (!round?.auction_date) return "-";
+function getReceiptRoundLine(round: CurrentAuctionRound | null) {
+  if (!round) return "-";
 
-  return formatThaiDate(round.auction_date);
-}
+  if (round.round_name) return round.round_name;
 
-function makeReceiptNo(group: MerchantGroup) {
-  const latestDate = new Date(group.latestSubmittedAt);
+  if (round.auction_date) return `รอบวันที่ ${formatThaiDate(round.auction_date)}`;
 
-  const y = latestDate.getFullYear();
-  const m = String(latestDate.getMonth() + 1).padStart(2, "0");
-  const d = String(latestDate.getDate()).padStart(2, "0");
-
-  return `MR-${y}${m}${d}-${group.merchantId}`;
+  return `รอบ #${round.id}`;
 }
 
 function getEditNote(offer: ReceiptOffer) {
@@ -587,33 +581,10 @@ export default function AdminMerchantReceiptsPage() {
 
                   <div className="p-5">
                     <section className="grid grid-cols-2 gap-x-6 gap-y-3 border border-black p-4 text-sm">
-                      <div>
-                        <p className="font-medium text-gray-600">
-                          เลขที่อ้างอิง
-                        </p>
-                        <p className="mt-1 font-bold text-black">
-                          {makeReceiptNo(selectedGroup)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium text-gray-600">วันที่พิมพ์</p>
-                        <p className="mt-1 font-bold text-black">
-                          {formatThaiDate(new Date().toISOString())}
-                        </p>
-                      </div>
-
-                      <div>
+                      <div className="col-span-2">
                         <p className="font-medium text-gray-600">รอบเสนอราคา</p>
                         <p className="mt-1 font-bold text-black">
-                          {getRoundDisplayName(currentRound)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium text-gray-600">วันที่เสนอราคา</p>
-                        <p className="mt-1 font-bold text-black">
-                          {getRoundDateText(currentRound)}
+                          {getReceiptRoundLine(currentRound)}
                         </p>
                       </div>
 
@@ -664,7 +635,7 @@ export default function AdminMerchantReceiptsPage() {
                               ลำดับ
                             </th>
                             <th className="w-16 border border-black p-2 text-left">
-                              ล็อต
+                              ลำดับ
                             </th>
                             <th className="border border-black p-2 text-left">
                               รายการรถ

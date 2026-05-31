@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StaffGuard from "@/components/StaffGuard";
+import { getMemoryCachedStaffProfile } from "@/lib/staffSession";
 
 type AdminOffer = {
   id: number;
@@ -89,6 +90,12 @@ function getStaffRoleLabel(role: string) {
 }
 
 export default function AdminPage() {
+  const cachedStaffProfile = getMemoryCachedStaffProfile();
+  const canUseCachedStaffProfile = Boolean(
+    cachedStaffProfile &&
+      (cachedStaffProfile.role === "owner" || cachedStaffProfile.role === "admin")
+  );
+
   const [offers, setOffers] = useState<AdminOffer[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -96,8 +103,12 @@ export default function AdminPage() {
   const [totalMotorcycles, setTotalMotorcycles] = useState(0);
   const [pendingMerchantRequests, setPendingMerchantRequests] = useState(0);
 
-  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
-  const [isCheckingStaff, setIsCheckingStaff] = useState(true);
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(
+    canUseCachedStaffProfile ? (cachedStaffProfile as StaffProfile) : null
+  );
+  const [isCheckingStaff, setIsCheckingStaff] = useState(
+    !canUseCachedStaffProfile
+  );
 
   const [resetPassword, setResetPassword] = useState("");
   const [resetPhrase, setResetPhrase] = useState("");
@@ -107,6 +118,7 @@ export default function AdminPage() {
   );
   const [newRoundDate, setNewRoundDate] = useState("");
   const [isRoundUpdating, setIsRoundUpdating] = useState(false);
+  const [isRoundRefreshing, setIsRoundRefreshing] = useState(false);
 
   function saveStaffSession(profile: StaffProfile) {
     const updatedProfile = {
@@ -381,6 +393,17 @@ export default function AdminPage() {
     return round;
   }
 
+  async function refreshRoundSection() {
+    setIsRoundRefreshing(true);
+    setErrorMessage("");
+
+    try {
+      await loadCurrentAuctionRound();
+    } finally {
+      setIsRoundRefreshing(false);
+    }
+  }
+
   async function createNewAuctionRound() {
     if (staffProfile?.role !== "owner" && staffProfile?.role !== "admin") {
       setErrorMessage("เฉพาะ Owner/Admin เท่านั้นที่สร้างรอบเสนอราคาได้");
@@ -461,7 +484,7 @@ export default function AdminPage() {
 
       setNewRoundDate("");
 
-      await loadCurrentAuctionRound();
+      await refreshRoundSection();
 
       alert("สร้างรอบเสนอราคาใหม่เรียบร้อยแล้ว");
     } catch (error) {
@@ -474,7 +497,9 @@ export default function AdminPage() {
     setIsRoundUpdating(false);
   }
 
-  async function updateCurrentRoundStatus(newStatus: "draft" | "open" | "closed") {
+  async function updateCurrentRoundStatus(
+    newStatus: "draft" | "open" | "closed" | "finished"
+  ) {
     if (!currentRound) {
       alert("ยังไม่มีรอบเสนอราคาปัจจุบัน");
       return;
@@ -490,9 +515,17 @@ export default function AdminPage() {
       return;
     }
 
-    const confirmUpdate = confirm(
-      `ต้องการเปลี่ยนสถานะรอบนี้เป็น "${getRoundStatusLabel(newStatus)}" ใช่หรือไม่?`
-    );
+    if (newStatus === "finished" && currentRound.status !== "closed") {
+      alert("ต้องปิดรอบก่อนจบรอบประมูล");
+      return;
+    }
+
+    const confirmUpdate =
+      newStatus === "finished"
+        ? confirm("ยืนยันจบรอบประมูลนี้?")
+        : confirm(
+            `ต้องการเปลี่ยนสถานะรอบนี้เป็น "${getRoundStatusLabel(newStatus)}" ใช่หรือไม่?`
+          );
 
     if (!confirmUpdate) return;
 
@@ -516,6 +549,10 @@ export default function AdminPage() {
       }
 
       if (newStatus === "closed") {
+        updatePayload.closed_at = new Date().toISOString();
+      }
+
+      if (newStatus === "finished" && !currentRound.closed_at) {
         updatePayload.closed_at = new Date().toISOString();
       }
 
@@ -554,7 +591,7 @@ export default function AdminPage() {
         },
       });
 
-      await loadCurrentAuctionRound();
+      await refreshRoundSection();
 
       alert(`เปลี่ยนสถานะเป็น ${getRoundStatusLabel(newStatus)} แล้ว`);
     } catch (error) {
@@ -646,6 +683,26 @@ export default function AdminPage() {
     if (status === "finished") return "จบรอบแล้ว";
     if (status === "archived") return "บันทึกประวัติแล้ว";
     return status || "-";
+  }
+
+  function getRoundStatusBadgeClass(status?: string | null) {
+    if (status === "draft" || status === "prepared" || status === "preparing") {
+      return "bg-gray-100 text-gray-900 ring-gray-200";
+    }
+
+    if (status === "open") {
+      return "bg-blue-50 text-blue-700 ring-blue-200";
+    }
+
+    if (status === "closed") {
+      return "bg-red-50 text-red-700 ring-red-200";
+    }
+
+    if (status === "finished") {
+      return "bg-purple-50 text-purple-700 ring-purple-200";
+    }
+
+    return "bg-gray-100 text-gray-700 ring-gray-200";
   }
 
   function formatThaiDate(dateInput: string | Date) {
@@ -981,8 +1038,8 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
   if (isCheckingStaff) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <p className="text-gray-700">กำลังตรวจสอบสิทธิ์...</p>
+        <section className="flex min-h-[300px] w-full max-w-md items-center justify-center rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
         </section>
       </main>
     );
@@ -1004,11 +1061,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
       <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 px-4 py-4 shadow-sm backdrop-blur sm:py-5">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 sm:text-sm">
-              หน้าจัดการ
-            </p>
-
-            <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
+            <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
               ระบบเสนอราคารถจักรยานยนต์
             </h1>
 
@@ -1021,10 +1074,11 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => window.location.reload()}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+              onClick={refreshRoundSection}
+              disabled={isRoundRefreshing}
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
             >
-              โหลดใหม่
+              {isRoundRefreshing ? "กำลังโหลด..." : "โหลดใหม่"}
             </button>
 
             <button
@@ -1091,7 +1145,11 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
 
                 <div className="text-left md:text-right">
                   <p className="text-sm text-gray-500">สถานะรอบ</p>
-                  <p className="mt-1 font-bold text-blue-700">
+                  <p
+                    className={`mt-1 inline-flex rounded-full px-3 py-1 text-sm font-bold ring-1 ${getRoundStatusBadgeClass(
+                      currentRound.status
+                    )}`}
+                  >
                     {getRoundStatusLabel(currentRound.status)}
                   </p>
                 </div>
@@ -1123,6 +1181,15 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:bg-gray-400"
                 >
                   ปิดรอบ
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateCurrentRoundStatus("finished")}
+                  disabled={isRoundUpdating || currentRound.status !== "closed"}
+                  className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800 disabled:bg-gray-400"
+                >
+                  จบรอบประมูล
                 </button>
               </div>
             </div>

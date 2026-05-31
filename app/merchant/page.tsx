@@ -1423,10 +1423,10 @@ export default function MerchantPage() {
           <button
             type="button"
             onClick={closeGallery}
-            className="fixed right-4 top-4 z-50 inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-base font-semibold text-white shadow-lg hover:bg-red-700"
+            aria-label="ปิดรูปภาพ"
+            className="fixed right-4 top-4 z-50 inline-flex h-11 w-11 items-center justify-center rounded-full bg-red-600 text-base font-semibold text-white shadow-lg hover:bg-red-700"
           >
             <span className="text-xl leading-none">×</span>
-            ปิด
           </button>
 
           {galleryPhotos.length > 1 && (

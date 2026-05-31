@@ -72,7 +72,9 @@ function formatThaiDateTime(value: string | null | undefined) {
 }
 
 function getRoundStatusLabel(status?: string | null) {
-  if (status === "draft") return "เตรียมรอบ";
+  if (status === "draft" || status === "prepared" || status === "preparing") {
+    return "เตรียมรอบ";
+  }
   if (status === "open") return "เปิดรับราคา";
   if (status === "closed") return "ปิดรับราคา";
   if (status === "finished") return "จบรอบแล้ว";
@@ -81,7 +83,10 @@ function getRoundStatusLabel(status?: string | null) {
 }
 
 function getStatusBadgeClass(status?: string | null) {
-  if (status === "open") return "bg-green-100 text-green-700";
+  if (status === "draft" || status === "prepared" || status === "preparing") {
+    return "bg-gray-100 text-gray-900";
+  }
+  if (status === "open") return "bg-blue-100 text-blue-700";
   if (status === "closed") return "bg-red-100 text-red-700";
   if (status === "finished") return "bg-purple-100 text-purple-700";
   if (status === "archived") return "bg-purple-100 text-purple-700";
@@ -260,11 +265,19 @@ export default function AdminRoundsPage() {
 
   async function updateRoundStatus(
     round: AuctionRound,
-    status: "draft" | "open" | "closed"
+    status: "draft" | "open" | "closed" | "finished"
   ) {
-    const confirmUpdate = confirm(
-      `ต้องการเปลี่ยนสถานะ "${round.round_name || `รอบ #${round.id}`}" เป็น "${getRoundStatusLabel(status)}" ใช่หรือไม่?`
-    );
+    if (status === "finished" && round.status !== "closed") {
+      alert("ต้องปิดรอบก่อนจบรอบประมูล");
+      return;
+    }
+
+    const confirmUpdate =
+      status === "finished"
+        ? confirm("ยืนยันจบรอบประมูลนี้?")
+        : confirm(
+            `ต้องการเปลี่ยนสถานะ "${round.round_name || `รอบ #${round.id}`}" เป็น "${getRoundStatusLabel(status)}" ใช่หรือไม่?`
+          );
 
     if (!confirmUpdate) return;
 
@@ -282,6 +295,10 @@ export default function AdminRoundsPage() {
     }
 
     if (status === "closed") {
+      payload.closed_at = new Date().toISOString();
+    }
+
+    if (status === "finished" && !round.closed_at) {
       payload.closed_at = new Date().toISOString();
     }
 
@@ -512,6 +529,17 @@ export default function AdminRoundsPage() {
                               className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:bg-gray-300"
                             >
                               ปิดรอบ
+                            </button>
+
+                            <button
+                              onClick={() => updateRoundStatus(round, "finished")}
+                              disabled={
+                                isUpdatingId === round.id ||
+                                round.status !== "closed"
+                              }
+                              className="rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:bg-gray-300"
+                            >
+                              จบรอบ
                             </button>
 
                             <a

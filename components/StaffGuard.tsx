@@ -2,23 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
-type StaffRole = "owner" | "admin" | "stock_staff";
-
-type StaffProfile = {
-  id: string;
-  email: string;
-  role: StaffRole;
-  active: boolean;
-  expiresAt?: number;
-};
+import {
+  clearCachedStaffProfile,
+  getCachedStaffProfile,
+  isStaffRoleAllowed,
+  saveCachedStaffProfile,
+  type StaffProfile,
+  type StaffRole,
+} from "@/lib/staffSession";
 
 type StaffGuardProps = {
   children: React.ReactNode;
   allowedRoles?: StaffRole[];
 };
-
-const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
 
 const DEFAULT_ALLOWED_ROLES: StaffRole[] = ["owner", "admin"];
 
@@ -28,60 +24,43 @@ export default function StaffGuard({
 }: StaffGuardProps) {
   const [isAllowed, setIsAllowed] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
-  const [message, setMessage] = useState("Checking staff access...");
-
-  function saveStaffSession(profile: StaffProfile) {
-    localStorage.setItem(
-      "staffProfile",
-      JSON.stringify({
-        ...profile,
-        expiresAt: Date.now() + STAFF_TIMEOUT_MS,
-      })
-    );
-  }
 
   async function logoutStaff() {
-    localStorage.removeItem("staffProfile");
+    clearCachedStaffProfile();
     await supabase.auth.signOut();
-    window.location.href = "/staff-login";
+    window.location.href = "/";
   }
 
-  async function denyAccess(reason: string) {
-    localStorage.removeItem("staffProfile");
+  async function denyAccess() {
+    clearCachedStaffProfile();
     setIsAllowed(false);
     setIsChecking(false);
-    setMessage(reason);
 
     setTimeout(() => {
-      window.location.href = "/staff-login";
+      window.location.href = "/";
     }, 900);
   }
 
-  async function checkStaff() {
-    setIsChecking(true);
-    setIsAllowed(false);
-    setMessage("Checking staff access...");
+  async function verifyStaffInBackground(showLoading: boolean) {
+    if (showLoading) {
+      setIsChecking(true);
+      setIsAllowed(false);
+    }
 
-    const savedProfileText = localStorage.getItem("staffProfile");
+    const savedProfile = getCachedStaffProfile();
 
-    if (!savedProfileText) {
-      window.location.href = "/staff-login";
+    if (!savedProfile) {
+      window.location.href = "/";
       return;
     }
 
-    let savedProfile: StaffProfile;
-
-    try {
-      savedProfile = JSON.parse(savedProfileText) as StaffProfile;
-    } catch {
-      await denyAccess("Staff session is invalid. Redirecting...");
+    if (!isStaffRoleAllowed(savedProfile, allowedRoles)) {
+      await denyAccess();
       return;
     }
 
-    if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
-      await logoutStaff();
-      return;
-    }
+    setIsAllowed(true);
+    setIsChecking(false);
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
@@ -104,12 +83,12 @@ export default function StaffGuard({
 
     const verifiedProfile = profile[0] as StaffProfile;
 
-    if (!allowedRoles.includes(verifiedProfile.role)) {
-      await denyAccess("You do not have permission to open this page.");
+    if (!isStaffRoleAllowed(verifiedProfile, allowedRoles)) {
+      await denyAccess();
       return;
     }
 
-    saveStaffSession({
+    saveCachedStaffProfile({
       id: verifiedProfile.id,
       email: verifiedProfile.email,
       role: verifiedProfile.role,
@@ -127,14 +106,23 @@ export default function StaffGuard({
 
     try {
       const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
-      saveStaffSession(savedProfile);
+      saveCachedStaffProfile(savedProfile);
     } catch {
-      localStorage.removeItem("staffProfile");
+      clearCachedStaffProfile();
     }
   }
 
   useEffect(() => {
-    checkStaff();
+    const cachedProfile = getCachedStaffProfile();
+
+    if (isStaffRoleAllowed(cachedProfile, allowedRoles)) {
+      setIsAllowed(true);
+      setIsChecking(false);
+      verifyStaffInBackground(false);
+      return;
+    }
+
+    verifyStaffInBackground(true);
   }, []);
 
   useEffect(() => {
@@ -177,11 +165,8 @@ export default function StaffGuard({
   if (isChecking || !isAllowed) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <section className="rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-gray-200">
-          <p className="font-semibold text-gray-900">{message}</p>
-          <p className="mt-2 text-sm text-gray-500">
-            กรุณารอสักครู่ ระบบกำลังตรวจสอบสิทธิ์
-          </p>
+        <section className="flex min-h-[300px] w-full max-w-md items-center justify-center rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
         </section>
       </main>
     );

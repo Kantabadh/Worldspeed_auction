@@ -38,9 +38,9 @@ export default function BackButton({ href }: BackButtonProps) {
     <button
       type="button"
       onClick={handleBack}
-      className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white text-2xl font-semibold shadow-sm hover:bg-gray-100"
-      aria-label="Back"
-      title="Back"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white text-2xl font-semibold shadow-sm hover:bg-gray-100"
+      aria-label="กลับ"
+      title="กลับ"
     >
       ←
     </button>

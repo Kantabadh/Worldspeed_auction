@@ -192,7 +192,7 @@ export default function SummaryPage() {
       );
 
       if (submittedMotorcycleIds.length === 0) {
-        setErrorMessage("ไม่พบล็อตที่ต้องการแก้ไข");
+        setErrorMessage("ไม่พบลำดับที่ต้องการแก้ไข");
         setIsSubmitting(false);
         return;
       }
@@ -203,7 +203,7 @@ export default function SummaryPage() {
 
       if (notAllowedLots.length > 0) {
         setErrorMessage(
-          "มีบางล็อตที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่"
+          "มีบางลำดับที่ไม่ได้รับอนุญาตให้แก้ไข กรุณากลับไปตรวจสอบใหม่"
         );
         setIsSubmitting(false);
         return;
@@ -252,7 +252,7 @@ export default function SummaryPage() {
 
       if (missingPermissionIds.length > 0) {
         setErrorMessage(
-          "สิทธิ์แก้ไขล็อตนี้หมดแล้วหรือไม่ได้รับอนุญาต กรุณาติดต่อผู้ดูแล"
+          "สิทธิ์แก้ไขลำดับนี้หมดแล้วหรือไม่ได้รับอนุญาต กรุณาติดต่อผู้ดูแล"
         );
         setIsSubmitting(false);
         return;
@@ -496,7 +496,7 @@ export default function SummaryPage() {
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
           <h1 className="text-2xl font-bold text-gray-900">
-            {draft.isEditingSubmission ? "ตรวจสอบราคาที่แก้ไข" : "ตรวจสอบราคา"}
+            ตรวจสอบราคา
           </h1>
 
           {draft.auctionRoundName && (
@@ -516,9 +516,9 @@ export default function SummaryPage() {
 
         {draft.isEditingSubmission && (
           <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
-            <p className="font-semibold">แก้ไขเฉพาะล็อตที่ได้รับอนุญาต</p>
+            <p className="font-semibold">แก้ไขเฉพาะลำดับที่ได้รับอนุญาต</p>
             <p className="text-sm">
-              เมื่อยืนยันแล้ว ระบบจะบันทึกราคาใหม่เฉพาะล็อตนี้ และล็อกการแก้ไขอีกครั้ง
+              เมื่อยืนยันแล้ว ระบบจะบันทึกราคาใหม่เฉพาะลำดับนี้ และล็อกการแก้ไขอีกครั้ง
             </p>
           </div>
         )}

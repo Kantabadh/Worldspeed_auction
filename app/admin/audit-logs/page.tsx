@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StaffGuard from "@/components/StaffGuard";
+import BackButton from "@/components/BackButton";
+import { getMemoryCachedStaffProfile } from "@/lib/staffSession";
 
 type StaffProfile = {
   id: string;
@@ -50,8 +52,18 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export default function AdminAuditLogsPage() {
-  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
-  const [isCheckingStaff, setIsCheckingStaff] = useState(true);
+  const cachedStaffProfile = getMemoryCachedStaffProfile();
+  const canUseCachedStaffProfile = Boolean(
+    cachedStaffProfile &&
+      (cachedStaffProfile.role === "owner" || cachedStaffProfile.role === "admin")
+  );
+
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(
+    canUseCachedStaffProfile ? (cachedStaffProfile as StaffProfile) : null
+  );
+  const [isCheckingStaff, setIsCheckingStaff] = useState(
+    !canUseCachedStaffProfile
+  );
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -771,8 +783,8 @@ export default function AdminAuditLogsPage() {
   if (isCheckingStaff) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <p className="text-gray-700">กำลังตรวจสอบสิทธิ์...</p>
+        <section className="flex min-h-[300px] w-full max-w-md items-center justify-center rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
         </section>
       </main>
     );
@@ -793,7 +805,10 @@ export default function AdminAuditLogsPage() {
       <main className="min-h-screen bg-gray-50 pb-10">
       <header className="border-b bg-white px-4 py-5 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <div>
+          <div className="flex min-w-0 items-start gap-3">
+            <BackButton href="/admin" />
+
+            <div>
             <h1 className="text-2xl font-bold text-gray-900">
               ประวัติการทำงานของแอดมิน
             </h1>
@@ -801,16 +816,10 @@ export default function AdminAuditLogsPage() {
             <p className="mt-1 text-sm text-gray-600">
               เข้าสู่ระบบโดย {staffProfile.email} • {staffProfile.role}
             </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <a
-              href="/admin"
-              className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
-            >
-              กลับหน้าหลัก Admin
-            </a>
-
             <button
               onClick={logoutStaff}
               className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"

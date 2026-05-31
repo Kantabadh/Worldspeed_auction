@@ -92,8 +92,8 @@ type RoundMotorcycle = {
 };
 
 const statusLabels: Record<string, string> = {
-  in_stock: "อยู่ในสต็อก",
-  "อยู่ในสต็อก": "อยู่ในสต็อก",
+  in_stock: "อยู่ในคลัง",
+  "อยู่ในสต็อก": "อยู่ในคลัง",
   repairing: "กำลังซ่อม",
   ready_to_sell: "พร้อมขาย",
   in_auction: "อยู่ในรอบเสนอราคา",
@@ -284,7 +284,7 @@ export default function AdminStockListPage() {
   }
 
   function getStockTargetName(bike: StockMotorcycle) {
-    return `${bike.stock_number || "ไม่มีเลขสต็อก"} • ${bike.motorcycle_name}`;
+    return `${bike.stock_number || "ไม่มีเลขคลัง"} • ${bike.motorcycle_name}`;
   }
 
   function getStockDetailPayload(bike: StockMotorcycle) {
@@ -855,17 +855,12 @@ export default function AdminStockListPage() {
           <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                  รอบเสนอราคาปัจจุบัน
-                </p>
-
-                <h2 className="mt-1 text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-gray-900">
                   {currentRound?.round_name || "ยังไม่มีรอบเสนอราคาปัจจุบัน"}
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  สถานะ: {getRoundStatusLabel(currentRound?.status)} • รหัสรอบ:{" "}
-                  {currentRound?.id ? `#${currentRound.id}` : "-"}
+                  สถานะ: {getRoundStatusLabel(currentRound?.status)}
                 </p>
               </div>
 
@@ -892,7 +887,7 @@ export default function AdminStockListPage() {
 
               <input
                 className="w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black md:w-96"
-                placeholder="ค้นหาเลขสต็อก / ชื่อรถ / รุ่น / ทะเบียน / แหล่งที่มา"
+                placeholder="ค้นหารหัสคลัง / ชื่อรถ / รุ่น / ทะเบียน / แหล่งที่มา"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -956,7 +951,7 @@ export default function AdminStockListPage() {
                         <th className="border p-3">เลือก</th>
                       )}
                       <th className="border p-3">รูป</th>
-                      <th className="border p-3">รหัสสต็อก</th>
+                      <th className="border p-3">รหัสคลัง</th>
                       <th className="border p-3">รถ</th>
                       <th className="border p-3 text-right">ต้นทุน</th>
                       <th className="border p-3">สถานะ</th>
