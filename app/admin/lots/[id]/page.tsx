@@ -44,6 +44,8 @@ type LotOffer = {
   } | null;
 };
 
+type WinnerChooserMode = "winner" | "runner-up" | null;
+
 type StaffProfile = {
   id: string;
   email: string;
@@ -118,11 +120,11 @@ function formatThaiDateTime(value: string | null | undefined) {
 }
 
 function getSaleStatusLabel(status?: string | null) {
-  if (status === "in_auction") return "อยู่ในรอบประมูล";
+  if (status === "in_auction") return "รอผล";
   if (status === "sold") return "ขายแล้ว";
-  if (status === "unsold") return "กลับเข้าสต็อกแล้ว";
+  if (status === "unsold") return "ไม่ขาย";
   if (status === "cancelled") return "ยกเลิก";
-  return status || "อยู่ในรอบประมูล";
+  return status || "รอผล";
 }
 
 function getSavedStaffProfile() {
@@ -147,6 +149,8 @@ export default function LotResultPage() {
   const [isAllowingEditId, setIsAllowingEditId] = useState<number | null>(null);
   const [isSellingOfferId, setIsSellingOfferId] = useState<number | null>(null);
   const [isMarkingUnsold, setIsMarkingUnsold] = useState(false);
+  const [winnerChooserMode, setWinnerChooserMode] =
+    useState<WinnerChooserMode>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function createAuditLog({
@@ -312,6 +316,7 @@ export default function LotResultPage() {
   const hasTieWinner = topWinnerOffers.length >= 2;
 
   const offerGroups = getOfferGroupsByPrice(offers);
+  const runnerUpOffers = offerGroups[1] || [];
   const topThreeGroups = offerGroups.slice(0, 3);
 
   const saleStatus = motorcycle?.lot_sale_status || "in_auction";
@@ -386,7 +391,7 @@ alert(`เปิดให้ ${shopName} แก้ไขราคาแล้ว
 setIsAllowingEditId(null);
   }
 
-  async function markLotSold(offer: LotOffer) {
+  async function markLotSold(offer: LotOffer, confirmMessage?: string) {
     if (!motorcycle) return;
 
     if (isSold) {
@@ -423,7 +428,8 @@ setIsAllowingEditId(null);
     const shopName = offer.merchants?.shop_name || offer.merchants?.name || "-";
 
     const confirmSold = confirm(
-      `ยืนยันขาย Lot ${motorcycle.lot_number} ให้ "${shopName}" ใช่หรือไม่?\n\nราคา: ${soldPrice.toLocaleString()} บาท\nกำไรขั้นต้น: ${diff.toLocaleString()} บาท`
+      confirmMessage ||
+        `ยืนยันขาย Lot ${motorcycle.lot_number} ให้ "${shopName}" ใช่หรือไม่?\n\nราคา: ${soldPrice.toLocaleString()} บาท\nกำไรขั้นต้น: ${diff.toLocaleString()} บาท`
     );
 
     if (!confirmSold) return;
@@ -509,6 +515,7 @@ setIsAllowingEditId(null);
       });
 
       alert(`บันทึกขาย Lot ${motorcycle.lot_number} เรียบร้อยแล้ว`);
+      setWinnerChooserMode(null);
       await loadLotResult();
     } catch (error) {
       const message =
@@ -551,9 +558,7 @@ setIsAllowingEditId(null);
       return;
     }
 
-    const confirmUnsold = confirm(
-      `ต้องการปิด Lot ${motorcycle.lot_number} เป็น "ไม่ขาย / กลับเข้าสต็อก" ใช่หรือไม่?\n\nระบบจะซ่อน Lot นี้จากหน้า Merchant และทำให้รถในคลังพร้อมนำไปรอบถัดไป`
-    );
+    const confirmUnsold = confirm("ยืนยันไม่ขายและส่งรถกลับเข้าสต็อก?");
 
     if (!confirmUnsold) return;
 
@@ -839,7 +844,13 @@ setIsAllowingEditId(null);
     <StaffGuard>
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
-          <BackButton />
+          <BackButton
+            href={
+              motorcycle?.auction_round_id
+                ? `/admin/rounds/${motorcycle.auction_round_id}`
+                : "/admin/rounds"
+            }
+          />
 
           {errorMessage && (
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
@@ -1002,38 +1013,118 @@ setIsAllowingEditId(null);
                     </p>
                   </div>
                 ) : (
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      onClick={() => {
-                        if (topWinnerOffers.length === 1) {
-                          markLotSold(topWinnerOffers[0]);
-                          return;
-                        }
+                  <>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={() => {
+                          if (topWinnerOffers.length === 1) {
+                            markLotSold(
+                              topWinnerOffers[0],
+                              "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 1?"
+                            );
+                            return;
+                          }
 
-                        alert(
-                          "อันดับ 1 มีมากกว่า 1 ร้าน กรุณาเลือกขายให้ร้านจากตารางด้านล่าง"
-                        );
-                      }}
-                      disabled={
-                        offers.length === 0 ||
-                        topWinnerOffers.length !== 1 ||
-                        isSellingOfferId !== null
-                      }
-                      className="rounded-2xl bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                    >
-                      ยืนยันขายให้ร้านอันดับ 1
-                    </button>
+                          setWinnerChooserMode("winner");
+                        }}
+                        disabled={offers.length === 0 || isSellingOfferId !== null}
+                        className="rounded-2xl bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                      >
+                        {topWinnerOffers.length >= 2 ? "เลือกผู้ชนะ" : "ขายให้ที่ 1"}
+                      </button>
 
-                    <button
-                      onClick={markLotUnsold}
-                      disabled={isMarkingUnsold}
-                      className="rounded-2xl border border-yellow-300 bg-yellow-50 px-5 py-3 font-semibold text-yellow-800 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isMarkingUnsold
-                        ? "กำลังส่งกลับ..."
-                        : "ไม่ขาย / กลับเข้าสต็อก"}
-                    </button>
-                  </div>
+                      <button
+                        onClick={() => {
+                          if (runnerUpOffers.length === 1) {
+                            markLotSold(
+                              runnerUpOffers[0],
+                              "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 2?"
+                            );
+                            return;
+                          }
+
+                          if (runnerUpOffers.length >= 2) {
+                            setWinnerChooserMode("runner-up");
+                          }
+                        }}
+                        disabled={runnerUpOffers.length === 0 || isSellingOfferId !== null}
+                        className="rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                      >
+                        {runnerUpOffers.length === 0
+                          ? "ไม่มีที่ 2"
+                          : runnerUpOffers.length >= 2
+                          ? "เลือกอันดับ 2"
+                          : "ขายให้ที่ 2"}
+                      </button>
+
+                      <button
+                        onClick={markLotUnsold}
+                        disabled={isMarkingUnsold}
+                        className="rounded-2xl border border-yellow-300 bg-yellow-50 px-5 py-3 font-semibold text-yellow-800 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isMarkingUnsold
+                          ? "กำลังส่งกลับ..."
+                          : "ไม่ขาย / กลับเข้าสต็อก"}
+                      </button>
+                    </div>
+
+                    {winnerChooserMode && (
+                      <div className="mt-4 rounded-2xl border bg-gray-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-gray-900">
+                              {winnerChooserMode === "winner"
+                                ? "เลือกผู้ชนะ"
+                                : "เลือกอันดับ 2"}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              เลือกร้านหลังตัดสินใจนอกระบบแล้ว
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setWinnerChooserMode(null)}
+                            className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-gray-100"
+                          >
+                            ยกเลิก
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-3">
+                          {(winnerChooserMode === "winner"
+                            ? topWinnerOffers
+                            : runnerUpOffers
+                          ).map((offer) => (
+                            <button
+                              key={offer.id}
+                              type="button"
+                              onClick={() =>
+                                markLotSold(
+                                  offer,
+                                  winnerChooserMode === "winner"
+                                    ? "ยืนยันขายรถล็อตนี้ให้ร้านที่เลือก?"
+                                    : "ยืนยันขายรถล็อตนี้ให้ผู้เสนอราคาอันดับ 2 ที่เลือก?"
+                                )
+                              }
+                              disabled={isSellingOfferId !== null}
+                              className="rounded-xl border bg-white p-3 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <p className="font-bold text-gray-900">
+                                {offer.merchants?.shop_name ||
+                                  offer.merchants?.name ||
+                                  "-"}
+                              </p>
+                              <p className="mt-1 text-sm text-gray-600">
+                                โทร: {offer.merchants?.phone || "-"} • ราคา:{" "}
+                                {Number(offer.offer_price || 0).toLocaleString()} บาท
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
 

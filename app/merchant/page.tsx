@@ -224,7 +224,7 @@ export default function MerchantPage() {
     }
 
     return {
-      title: "ยังไม่มีล็อตในรอบนี้",
+      title: "ยังไม่มีลำดับในรอบนี้",
       detail: `${getRoundDisplayName(currentRound)} • ${getRoundDateText(currentRound)}`,
     };
   }
@@ -661,7 +661,7 @@ export default function MerchantPage() {
     }
 
     if (hasSubmitted && editableLotIds.length === 0) {
-      alert("ส่งราคาแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแลให้เปิดล็อตที่ต้องการแก้");
+      alert("ส่งราคาแล้ว หากต้องการแก้ไข กรุณาติดต่อผู้ดูแลให้เปิดลำดับที่ต้องการแก้");
       return;
     }
 
@@ -678,7 +678,7 @@ export default function MerchantPage() {
     if (submittedOffers.length === 0) {
       alert(
         hasSubmitted
-          ? "กรุณาใส่ราคาในล็อตที่ได้รับอนุญาตให้แก้ไข"
+          ? "กรุณาใส่ราคาในลำดับที่ได้รับอนุญาตให้แก้ไข"
           : "กรุณาใส่ราคาอย่างน้อย 1 รายการ"
       );
       return;
@@ -825,12 +825,6 @@ export default function MerchantPage() {
     setCurrentPage(1);
   }
 
-  function closeFilterView() {
-    setSearchText("");
-    setOfferFilter("all");
-    setCurrentPage(1);
-  }
-
   function renderPaginationControls() {
     if (filteredOffers.length <= ITEMS_PER_PAGE) return null;
 
@@ -904,13 +898,9 @@ export default function MerchantPage() {
       <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
-              เสนอราคารถจักรยานยนต์
+            <h1 className="truncate text-xl font-semibold text-gray-900 sm:text-2xl">
+              {shopName}
             </h1>
-
-            <p className="mt-0.5 truncate text-xs text-gray-600 sm:text-sm">
-              ร้าน: {shopName}
-            </p>
           </div>
 
           <button
@@ -925,20 +915,14 @@ export default function MerchantPage() {
       <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-5">
         {isLoadingCurrentRound ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-3 text-gray-700 sm:p-4">
-            <p className="text-sm font-semibold text-gray-500">รอบเสนอราคาปัจจุบัน</p>
-            <p className="mt-1 font-semibold">กำลังโหลดรอบเสนอราคา...</p>
-            <p className="mt-1 text-sm">กำลังตรวจสอบรอบปัจจุบัน</p>
+            <p className="font-semibold">กำลังโหลดรอบเสนอราคา...</p>
           </div>
         ) : currentRound ? (
           auctionStatus === "open" ? (
             <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-green-800 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-green-700">รอบเสนอราคาปัจจุบัน</p>
-                  <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
-                  <p className="mt-1 text-sm">
-                    {getRoundDateText(currentRound)}
-                  </p>
+                  <p className="font-semibold">{getRoundDisplayName(currentRound)}</p>
                 </div>
 
                 <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
@@ -950,11 +934,7 @@ export default function MerchantPage() {
             <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-red-700">รอบเสนอราคาปัจจุบัน</p>
-                  <p className="mt-1 font-semibold">{getRoundDisplayName(currentRound)}</p>
-                  <p className="mt-1 text-sm">
-                    {getRoundDateText(currentRound)} • {getRoundClosedDetail(currentRound.status)}
-                  </p>
+                  <p className="font-semibold">{getRoundDisplayName(currentRound)}</p>
                 </div>
 
                 <span className="w-fit rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">
@@ -965,9 +945,7 @@ export default function MerchantPage() {
           )
         ) : (
           <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 sm:p-4">
-            <p className="text-sm font-semibold text-yellow-700">รอบเสนอราคาปัจจุบัน</p>
-            <p className="mt-1 font-semibold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
-            <p className="mt-1 text-sm">กรุณารอเจ้าหน้าที่เปิดรอบใหม่</p>
+            <p className="font-semibold">ยังไม่มีรอบเสนอราคาปัจจุบัน</p>
           </div>
         )}
 
@@ -980,9 +958,9 @@ export default function MerchantPage() {
 
         {hasSubmitted && editableLotCount > 0 && (
           <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-800 sm:p-4">
-            <p className="font-semibold">แก้ไขราคาได้บางล็อต</p>
+            <p className="font-semibold">แก้ไขราคาได้บางลำดับ</p>
             <p className="text-sm">
-              แก้ไขได้เฉพาะล็อตที่ผู้ดูแลเปิดสิทธิ์ให้
+              แก้ไขได้เฉพาะลำดับที่ผู้ดูแลเปิดสิทธิ์ให้
             </p>
           </div>
         )}
@@ -994,20 +972,6 @@ export default function MerchantPage() {
           </div>
         )}
 
-        <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-gray-500">ร้านค้า</p>
-              <h2 className="text-lg font-bold text-gray-900">{shopName}</h2>
-            </div>
-
-            <div className="text-right text-xs text-gray-500">
-              <p>{merchantName}</p>
-              <p>{phone}</p>
-            </div>
-          </div>
-        </section>
-
         <section
           ref={listSectionRef}
           className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200"
@@ -1015,9 +979,6 @@ export default function MerchantPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold text-gray-900">รายการรถ</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                ค้นหา กรองรายการ และแบ่งหน้าเพื่อเสนอราคาได้ง่ายขึ้น
-              </p>
             </div>
 
             <div className="shrink-0 rounded-full bg-gray-900 px-3 py-1 text-sm font-medium text-white">
@@ -1031,7 +992,7 @@ export default function MerchantPage() {
 
               <input
                 className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                placeholder="ค้นหาล็อต / ชื่อรถ / รุ่น / ทะเบียน"
+                placeholder="ค้นหาลำดับ / ชื่อรถ / รุ่น / ทะเบียน"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -1058,7 +1019,7 @@ export default function MerchantPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-2">
             <div className="rounded-xl bg-gray-50 px-2 py-2 text-center">
               <p className="text-xs text-gray-500">รถทั้งหมด</p>
               <p className="mt-1 text-lg font-bold leading-none text-gray-900">
@@ -1072,13 +1033,6 @@ export default function MerchantPage() {
                 {enteredOfferCount}
               </p>
             </div>
-
-            <div className="rounded-xl bg-orange-50 px-2 py-2 text-center">
-              <p className="text-xs text-orange-700">แก้ไขได้</p>
-              <p className="mt-1 text-lg font-bold leading-none text-orange-700">
-                {editableLotCount}
-              </p>
-            </div>
           </div>
 
           {starredOffers.length > 0 && (
@@ -1090,7 +1044,7 @@ export default function MerchantPage() {
                   </h3>
 
                   <p className="mt-1 text-sm text-yellow-800">
-                    เก็บล็อตที่สนใจไว้ตรงนี้ โดยไม่เปลี่ยนลำดับรายการหลัก
+                    เก็บลำดับที่สนใจไว้ตรงนี้ โดยไม่เปลี่ยนลำดับรายการหลัก
                   </p>
                 </div>
 
@@ -1112,7 +1066,7 @@ export default function MerchantPage() {
                     className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
-                      ล็อต {offer.lot}
+                      ลำดับ {offer.lot}
                     </p>
 
                     <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
@@ -1132,17 +1086,6 @@ export default function MerchantPage() {
                 ))}
               </div>
             </section>
-          )}
-
-          {(searchText || offerFilter !== "all") && (
-            <button
-              type="button"
-              onClick={closeFilterView}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100"
-            >
-              <span className="text-base leading-none">×</span>
-              ปิด
-            </button>
           )}
 
           {offers.length === 0 && !errorMessage && (
@@ -1269,7 +1212,7 @@ export default function MerchantPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                               {isStarred ? "⭐ " : ""}
-                              ล็อต {offer.lot}
+                              ลำดับ {offer.lot}
                             </p>
 
                             <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -1307,7 +1250,7 @@ export default function MerchantPage() {
 
                           {hasSubmitted && lotCanEdit && (
                             <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                              แก้ไขล็อตนี้ได้
+                              แก้ไขลำดับนี้ได้
                             </span>
                           )}
 
@@ -1341,15 +1284,8 @@ export default function MerchantPage() {
                           <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div>
-                                <p className="font-semibold text-gray-900">ล็อต</p>
+                                <p className="font-semibold text-gray-900">ลำดับ</p>
                                 <p>{offer.lot || "-"}</p>
-                              </div>
-
-                              <div>
-                                <p className="font-semibold text-gray-900">
-                                  รายการ
-                                </p>
-                                <p>{offer.motorcycle || "-"}</p>
                               </div>
 
                               <div>
@@ -1385,23 +1321,9 @@ export default function MerchantPage() {
 
                               <div>
                                 <p className="font-semibold text-gray-900">
-                                  เลขไมล์
-                                </p>
-                                <p>{offer.mileage || "-"}</p>
-                              </div>
-
-                              <div>
-                                <p className="font-semibold text-gray-900">
                                   เลขตัวถัง
                                 </p>
                                 <p>{offer.frame_number || "-"}</p>
-                              </div>
-
-                              <div>
-                                <p className="font-semibold text-gray-900">
-                                  เลขเครื่อง
-                                </p>
-                                <p>{offer.engine_number || "-"}</p>
                               </div>
 
                               <div>
@@ -1416,15 +1338,6 @@ export default function MerchantPage() {
                                   ภาษีหมดอายุ
                                 </p>
                                 <p>{offer.tax_expiry || "-"}</p>
-                              </div>
-
-                              <div className="sm:col-span-2">
-                                <p className="font-semibold text-gray-900">
-                                  สภาพรถ
-                                </p>
-                                <p className="whitespace-pre-line">
-                                  {offer.condition || "-"}
-                                </p>
                               </div>
 
                               <div className="sm:col-span-2">
@@ -1467,7 +1380,7 @@ export default function MerchantPage() {
 
                           {hasSubmitted && !lotCanEdit && (
                             <p className="mt-2 text-xs text-gray-500">
-                              หากต้องการแก้ล็อตนี้ กรุณาติดต่อผู้ดูแล
+                              หากต้องการแก้ลำดับนี้ กรุณาติดต่อผู้ดูแล
                             </p>
                           )}
                         </div>
@@ -1489,16 +1402,6 @@ export default function MerchantPage() {
             <p className="text-sm font-semibold text-gray-900">
               ใส่ราคาแล้ว {enteredOfferCount} / {offers.length} รายการ
             </p>
-
-            {isLockedAfterSubmission ? (
-              <p className="text-xs text-yellow-700">ส่งแล้ว แก้ไขไม่ได้</p>
-            ) : hasSubmitted && editableLotCount > 0 ? (
-              <p className="text-xs text-orange-700">
-                แก้ไขได้ {editableLotCount} ล็อต
-              </p>
-            ) : (
-              <p className="text-xs text-gray-500">ตรวจสอบก่อนส่ง</p>
-            )}
           </div>
 
           <button

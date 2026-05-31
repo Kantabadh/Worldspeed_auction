@@ -39,6 +39,7 @@ type Motorcycle = MotorcycleDetails & {
   round_lot_number?: string | null;
   sort_order?: number | null;
   auction_round_id?: number | null;
+  stock_motorcycle_id?: number | null;
   motorcycle_name: string;
   cost_price: number | null;
   active: boolean;
@@ -76,8 +77,6 @@ type AuditLogInput = {
   targetName?: string;
   details?: Record<string, unknown>;
 };
-
-type StatusFilter = "all" | "active" | "hidden";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -214,6 +213,18 @@ function getRoundLotDisplay(bike: Motorcycle) {
   );
 }
 
+function getMotorcycleDisplayTitle(bike: Motorcycle) {
+  const brand = cleanOptionalText(bike.brand);
+  const model = cleanOptionalText(bike.model);
+  const licensePlate = cleanOptionalText(bike.license_plate);
+  const details = [model, licensePlate].filter(Boolean).join(" / ");
+
+  if (brand && details) return `${brand} (${details})`;
+  if (brand) return brand;
+
+  return cleanOptionalText(bike.motorcycle_name) || "ไม่ระบุรุ่น";
+}
+
 function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
   const sortA = a.sort_order;
   const sortB = b.sort_order;
@@ -306,9 +317,10 @@ export default function AdminMotorcyclesPage() {
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
 
   const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [isSearchHelpOpen, setIsSearchHelpOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
+  const [movingBackId, setMovingBackId] = useState<number | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -443,6 +455,12 @@ export default function AdminMotorcyclesPage() {
     const activeRound = (roundData as CurrentAuctionRound | null) || null;
     setCurrentRound(activeRound);
 
+    if (!activeRound) {
+      setMotorcycles([]);
+      setIsLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("motorcycles")
       .select(
@@ -450,6 +468,7 @@ export default function AdminMotorcyclesPage() {
         id,
         lot_number,
         auction_round_id,
+        stock_motorcycle_id,
         motorcycle_name,
         cost_price,
         brand,
@@ -474,6 +493,7 @@ export default function AdminMotorcyclesPage() {
         )
       `
       )
+      .eq("auction_round_id", activeRound.id)
       .order("lot_number");
 
     if (error) {
@@ -714,91 +734,91 @@ export default function AdminMotorcyclesPage() {
     await loadMotorcycles();
   }
 
-  async function toggleActive(bike: Motorcycle) {
-    setErrorMessage("");
+  async function moveMotorcycleBackToStock(bike: Motorcycle) {
+    const confirmed = confirm("ยืนยันย้ายรถคันนี้กลับเข้าคลัง?");
 
-    const oldActive = bike.active;
-    const newActive = !bike.active;
+    if (!confirmed) return;
 
-    const confirmToggle = confirm(
-      newActive
-        ? `ต้องการแสดงล็อต ${bike.lot_number} ให้ร้านค้าเห็นใช่หรือไม่?`
-        : `ต้องการซ่อนล็อต ${bike.lot_number} จากร้านค้าใช่หรือไม่?`
-    );
-
-    if (!confirmToggle) return;
-
-    const { error } = await supabase
-      .from("motorcycles")
-      .update({
-        active: newActive,
-      })
-      .eq("id", bike.id);
-
-    if (error) {
-      setErrorMessage(error.message);
+    if (!currentRound) {
+      setErrorMessage("ยังไม่มีรอบประมูลปัจจุบัน");
       return;
     }
 
-    await createAuditLog({
-      action: "motorcycle_active_changed",
-      targetType: "motorcycle",
-      targetId: String(bike.id),
-      targetName: getMotorcycleTargetName(bike),
-      details: {
-        motorcycle_id: bike.id,
-        lot_number: bike.lot_number,
-        motorcycle_name: bike.motorcycle_name,
-        old_active: oldActive,
-        new_active: newActive,
-        old_status_thai: oldActive ? "แสดงอยู่" : "ซ่อนอยู่",
-        new_status_thai: newActive ? "แสดงอยู่" : "ซ่อนอยู่",
-      },
-    });
-
-    await loadMotorcycles();
-  }
-
-  async function deleteMotorcycle(bike: Motorcycle) {
-    const confirmDelete = confirm(
-      `ต้องการลบล็อต ${bike.lot_number} ถาวรใช่หรือไม่? ถ้ารถมีรายการเสนอราคาแล้ว อาจลบไม่ได้ แนะนำให้กดซ่อนแทน`
-    );
-
-    if (!confirmDelete) return;
-
-    const secondConfirm = confirm(
-      "ยืนยันอีกครั้ง: การลบรายการรถอาจกระทบข้อมูลเดิม ต้องการทำต่อหรือไม่?"
-    );
-
-    if (!secondConfirm) return;
-
+    setMovingBackId(bike.id);
     setErrorMessage("");
 
-    const oldBikeData = getMotorcycleDetailPayload(bike);
+    try {
+      const { data: offerRows, error: offerError } = await supabase
+        .from("offers")
+        .select("id")
+        .eq("motorcycle_id", bike.id)
+        .eq("auction_round_id", currentRound.id)
+        .limit(1);
 
-    const { error } = await supabase
-      .from("motorcycles")
-      .delete()
-      .eq("id", bike.id);
+      if (offerError) throw offerError;
 
-    if (error) {
+      if (offerRows && offerRows.length > 0) {
+        setErrorMessage(
+          "ไม่สามารถย้ายกลับเข้าคลังได้ เพราะมีร้านค้าเสนอราคาแล้ว"
+        );
+        setMovingBackId(null);
+        return;
+      }
+
+      if (bike.stock_motorcycle_id) {
+        const { error: stockError } = await supabase
+          .from("stock_motorcycles")
+          .update({
+            stock_status: "อยู่ในสต็อก",
+            current_auction_round_id: null,
+            current_auction_motorcycle_id: null,
+          })
+          .eq("id", bike.stock_motorcycle_id);
+
+        if (stockError) throw stockError;
+      }
+
+      const { error: roundLotError } = await supabase
+        .from("auction_round_lots")
+        .delete()
+        .eq("auction_round_id", currentRound.id)
+        .eq("original_motorcycle_id", bike.id);
+
+      if (roundLotError) throw roundLotError;
+
+      const { error: motorcycleError } = await supabase
+        .from("motorcycles")
+        .update({
+          active: false,
+          auction_round_id: null,
+        })
+        .eq("id", bike.id);
+
+      if (motorcycleError) throw motorcycleError;
+
+      await createAuditLog({
+        action: "motorcycle_moved_back_to_stock",
+        targetType: "motorcycle",
+        targetId: String(bike.id),
+        targetName: getMotorcycleTargetName(bike),
+        details: {
+          motorcycle_id: bike.id,
+          stock_motorcycle_id: bike.stock_motorcycle_id || null,
+          auction_round_id: currentRound.id,
+          round_lot_number: getRoundLotDisplay(bike),
+        },
+      });
+
+      await loadMotorcycles();
+    } catch (error) {
       setErrorMessage(
-        "ลบไม่ได้ เพราะรายการนี้อาจมีราคาเสนออยู่แล้ว แนะนำให้ใช้ปุ่มซ่อนแทน"
+        error instanceof Error
+          ? error.message
+          : "ย้ายรถกลับเข้าคลังไม่สำเร็จ"
       );
-      return;
     }
 
-    await createAuditLog({
-      action: "motorcycle_deleted",
-      targetType: "motorcycle",
-      targetId: String(bike.id),
-      targetName: getMotorcycleTargetName(bike),
-      details: {
-        deleted_data: oldBikeData,
-      },
-    });
-
-    await loadMotorcycles();
+    setMovingBackId(null);
   }
 
   function toggleDetail(bikeId: number) {
@@ -966,14 +986,10 @@ export default function AdminMotorcyclesPage() {
       ["ปี", bike.year],
       ["สี", bike.color],
       ["ทะเบียน", bike.license_plate],
-      ["เลขไมล์", bike.mileage],
       ["เลขตัวถัง", bike.frame_number],
-      ["เลขเครื่อง", bike.engine_number],
       ["สถานะเล่ม", bike.registration_status],
       ["ภาษีหมดอายุ", bike.tax_expiry],
-      ["ซื้อ/เทิร์น", bike.acquisition_type],
       ["มาจาก", bike.source_name],
-      ["สภาพรถ", bike.condition],
       ["หมายเหตุ", bike.notes],
     ];
 
@@ -1013,8 +1029,7 @@ export default function AdminMotorcyclesPage() {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gray-50 p-4">
         <p className="text-sm text-gray-600">
-          หน้า {safeCurrentPage} / {totalPages} • แสดงทีละ {ITEMS_PER_PAGE}{" "}
-          รายการ
+          หน้า {safeCurrentPage} / {totalPages}
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -1069,17 +1084,12 @@ export default function AdminMotorcyclesPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchText, statusFilter]);
+  }, [searchText]);
 
   const filteredMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
     return motorcycles.filter((bike) => {
-      const matchStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && bike.active) ||
-        (statusFilter === "hidden" && !bike.active);
-
       const searchableText = [
         getRoundLotDisplay(bike),
         bike.motorcycle_name,
@@ -1104,9 +1114,9 @@ export default function AdminMotorcyclesPage() {
 
       const matchSearch = !keyword || searchableText.includes(keyword);
 
-      return matchStatus && matchSearch;
+      return matchSearch;
     });
-  }, [motorcycles, searchText, statusFilter]);
+  }, [motorcycles, searchText]);
 
   const totalPages = Math.max(
     1,
@@ -1137,20 +1147,9 @@ export default function AdminMotorcyclesPage() {
 
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                จัดการระบบ
-              </p>
-
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                รายการรถในรอบเสนอราคา
+                รายการรถในรอบประมูล
               </h1>
-
-              <p className="mt-1 text-sm text-gray-600">
-                ตรวจสอบรถที่ถูกเลือกเข้ารอบปัจจุบัน และดาวน์โหลด Excel สำหรับจัดเรียงรถจริงก่อนวันประมูล
-              </p>
-              <p className="mt-2 text-sm font-medium text-amber-700">
-                การเพิ่มรถใหม่ให้ทำผ่านหน้า เพิ่มรถเข้าคลัง เท่านั้น
-              </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -1160,7 +1159,7 @@ export default function AdminMotorcyclesPage() {
                 disabled={!currentRound}
                 className="rounded-xl bg-black px-4 py-2 font-medium text-white shadow hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
-                ดาวน์โหลด Excel จัดเรียงล็อต
+                ดาวน์โหลด Excel ลำดับรถ
               </button>
 
               <button
@@ -1287,10 +1286,6 @@ export default function AdminMotorcyclesPage() {
                 <h2 className="text-xl font-bold text-gray-900">
                   รายการรถทั้งหมด
                 </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                  ค้นหา กรองสถานะ แบ่งหน้า และกดเปิดรายละเอียดเฉพาะรายการที่ต้องการ
-                </p>
               </div>
 
               <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
@@ -1299,45 +1294,41 @@ export default function AdminMotorcyclesPage() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-[1fr_220px]">
+            <div className="mt-5 grid gap-3">
               <div>
-                <label className="text-sm font-medium text-gray-700">
-                  ค้นหา
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <span>ค้นหา</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchHelpOpen((current) => !current)}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 bg-white text-xs font-bold text-gray-500"
+                    aria-label="ค้นหาได้จาก: ลำดับ, ยี่ห้อ, รุ่น, ทะเบียน, เลขตัวถัง, ชื่อ/เก็บ, แหล่งที่มา"
+                  >
+                    ?
+                  </button>
                 </label>
+
+                {isSearchHelpOpen && (
+                  <p className="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                    ค้นหาได้จาก: ลำดับ, ยี่ห้อ, รุ่น, ทะเบียน, เลขตัวถัง,
+                    ชื่อ/เก็บ, แหล่งที่มา
+                  </p>
+                )}
 
                 <input
                   className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  placeholder="ค้นหาล็อต / ชื่อรถ / รุ่น / ทะเบียน / เลขตัวถัง / ซื้อ/เทิร์น / มาจาก"
+                  placeholder="ค้นหารถ"
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
                 />
               </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  สถานะ
-                </label>
-
-                <select
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value as StatusFilter)
-                  }
-                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                >
-                  <option value="all">ทั้งหมด</option>
-                  <option value="active">แสดงอยู่</option>
-                  <option value="hidden">ซ่อนอยู่</option>
-                </select>
-              </div>
             </div>
 
-            {(searchText || statusFilter !== "all") && (
+            {searchText && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchText("");
-                  setStatusFilter("all");
                   setCurrentPage(1);
                 }}
                 className="mt-3 rounded-xl border px-4 py-2 text-sm font-medium hover:bg-gray-100"
@@ -1366,7 +1357,7 @@ export default function AdminMotorcyclesPage() {
                     ไม่พบรายการที่ค้นหา
                   </p>
                   <p className="mt-1 text-sm text-gray-600">
-                    ลองเปลี่ยนคำค้นหาหรือสถานะตัวกรอง
+                    ลองเปลี่ยนคำค้นหา
                   </p>
                 </div>
               )}
@@ -1384,51 +1375,36 @@ export default function AdminMotorcyclesPage() {
                         key={bike.id}
                         className="overflow-hidden rounded-2xl border bg-white shadow-sm"
                       >
-                        <div className="bg-gray-50 p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                                ล็อต {getRoundLotDisplay(bike)}
-                              </p>
+                        <div className="bg-gray-50 p-3 sm:p-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 sm:text-sm">
+                              ลำดับ {getRoundLotDisplay(bike)}
+                            </p>
+                          </div>
 
-                              <h3 className="mt-1 text-lg font-bold text-gray-900">
-                                {bike.motorcycle_name}
-                              </h3>
+                          <h3 className="mt-1 text-base font-bold text-gray-900 sm:text-lg">
+                            {getMotorcycleDisplayTitle(bike)}
+                          </h3>
 
-                              <p className="mt-2 text-sm font-semibold text-orange-700">
-                                ต้นทุน:{" "}
-                                {bike.cost_price
-                                  ? `${Number(
-                                      bike.cost_price
-                                    ).toLocaleString()} บาท`
-                                  : "-"}
-                              </p>
-
-                              <p className="mt-1 text-sm text-gray-600">
-                                ซื้อ/เทิร์น: {bike.acquisition_type || "-"} •
-                                มาจาก: {bike.source_name || "-"}
-                              </p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              {bike.active ? (
-                                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                                  แสดงอยู่
-                                </span>
-                              ) : (
-                                <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                                  ซ่อนอยู่
-                                </span>
-                              )}
-
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
                                 onClick={() => toggleDetail(bike.id)}
-                                className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
+                                className="rounded-lg border bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-100 sm:text-sm"
                               >
-                                {isDetailOpen
-                                  ? "ซ่อนรายละเอียด ▲"
-                                  : "ดูรายละเอียด ▼"}
+                                {isDetailOpen ? "รายละเอียด ▲" : "รายละเอียด ▼"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => moveMotorcycleBackToStock(bike)}
+                                disabled={movingBackId === bike.id}
+                                className="rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-1.5 text-xs font-semibold text-yellow-800 shadow-sm hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                              >
+                                {movingBackId === bike.id
+                                  ? "กำลังย้าย..."
+                                  : "ย้ายกลับเข้าคลัง"}
                               </button>
                             </div>
                           </div>
@@ -1576,24 +1552,6 @@ export default function AdminMotorcyclesPage() {
                                   className="rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
                                 >
                                   แก้ไข
-                                </button>
-
-                                <button
-                                  onClick={() => toggleActive(bike)}
-                                  className={
-                                    bike.active
-                                      ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
-                                      : "rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-                                  }
-                                >
-                                  {bike.active ? "ซ่อน" : "แสดง"}
-                                </button>
-
-                                <button
-                                  onClick={() => deleteMotorcycle(bike)}
-                                  className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-                                >
-                                  ลบรายการ
                                 </button>
                               </div>
                             )}

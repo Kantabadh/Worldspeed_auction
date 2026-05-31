@@ -137,11 +137,13 @@ function formatMoney(value: number | null | undefined) {
 }
 
 function getRoundStatusLabel(status?: string | null) {
-  if (status === "draft") return "เตรียมรอบ";
-  if (status === "open") return "เปิดรับราคา";
-  if (status === "closed") return "ปิดรับราคา";
+  if (status === "draft" || status === "prepared" || status === "preparing") {
+    return "ยังไม่เปิด";
+  }
+  if (status === "open") return "ใส่ราคาได้";
+  if (status === "closed") return "ปิดใส่ราคาแล้ว";
   if (status === "finished") return "จบรอบแล้ว";
-  if (status === "archived") return "บันทึกประวัติแล้ว";
+  if (status === "archived") return "จบรอบแล้ว";
   return status || "-";
 }
 
@@ -191,7 +193,7 @@ function getOfferGroupsByPrice(offers: AdminOffer[]) {
 function getSaleStatusLabel(status?: string | null) {
   if (status === "sold") return "ขายแล้ว";
   if (status === "unsold") return "ไม่ขาย / กลับเข้าสต็อก";
-  return "รอดำเนินการ";
+  return "รอผล";
 }
 
 function getSaleStatusBadgeClass(status?: string | null) {
@@ -694,7 +696,7 @@ export default function AdminRoundDetailPage() {
     }
 
     return {
-      status: "รอดำเนินการ",
+      status: "รอผล",
       price: null,
       merchant: "-",
       note: "",
@@ -1195,23 +1197,17 @@ export default function AdminRoundDetailPage() {
     <StaffGuard allowedRoles={["owner", "admin"]}>
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
-          <BackButton />
+          <BackButton href="/admin/rounds" />
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                รอบเสนอราคา
-              </p>
-
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                รายละเอียดรอบเสนอราคา
+                รายละเอียดรอบประมูล
               </h1>
 
               <p className="mt-1 text-sm text-gray-600">
                 {round
-                  ? `${round.round_name || `รอบ #${round.id}`} • ${formatThaiDate(
-                      round.auction_date
-                    )} • ID #${round.id}`
+                  ? `${round.round_name || `รอบ #${round.id}`} • ID #${round.id}`
                   : "กำลังโหลดข้อมูลรอบเสนอราคา"}
               </p>
             </div>
@@ -1236,18 +1232,11 @@ export default function AdminRoundDetailPage() {
 
           {round && (
             <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
-              <div className="grid gap-4 md:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div>
-                  <p className="text-sm text-gray-500">ชื่อรอบ</p>
+                  <p className="text-sm text-gray-500">รอบประมูล</p>
                   <p className="mt-1 font-bold text-gray-900">
                     {round.round_name || `รอบ #${round.id}`}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm text-gray-500">วันที่เสนอราคา</p>
-                  <p className="mt-1 font-bold text-gray-900">
-                    {formatThaiDate(round.auction_date)}
                   </p>
                 </div>
 

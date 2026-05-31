@@ -124,6 +124,10 @@ function getSavedStaffProfile() {
 }
 
 export default function AdminStockPage() {
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getSavedStaffProfile();
+  });
   const [stockNumber, setStockNumber] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [sourceBranch, setSourceBranch] = useState<SourceBranch>("");
@@ -175,6 +179,16 @@ export default function AdminStockPage() {
   useEffect(() => {
     generateStockNumber(sourceBranch);
   }, [sourceBranch]);
+
+  useEffect(() => {
+    setStaffProfile(getSavedStaffProfile());
+  }, []);
+
+  async function logoutStaff() {
+    localStorage.removeItem("staffProfile");
+    await supabase.auth.signOut();
+    window.location.href = "/staff-login";
+  }
 
   async function createAuditLog({
     action,
@@ -282,8 +296,18 @@ export default function AdminStockPage() {
     const finalBrand =
       brandOption === "อื่น" ? customBrand.trim() : brandOption;
 
+    if (!brandOption) {
+      alert("กรุณาเลือกยี่ห้อ");
+      return;
+    }
+
     if (brandOption === "อื่น" && !finalBrand) {
       alert("กรุณาระบุยี่ห้อ");
+      return;
+    }
+
+    if (!details.model.trim()) {
+      alert("กรุณาระบุรุ่น");
       return;
     }
 
@@ -527,39 +551,6 @@ export default function AdminStockPage() {
         })}
 
         <div>
-          <label className="text-sm font-medium text-gray-700">มาจาก</label>
-
-          <select
-            className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-            value={sourceBranch}
-            onChange={(event) =>
-              setSourceBranch(event.target.value as SourceBranch)
-            }
-          >
-            {sourceBranchOptions.map((option) => (
-              <option key={option || "empty"} value={option}>
-                {option || "เลือกแหล่งที่มา"}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {sourceBranch === "อื่น" && (
-          <div>
-            <label className="text-sm font-medium text-gray-700">
-              ระบุแหล่งที่มา
-            </label>
-
-            <input
-              className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-              placeholder="เช่น สาขาอื่น / ชื่อร้าน / แหล่งที่มา"
-              value={customSourceName}
-              onChange={(event) => setCustomSourceName(event.target.value)}
-            />
-          </div>
-        )}
-
-        <div>
           <label className="text-sm font-medium text-gray-700">ต้นทุน</label>
 
           <input
@@ -585,20 +576,24 @@ export default function AdminStockPage() {
     <StaffGuard allowedRoles={["owner", "admin", "stock_staff"]}>
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-6">
-          <BackButton />
+          {staffProfile?.role === "stock_staff" ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={logoutStaff}
+                className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+              >
+                ออกจากระบบ
+              </button>
+            </div>
+          ) : (
+            <BackButton />
+          )}
 
           <div className="mt-4">
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-              คลังรถ
-            </p>
-
             <h1 className="mt-1 text-2xl font-bold text-gray-900">
               คลังรถบริษัท
             </h1>
-
-            <p className="mt-1 text-sm text-gray-600">
-              ใช้สำหรับเพิ่มรถที่บริษัทซื้อหรือรับเทิร์นเข้าคลังเท่านั้น การเลือกส่งรถเข้ารอบเสนอราคาจะทำในหน้ารายการรถในคลังโดย Owner/Admin
-            </p>
           </div>
 
           {errorMessage && (
@@ -619,11 +614,40 @@ export default function AdminStockPage() {
               เพิ่มรถเข้าคลัง
             </h2>
 
-            <p className="mt-1 text-sm text-gray-600">
-              กรอกข้อมูลรถ ต้นทุน แหล่งที่มา และรูปภาพ เพื่อเก็บเป็นสต็อกบริษัท
-            </p>
-
             <div className="mt-4 grid gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">มาจาก</label>
+
+                <select
+                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  value={sourceBranch}
+                  onChange={(event) =>
+                    setSourceBranch(event.target.value as SourceBranch)
+                  }
+                >
+                  {sourceBranchOptions.map((option) => (
+                    <option key={option || "empty"} value={option}>
+                      {option || "เลือกแหล่งที่มา"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {sourceBranch === "อื่น" && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">
+                    ระบุแหล่งที่มา
+                  </label>
+
+                  <input
+                    className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                    placeholder="เช่น สาขาอื่น / ชื่อร้าน / แหล่งที่มา"
+                    value={customSourceName}
+                    onChange={(event) => setCustomSourceName(event.target.value)}
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-gray-700">
                   รหัสสต็อก

@@ -80,6 +80,7 @@ type CurrentAuctionRound = {
 };
 
 const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
+
 function getStaffRoleLabel(role: string) {
   if (role === "owner") return "Owner";
   if (role === "admin") return "Admin";
@@ -637,9 +638,11 @@ export default function AdminPage() {
   const totalGrossProfit = totalHighestOfferValue - totalCostForSubmittedLots;
 
   function getRoundStatusLabel(status?: string | null) {
-    if (status === "draft") return "เตรียมรอบ";
+    if (status === "draft" || status === "prepared" || status === "preparing") {
+      return "เตรียมรอบ";
+    }
     if (status === "open") return "เปิดรับราคา";
-    if (status === "closed") return "ปิดรอบ";
+    if (status === "closed") return "ปิดรับราคา";
     if (status === "finished") return "จบรอบแล้ว";
     if (status === "archived") return "บันทึกประวัติแล้ว";
     return status || "-";
@@ -1053,10 +1056,6 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                 <h2 className="mt-1 text-xl font-bold sm:text-2xl">
                   มีร้านค้ารออนุมัติ {pendingMerchantRequests} ราย
                 </h2>
-
-                <p className="mt-1 text-sm">
-                  ตรวจสอบและอนุมัติร้านค้าก่อนให้เข้าสู่ระบบ
-                </p>
               </div>
 
               <a
@@ -1073,24 +1072,16 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
         <section className="mb-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                รอบเสนอราคาปัจจุบัน
-              </p>
-
-              <h2 className="mt-1 text-xl font-bold text-gray-900">
+              <h2 className="text-xl font-bold text-gray-900">
                 รอบเสนอราคาปัจจุบัน
               </h2>
-
-              <p className="mt-1 text-sm text-gray-600">
-                ใช้ควบคุมรอบที่ร้านค้ากำลังเสนอราคา
-              </p>
             </div>
 
           </div>
 
           {currentRound ? (
             <div className="mt-4 rounded-2xl border bg-gray-50 p-4">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-gray-500">ชื่อรอบ</p>
                   <p className="mt-1 font-bold text-gray-900">
@@ -1098,17 +1089,10 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   </p>
                 </div>
 
-                <div>
+                <div className="text-left md:text-right">
                   <p className="text-sm text-gray-500">สถานะรอบ</p>
                   <p className="mt-1 font-bold text-blue-700">
                     {getRoundStatusLabel(currentRound.status)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm text-gray-500">รหัสรอบ</p>
-                  <p className="mt-1 font-bold text-gray-900">
-                    #{currentRound.id}
                   </p>
                 </div>
               </div>
@@ -1151,22 +1135,28 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             </div>
           )}
 
-          <div className="mt-5 rounded-2xl border bg-white p-4">
+          <div className="mt-4 rounded-2xl border bg-white p-3 sm:p-4">
             <h3 className="font-bold text-gray-900">สร้างรอบเสนอราคาใหม่</h3>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-[220px_auto]">
-              <input
-                type="date"
-                className="rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                value={newRoundDate}
-                onChange={(event) => setNewRoundDate(event.target.value)}
-              />
+            <div className="mt-2 grid gap-3 md:grid-cols-[220px_auto] md:items-end">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  วันที่ประมูล
+                </label>
+
+                <input
+                  type="date"
+                  className="mt-2 w-full rounded-xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                  value={newRoundDate}
+                  onChange={(event) => setNewRoundDate(event.target.value)}
+                />
+              </div>
 
               <button
                 type="button"
                 onClick={createNewAuctionRound}
                 disabled={isRoundUpdating}
-                className="rounded-xl bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800 disabled:bg-gray-400"
+                className="w-full rounded-xl bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800 disabled:bg-gray-400 md:w-auto"
               >
                 สร้างรอบใหม่
               </button>
@@ -1200,22 +1190,22 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   href="/admin/motorcycles"
                   className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                 >
-                  รายการรถในรอบเสนอราคา
-                </a>
-
-                <a
-                  href="/admin/rounds"
-                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
-                >
-                  จัดการรอบเสนอราคา
+                  รายการรถในรอบประมูล
                 </a>
               </div>
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <h3 className="font-bold text-gray-900">ระหว่างเสนอราคา</h3>
+              <h3 className="font-bold text-gray-900">ระหว่างเสนอราคา / จบรอบ</h3>
 
               <div className="mt-3 grid gap-3">
+                <a
+                  href="/admin/rounds"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
+                >
+                  จัดการรอบปัจจุบัน
+                </a>
+
                 <a
                   href="/admin/merchants"
                   className="relative rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
@@ -1239,16 +1229,9 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-              <h3 className="font-bold text-gray-900">ปิดรอบและประวัติ</h3>
+              <h3 className="font-bold text-gray-900">ประวัติและระบบ</h3>
 
               <div className="mt-3 grid gap-3">
-                <a
-                  href="/admin/rounds"
-                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
-                >
-                  ผลรอบเสนอราคา / ตัดสินผล
-                </a>
-
                 <a
                   href="/admin/history"
                   className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"

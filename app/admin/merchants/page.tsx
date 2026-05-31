@@ -149,7 +149,6 @@ export default function AdminMerchantsPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [clearingId, setClearingId] = useState<number | null>(null);
   const [updatingLotKey, setUpdatingLotKey] = useState<string | null>(null);
   const [openMerchantLotIds, setOpenMerchantLotIds] = useState<number[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -677,7 +676,7 @@ export default function AdminMerchantsPage() {
   }
 
   async function deleteMerchant(id: number) {
-    const confirmDelete = confirm("ต้องการลบบัญชีร้านค้านี้ใช่หรือไม่?");
+    const confirmDelete = confirm("ยืนยันลบบัญชีร้านค้านี้?");
 
     if (!confirmDelete) return;
 
@@ -693,114 +692,6 @@ export default function AdminMerchantsPage() {
       return;
     }
 
-    loadMerchants();
-  }
-
-  async function clearMerchantSubmission(merchant: MerchantAccount) {
-    const confirmClear = confirm(
-      `ต้องการล้างรายการเสนอราคาของร้าน ${merchant.shop_name} ใช่หรือไม่? ร้านนี้จะสามารถส่งราคาใหม่ได้`
-    );
-
-    if (!confirmClear) return;
-
-    const secondConfirm = confirm(
-      "ยืนยันอีกครั้ง: ระบบจะลบเฉพาะรายการเสนอราคาของร้านนี้เท่านั้น ต้องการทำต่อหรือไม่?"
-    );
-
-    if (!secondConfirm) return;
-
-    setClearingId(merchant.id);
-    setErrorMessage("");
-
-    const submittedLotsBeforeClear = merchant.submitted_lots || [];
-    const totalOfferValueBeforeClear = submittedLotsBeforeClear.reduce(
-      (sum, lot) => sum + Number(lot.offer_price || 0),
-      0
-    );
-
-    const { data: submittedMerchantRows, error: merchantRowsError } =
-      await supabase
-        .from("merchants")
-        .select("id")
-        .eq("merchant_account_id", merchant.id);
-
-    if (merchantRowsError) {
-      setErrorMessage(merchantRowsError.message);
-      setClearingId(null);
-      return;
-    }
-
-    if (!submittedMerchantRows || submittedMerchantRows.length === 0) {
-      alert("ร้านค้านี้ยังไม่มีรายการเสนอราคา");
-      setClearingId(null);
-      loadMerchants();
-      return;
-    }
-
-    const submittedMerchantIds = submittedMerchantRows.map((row) => row.id);
-
-    const { error: offersDeleteError } = await supabase
-      .from("offers")
-      .delete()
-      .in("merchant_id", submittedMerchantIds);
-
-    if (offersDeleteError) {
-      setErrorMessage(offersDeleteError.message);
-      setClearingId(null);
-      return;
-    }
-
-    const { error: merchantsDeleteError } = await supabase
-      .from("merchants")
-      .delete()
-      .in("id", submittedMerchantIds);
-
-    if (merchantsDeleteError) {
-      setErrorMessage(merchantsDeleteError.message);
-      setClearingId(null);
-      return;
-    }
-
-    await supabase
-      .from("merchant_lot_edit_permissions")
-      .delete()
-      .eq("merchant_account_id", merchant.id);
-
-    await supabase
-      .from("merchant_accounts")
-      .update({
-        can_edit_submission: false,
-      })
-      .eq("id", merchant.id);
-
-    await createAuditLog({
-      action: "merchant_submission_cleared",
-      targetType: "merchant",
-      targetId: String(merchant.id),
-      targetName: merchant.shop_name,
-      details: {
-        merchant_account_id: merchant.id,
-        merchant_name: merchant.merchant_name,
-        shop_name: merchant.shop_name,
-        phone: merchant.phone,
-        submitted_merchant_row_ids: submittedMerchantIds,
-        cleared_lot_count: submittedLotsBeforeClear.length,
-        cleared_total_offer_value: totalOfferValueBeforeClear,
-        cleared_lots: submittedLotsBeforeClear.map((lot) => ({
-          motorcycle_id: lot.motorcycle_id,
-          lot_number: lot.lot_number,
-          motorcycle_name: lot.motorcycle_name,
-          offer_price: lot.offer_price,
-          was_editable: lot.can_edit_lot,
-        })),
-        deleted_offers: true,
-        deleted_merchant_submission_rows: true,
-        deleted_lot_edit_permissions: true,
-        can_edit_submission_after_clear: false,
-      },
-    });
-
-    setClearingId(null);
     loadMerchants();
   }
 
@@ -824,21 +715,9 @@ export default function AdminMerchantsPage() {
 
   const activeCount = merchants.filter((merchant) => merchant.active).length;
   const inactiveCount = merchants.filter((merchant) => !merchant.active).length;
-  const submittedCount = merchants.filter(
-    (merchant) => merchant.has_submission
-  ).length;
   const pendingCount = merchants.filter(
     (merchant) => merchant.approval_status === "pending"
   ).length;
-  const starredCount = merchants.filter((merchant) => merchant.is_starred)
-    .length;
-
-  const editableLotCount = merchants.reduce((sum, merchant) => {
-    return (
-      sum +
-      (merchant.submitted_lots || []).filter((lot) => lot.can_edit_lot).length
-    );
-  }, 0);
 
   return (
     <StaffGuard>
@@ -848,17 +727,9 @@ export default function AdminMerchantsPage() {
 
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                จัดการระบบ
-              </p>
-
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900">
                 บัญชีร้านค้า
               </h1>
-
-              <p className="mt-1 text-sm text-gray-600">
-                อนุมัติร้านค้า จัดการสถานะ และเปิดสิทธิ์แก้ไขราคาแบบราย Lot
-              </p>
             </div>
 
             <button
@@ -876,18 +747,11 @@ export default function AdminMerchantsPage() {
             </div>
           )}
 
-          <section className="mt-5 grid gap-4 md:grid-cols-7">
+          <section className="mt-5 grid gap-4 md:grid-cols-4">
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
               <p className="text-sm font-medium text-gray-500">ร้านค้าทั้งหมด</p>
               <p className="mt-2 text-3xl font-bold text-gray-900">
                 {merchants.length}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">ปักดาว</p>
-              <p className="mt-2 text-3xl font-bold text-yellow-600">
-                {starredCount}
               </p>
             </div>
 
@@ -911,30 +775,12 @@ export default function AdminMerchantsPage() {
                 {inactiveCount}
               </p>
             </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">ส่งราคาแล้ว</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">
-                {submittedCount}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-sm font-medium text-gray-500">Lot ที่แก้ได้</p>
-              <p className="mt-2 text-3xl font-bold text-orange-600">
-                {editableLotCount}
-              </p>
-            </div>
           </section>
 
           <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <h2 className="text-xl font-bold text-gray-900">
               เพิ่มบัญชีร้านค้า
             </h2>
-
-            <p className="mt-1 text-sm text-gray-600">
-              ร้านค้าที่เพิ่มโดยแอดมินจะได้รับการอนุมัติทันที
-            </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
@@ -977,9 +823,6 @@ export default function AdminMerchantsPage() {
                   </button>
                 </div>
 
-                <p className="mt-1 text-xs text-gray-500">
-                  รหัสผ่านสามารถซ้ำกับร้านค้าอื่นได้ แต่เบอร์โทรต้องไม่ซ้ำ
-                </p>
               </div>
 
               <div>
@@ -1021,9 +864,6 @@ export default function AdminMerchantsPage() {
                   onChange={(event) => setPhone(cleanPhone(event.target.value))}
                 />
 
-                <p className="mt-1 text-xs text-gray-500">
-                  ใช้ได้ทั้งเบอร์บ้าน 9 หลัก และเบอร์มือถือ 10 หลัก
-                </p>
               </div>
             </div>
 
@@ -1041,10 +881,6 @@ export default function AdminMerchantsPage() {
               รายชื่อร้านค้า
             </h2>
 
-            <p className="mt-1 text-sm text-gray-600">
-              จัดการอนุมัติ แก้ไข ปิดใช้งาน ล้างราคา และเปิดสิทธิ์แก้ไขราคาเฉพาะ Lot
-            </p>
-
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
                 <p className="text-gray-600">กำลังโหลดข้อมูลร้านค้า...</p>
@@ -1061,10 +897,20 @@ export default function AdminMerchantsPage() {
               <div className="mt-5 space-y-4">
                 {merchants.map((merchant) => {
                   const submittedLots = merchant.submitted_lots || [];
-                  const hasEditableLot = submittedLots.some(
-                    (lot) => lot.can_edit_lot
-                  );
                   const isLotsOpen = openMerchantLotIds.includes(merchant.id);
+                  const isPending = merchant.approval_status === "pending";
+                  const isActiveMerchant =
+                    merchant.approval_status === "approved" && merchant.active;
+                  const mainStatusLabel = isPending
+                    ? "รออนุมัติ"
+                    : isActiveMerchant
+                      ? "ใช้งาน"
+                      : "ปิดใช้งาน";
+                  const mainStatusClass = isPending
+                    ? "bg-orange-100 text-orange-700"
+                    : isActiveMerchant
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700";
 
                   return (
                     <article
@@ -1078,13 +924,29 @@ export default function AdminMerchantsPage() {
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                            {merchant.is_starred ? "⭐ " : ""}
                             บัญชีร้านค้า #{merchant.id}
                           </p>
 
-                          <h3 className="mt-1 text-lg font-bold text-gray-900">
-                            {merchant.shop_name}
-                          </h3>
+                          <div className="mt-1 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleStar(merchant)}
+                              className={
+                                merchant.is_starred
+                                  ? "text-xl leading-none text-yellow-500 hover:text-yellow-600"
+                                  : "text-xl leading-none text-gray-400 hover:text-yellow-500"
+                              }
+                              aria-label={
+                                merchant.is_starred ? "เอาดาวออก" : "ปักดาว"
+                              }
+                            >
+                              {merchant.is_starred ? "★" : "☆"}
+                            </button>
+
+                            <h3 className="text-lg font-bold text-gray-900">
+                              {merchant.shop_name}
+                            </h3>
+                          </div>
 
                           <p className="mt-1 text-sm text-gray-600">
                             ผู้ติดต่อ: {merchant.merchant_name} • โทร:{" "}
@@ -1093,55 +955,22 @@ export default function AdminMerchantsPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          {merchant.is_starred && (
-                            <span className="rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-700">
-                              ปักดาว
-                            </span>
-                          )}
+                          <span
+                            className={`rounded-full px-3 py-1 text-sm font-semibold ${mainStatusClass}`}
+                          >
+                            {mainStatusLabel}
+                          </span>
 
-                          {merchant.approval_status === "pending" && (
-                            <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
-                              รออนุมัติ
-                            </span>
-                          )}
-
-                          {merchant.approval_status === "approved" && (
-                            <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                              อนุมัติแล้ว
-                            </span>
-                          )}
-
-                          {merchant.approval_status === "rejected" && (
-                            <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                              ไม่อนุมัติ
-                            </span>
-                          )}
-
-                          {merchant.has_submission ? (
-                            <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">
-                              ส่งราคาแล้ว
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600">
-                              ยังไม่ส่งราคา
-                            </span>
-                          )}
-
-                          {hasEditableLot && (
-                            <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-700">
-                              มี Lot ที่แก้ได้
-                            </span>
-                          )}
-
-                          {merchant.active ? (
-                            <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
-                              ใช้งาน
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">
-                              ปิดใช้งาน
-                            </span>
-                          )}
+                          {isActiveMerchant &&
+                            (merchant.has_submission ? (
+                              <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">
+                                ส่งราคาแล้ว
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-600">
+                                ยังไม่ส่งราคา
+                              </span>
+                            ))}
                         </div>
                       </div>
 
@@ -1346,21 +1175,17 @@ export default function AdminMerchantsPage() {
                             >
                               ยกเลิก
                             </button>
+
+                            <button
+                              onClick={() => deleteMerchant(merchant.id)}
+                              className="rounded-xl bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700"
+                            >
+                              ลบบัญชีร้านค้า
+                            </button>
                           </div>
                         </div>
                       ) : (
                         <div className="mt-5 flex flex-wrap gap-3">
-                          <button
-                            onClick={() => toggleStar(merchant)}
-                            className={
-                              merchant.is_starred
-                                ? "rounded-xl bg-yellow-500 px-4 py-2 font-medium text-white hover:bg-yellow-600"
-                                : "rounded-xl border px-4 py-2 font-medium hover:bg-gray-100"
-                            }
-                          >
-                            {merchant.is_starred ? "เอาดาวออก" : "ปักดาว"}
-                          </button>
-
                           {merchant.approval_status === "pending" && (
                             <>
                               <button
@@ -1404,25 +1229,6 @@ export default function AdminMerchantsPage() {
                             }
                           >
                             {merchant.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                          </button>
-
-                          {merchant.has_submission && (
-                            <button
-                              onClick={() => clearMerchantSubmission(merchant)}
-                              disabled={clearingId === merchant.id}
-                              className="rounded-xl bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700 disabled:bg-gray-400"
-                            >
-                              {clearingId === merchant.id
-                                ? "กำลังล้าง..."
-                                : "ล้างราคาที่ส่ง"}
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => deleteMerchant(merchant.id)}
-                            className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-                          >
-                            ลบ
                           </button>
                         </div>
                       )}

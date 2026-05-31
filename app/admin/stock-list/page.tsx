@@ -115,8 +115,8 @@ const statusBadges: Record<string, string> = {
 };
 
 const statusFilterOptions: { value: StatusFilter; label: string }[] = [
-  { value: "in_stock", label: "พร้อมเลือกรอบ" },
-  { value: "in_auction", label: "อยู่ในรอบเสนอราคา" },
+  { value: "in_stock", label: "อยู่ในคลัง" },
+  { value: "in_auction", label: "อยู่ในการประมูล" },
   { value: "sold", label: "ขายแล้ว" },
   { value: "all", label: "ทั้งหมด" },
 ];
@@ -130,11 +130,16 @@ function getStockLocationLabel(bike: StockMotorcycle) {
     return "ขายแล้ว";
   }
 
-  if (bike.current_auction_round_id || bike.current_auction_motorcycle_id) {
-    return "อยู่ในรอบเสนอราคา";
+  if (
+    bike.stock_status === "in_auction" ||
+    bike.stock_status === "อยู่ในรอบเสนอราคา" ||
+    bike.current_auction_round_id ||
+    bike.current_auction_motorcycle_id
+  ) {
+    return "อยู่ในการประมูล";
   }
 
-  return "อยู่ในสต็อก";
+  return "อยู่ในคลัง";
 }
 
 function getStockLocationBadge(bike: StockMotorcycle) {
@@ -427,10 +432,7 @@ export default function AdminStockListPage() {
         return false;
       }
 
-      if (
-        statusFilter === "in_auction" &&
-        getStockLocationLabel(bike) !== "อยู่ในรอบเสนอราคา"
-      ) {
+      if (statusFilter === "in_auction" && getStockLocationLabel(bike) !== "อยู่ในการประมูล") {
         return false;
       }
 
@@ -652,7 +654,7 @@ export default function AdminStockListPage() {
     );
 
     if (sendableBikes.length === 0) {
-      setErrorMessage("รถที่เลือกอยู่ในรอบเสนอราคาแล้วหรือยังไม่พร้อมส่งเข้ารอบ");
+      setErrorMessage("รถที่เลือกอยู่ในการประมูลแล้วหรือยังไม่พร้อมส่งเข้ารอบ");
       return;
     }
 
@@ -813,6 +815,8 @@ export default function AdminStockListPage() {
     setIsSending(false);
   }
 
+  const isSelectionMode = statusFilter === "in_stock";
+
   return (
     <StaffGuard allowedRoles={["owner", "admin"]}>
       <main className="min-h-screen bg-gray-50 pb-10">
@@ -821,17 +825,9 @@ export default function AdminStockListPage() {
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                คลังรถ
-              </p>
-
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
                 รายการรถในคลัง
               </h1>
-
-              <p className="mt-1 text-sm text-gray-600">
-                แสดงเฉพาะรถที่พร้อมเลือกเข้ารอบเสนอราคาเป็นค่าเริ่มต้น
-              </p>
             </div>
 
             <button
@@ -873,16 +869,16 @@ export default function AdminStockListPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={sendSelectedToRound}
-                disabled={
-                  isSending || statusFilter !== "in_stock" || selectedIds.length === 0
-                }
-                className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-              >
-                {isSending ? "กำลังส่งเข้ารอบ..." : "ส่งเข้ารอบเสนอราคา"}
-              </button>
+              {isSelectionMode && (
+                <button
+                  type="button"
+                  onClick={sendSelectedToRound}
+                  disabled={isSending || selectedIds.length === 0}
+                  className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                >
+                  {isSending ? "กำลังส่งเข้ารอบ..." : "ส่งเข้ารอบเสนอราคา"}
+                </button>
+              )}
             </div>
           </section>
 
@@ -892,10 +888,6 @@ export default function AdminStockListPage() {
                 <h2 className="text-xl font-bold text-gray-900">
                   รถในคลังบริษัท
                 </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                  เลือกรถที่พร้อมเข้ารอบจากแท็บพร้อมเลือกรอบ
-                </p>
               </div>
 
               <input
@@ -922,18 +914,22 @@ export default function AdminStockListPage() {
                 </button>
               ))}
 
-              <button
-                type="button"
-                onClick={toggleAllVisible}
-                disabled={statusFilter !== "in_stock" || selectableIds.length === 0}
-                className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100 disabled:opacity-50"
-              >
-                เลือกรถที่พร้อมส่งทั้งหมด
-              </button>
+              {isSelectionMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleAllVisible}
+                    disabled={selectableIds.length === 0}
+                    className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    เลือกรถที่พร้อมส่งทั้งหมด
+                  </button>
 
-              <span className="text-sm text-gray-500">
-                เลือกแล้ว {selectedIds.length} คัน
-              </span>
+                  <span className="text-sm text-gray-500">
+                    เลือกแล้ว {selectedIds.length} คัน
+                  </span>
+                </>
+              )}
             </div>
 
             {isLoading && (
@@ -956,7 +952,9 @@ export default function AdminStockListPage() {
                 <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
-                      <th className="border p-3">เลือก</th>
+                      {isSelectionMode && (
+                        <th className="border p-3">เลือก</th>
+                      )}
                       <th className="border p-3">รูป</th>
                       <th className="border p-3">รหัสสต็อก</th>
                       <th className="border p-3">รถ</th>
@@ -970,23 +968,24 @@ export default function AdminStockListPage() {
                   <tbody>
                     {filteredStockMotorcycles.map((bike) => {
                       const canSend =
-                        statusFilter === "in_stock" &&
-                        canSendStockBikeToRound(bike);
+                        isSelectionMode && canSendStockBikeToRound(bike);
                       const isSelected = selectedIds.includes(bike.id);
                       const thumbnail =
                         bike.stock_motorcycle_photos?.[0]?.image_url || null;
 
                       return (
                         <tr key={bike.id} className="hover:bg-gray-50">
-                          <td className="border p-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={!canSend}
-                              onChange={() => toggleSelection(bike.id)}
-                              className="h-5 w-5"
-                            />
-                          </td>
+                          {isSelectionMode && (
+                            <td className="border p-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={!canSend}
+                                onChange={() => toggleSelection(bike.id)}
+                                className="h-5 w-5"
+                              />
+                            </td>
+                          )}
 
                           <td className="border p-3">
                             {thumbnail ? (
@@ -1032,17 +1031,9 @@ export default function AdminStockListPage() {
                             >
                               {getStockLocationLabel(bike)}
                             </span>
-                            <p className="mt-2 text-xs text-gray-500">
-                              สถานะคลัง: {getStatusLabel(bike.stock_status)}
-                            </p>
-                            {!canSend && (
-                              <p className="mt-2 text-xs text-gray-500">
-                                ไม่พร้อมส่งเข้ารอบ
-                              </p>
-                            )}
                             {returnedStockIds.has(bike.id) && (
-                              <p className="mt-2 text-xs font-semibold text-yellow-700">
-                                เคยกลับเข้าสต็อก
+                              <p className="mt-2 text-xs font-semibold text-red-600">
+                                รถตีกลับ
                               </p>
                             )}
                           </td>

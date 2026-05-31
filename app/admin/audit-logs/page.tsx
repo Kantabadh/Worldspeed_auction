@@ -289,7 +289,7 @@ export default function AdminAuditLogsPage() {
       return "คลังรถ";
     }
 
-    return action;
+    return "รายการระบบ";
   }
 
   function getActionBadgeClass(action: string) {
@@ -578,7 +578,7 @@ export default function AdminAuditLogsPage() {
       return `ลบรถออกจากคลัง ${log.target_name || "-"}`;
     }
 
-    return log.action;
+    return log.target_name || "บันทึกการทำงาน";
   }
 
   function getSubDetailText(log: AuditLog) {
@@ -753,7 +753,7 @@ export default function AdminAuditLogsPage() {
       return "ลบรถออกจากคลังรถบริษัท";
     }
 
-    return log.action;
+    return "";
   }
 
   const totalLogs = logs.length;
@@ -794,11 +794,7 @@ export default function AdminAuditLogsPage() {
       <header className="border-b bg-white px-4 py-5 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-              Audit Logs
-            </p>
-
-            <h1 className="mt-1 text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-gray-900">
               ประวัติการทำงานของแอดมิน
             </h1>
 
@@ -869,7 +865,7 @@ export default function AdminAuditLogsPage() {
               onChange={(event) => setActionFilter(event.target.value)}
               className="rounded-xl border px-4 py-2 outline-none focus:ring-2 focus:ring-black"
             >
-              <option value="all">แสดงทุก Action</option>
+              <option value="all">แสดงทุกประเภท</option>
 
               <option value="auction_status_changed">
                 รอบเสนอราคา: เปิด/ปิดรับราคา
@@ -890,10 +886,10 @@ export default function AdminAuditLogsPage() {
                 รอบเสนอราคา: ล้างข้อมูลตอนยังไม่มีราคา
               </option>
 
-              <option value="merchant_approved">Merchant: อนุมัติร้านค้า</option>
-              <option value="merchant_rejected">Merchant: ปฏิเสธร้านค้า</option>
+              <option value="merchant_approved">ร้านค้า: อนุมัติร้านค้า</option>
+              <option value="merchant_rejected">ร้านค้า: ปฏิเสธร้านค้า</option>
               <option value="merchant_submission_cleared">
-                Merchant: ล้างราคาของร้านค้า
+                ร้านค้า: ล้างราคาของร้านค้า
               </option>
 
               <option value="lot_edit_unlocked">
@@ -908,15 +904,15 @@ export default function AdminAuditLogsPage() {
               </option>
               <option value="lot_edit_locked">ล็อต: ล็อกแก้ไขราคา</option>
 
-              <option value="motorcycle_created">Motorcycle: เพิ่มรถ</option>
-              <option value="motorcycle_updated">Motorcycle: แก้ไขรถ</option>
+              <option value="motorcycle_created">รายการรถ: เพิ่มรถ</option>
+              <option value="motorcycle_updated">รายการรถ: แก้ไขรถ</option>
               <option value="motorcycle_active_changed">
-                Motorcycle: แสดง/ซ่อนรถ
+                รายการรถ: แสดง/ซ่อนรถ
               </option>
               <option value="motorcycle_photo_deleted">
-                Motorcycle: ลบรูป
+                รายการรถ: ลบรูป
               </option>
-              <option value="motorcycle_deleted">Motorcycle: ลบรถ</option>
+              <option value="motorcycle_deleted">รายการรถ: ลบรถ</option>
 
               <option value="stock_motorcycle_created">
                 คลังรถ: เพิ่มรถเข้าคลัง
@@ -988,7 +984,10 @@ export default function AdminAuditLogsPage() {
                 </thead>
 
                 <tbody>
-                  {logs.map((log) => (
+                  {logs.map((log) => {
+                    const subDetailText = getSubDetailText(log);
+
+                    return (
                     <tr key={log.id} className="border-b align-top">
                       <td className="whitespace-nowrap p-3 text-gray-700">
                         {formatThaiDateTime(log.created_at)}
@@ -1013,17 +1012,13 @@ export default function AdminAuditLogsPage() {
                       </td>
 
                       <td className="p-3">
-                        <div className="space-y-1">
-                          <span
-                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${getActionBadgeClass(
-                              log.action
-                            )}`}
-                          >
-                            {getActionText(log.action)}
-                          </span>
-
-                          <p className="text-xs text-gray-400">{log.action}</p>
-                        </div>
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${getActionBadgeClass(
+                            log.action
+                          )}`}
+                        >
+                          {getActionText(log.action)}
+                        </span>
                       </td>
 
                       <td className="p-3">
@@ -1032,22 +1027,16 @@ export default function AdminAuditLogsPage() {
                             {getCleanDetailText(log)}
                           </p>
 
-                          <p className="mt-1 text-xs text-gray-500">
-                            {getSubDetailText(log)}
-                          </p>
-
-                          <details className="mt-3">
-                            <summary className="cursor-pointer text-xs font-semibold text-gray-500">
-                              ดูข้อมูล technical JSON
-                            </summary>
-                            <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-white p-3 text-xs text-gray-600 ring-1 ring-gray-200">
-                              {JSON.stringify(log.details || {}, null, 2)}
-                            </pre>
-                          </details>
+                          {subDetailText && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              {subDetailText}
+                            </p>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

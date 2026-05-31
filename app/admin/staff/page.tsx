@@ -222,17 +222,9 @@ export default function AdminStaffPage() {
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Owner
-              </p>
-
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900">
                 จัดการผู้ดูแลระบบ
               </h1>
-
-              <p className="mt-1 text-sm text-gray-600">
-                เพิ่มบัญชีผู้ดูแล แก้ไขสิทธิ์ และเปิด/ปิดการใช้งาน
-              </p>
             </div>
 
             <button
@@ -356,10 +348,6 @@ export default function AdminStaffPage() {
               รายชื่อผู้ใช้งานภายใน
             </h2>
 
-            <p className="mt-1 text-sm text-gray-600">
-              ควบคุมสิทธิ์การเข้าหน้าจัดการระบบ
-            </p>
-
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
                 <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
@@ -413,10 +401,6 @@ export default function AdminStaffPage() {
                           <h3 className="mt-3 break-all text-lg font-bold text-gray-900">
                             {staff.email}
                           </h3>
-
-                          <p className="mt-1 break-all text-xs text-gray-500">
-                            UID: {staff.id}
-                          </p>
 
                           <p className="mt-1 text-sm text-gray-600">
                             {getStaffRoleDescription(staff.role)}

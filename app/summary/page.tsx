@@ -495,9 +495,7 @@ export default function SummaryPage() {
         <BackButton />
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <p className="text-sm font-medium text-gray-500">ตรวจสอบก่อนส่ง</p>
-
-          <h1 className="mt-1 text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900">
             {draft.isEditingSubmission ? "ตรวจสอบราคาที่แก้ไข" : "ตรวจสอบราคา"}
           </h1>
 
@@ -507,11 +505,6 @@ export default function SummaryPage() {
             </p>
           )}
 
-          <p className="mt-2 text-sm text-gray-600">
-            {draft.isEditingSubmission
-              ? "หน้านี้แสดงเฉพาะล็อตที่ได้รับอนุญาตให้แก้ไข หลังยืนยันแล้ว ใบยืนยันจะแสดงราคาสุดท้ายทั้งหมดของร้าน"
-              : "กรุณาตรวจสอบราคาให้ถูกต้องก่อนกดยืนยัน"}
-          </p>
         </div>
 
         {errorMessage && (
@@ -575,7 +568,7 @@ export default function SummaryPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                      ล็อต {offer.lot}
+                      ลำดับ {offer.lot}
                     </p>
 
                     <h3 className="mt-1 font-bold text-gray-900">

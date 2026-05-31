@@ -2,11 +2,20 @@
 
 import { usePathname, useRouter } from "next/navigation";
 
-export default function BackButton() {
+type BackButtonProps = {
+  href?: string;
+};
+
+export default function BackButton({ href }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   function handleBack() {
+    if (href) {
+      router.push(href);
+      return;
+    }
+
     if (pathname.startsWith("/admin/")) {
       router.push("/admin");
       return;

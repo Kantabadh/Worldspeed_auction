@@ -431,21 +431,12 @@ export default function AdminMerchantReceiptsPage() {
 
           <div className="no-print mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                Admin Receipt
-              </p>
-
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                พิมพ์ใบเสนอราคาของร้านค้า
+              <h1 className="text-2xl font-bold text-gray-900">
+                พิมพ์ใบเสนอราคาร้านค้า
               </h1>
 
-              <p className="mt-1 text-sm text-gray-600">
-                เลือกร้านค้า 1 ร้าน แล้วพิมพ์ใบเสนอราคาของร้านนั้นเท่านั้น
-              </p>
-
               <p className="mt-2 text-sm font-semibold text-gray-800">
-                รอบ: {getRoundDisplayName(currentRound)} • วันที่:{" "}
-                {getRoundDateText(currentRound)}
+                {getRoundDisplayName(currentRound)}
               </p>
             </div>
 
@@ -477,10 +468,6 @@ export default function AdminMerchantReceiptsPage() {
                 <h2 className="text-lg font-bold text-gray-900">
                   รายชื่อร้านค้า
                 </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                  มีร้านค้าที่ส่งราคา {merchantGroups.length} ร้าน
-                </p>
               </div>
 
               <input
@@ -561,12 +548,6 @@ export default function AdminMerchantReceiptsPage() {
                     ตัวอย่างใบเสนอราคา
                   </h2>
 
-                  <p className="mt-1 text-sm text-gray-600">
-                    {selectedGroup
-                      ? `ร้าน: ${selectedGroup.shopName}`
-                      : "เลือกร้านค้าก่อนพิมพ์"}
-                  </p>
-
                   {selectedGroup && selectedEditedCount > 0 && (
                     <p className="mt-2 inline-flex rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800">
                       มีรายการแก้ไขแล้ว {selectedEditedCount} ล็อต
@@ -587,10 +568,6 @@ export default function AdminMerchantReceiptsPage() {
                 <div className="no-print rounded-2xl bg-gray-50 p-10 text-center">
                   <p className="text-lg font-bold text-gray-900">
                     เลือกร้านค้าทางซ้ายก่อน
-                  </p>
-
-                  <p className="mt-2 text-sm text-gray-600">
-                    หลังจากเลือกแล้ว ระบบจะแสดงใบเสนอราคาของร้านนั้นตรงนี้
                   </p>
                 </div>
               ) : (

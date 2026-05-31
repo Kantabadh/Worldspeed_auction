@@ -354,17 +354,9 @@ export default function AdminRoundsPage() {
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
-                รอบเสนอราคา
-              </p>
-
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                จัดการรอบเสนอราคา
+                จัดการรอบประมูล
               </h1>
-
-              <p className="mt-1 text-sm text-gray-600">
-                ดูรอบทั้งหมด ตั้งรอบปัจจุบัน และเปิด/ปิดรอบประมูล
-              </p>
             </div>
 
             <button
@@ -409,17 +401,13 @@ export default function AdminRoundsPage() {
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
-                  รายการรอบเสนอราคา
+                  รอบทั้งหมด
                 </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                  ค้นหาและจัดการสถานะของแต่ละรอบ
-                </p>
               </div>
 
               <input
                 className="w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black md:w-96"
-                placeholder="ค้นหารอบ / ผู้บันทึก"
+                placeholder="ค้นหารอบ"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -442,15 +430,13 @@ export default function AdminRoundsPage() {
 
             {!isLoading && filteredRounds.length > 0 && (
               <div className="mt-4 overflow-x-auto rounded-2xl border">
-                <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
+                <table className="min-w-[900px] w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
-                      <th className="border p-3">รอบเสนอราคา</th>
+                      <th className="border p-3">รอบประมูล</th>
                       <th className="border p-3">สถานะ</th>
                       <th className="border p-3 text-center">ปัจจุบัน</th>
-                      <th className="border p-3 text-right">ล็อต</th>
-                      <th className="border p-3 text-right">ราคาเสนอ</th>
-                      <th className="border p-3 text-right">มูลค่าสูงสุด</th>
+                      <th className="border p-3 text-right">จำนวนรถ</th>
                       <th className="border p-3">จัดการ</th>
                     </tr>
                   </thead>
@@ -490,14 +476,6 @@ export default function AdminRoundsPage() {
 
                         <td className="border p-3 text-right font-bold">
                           {formatNumber(round.total_lots)}
-                        </td>
-
-                        <td className="border p-3 text-right font-bold">
-                          {formatNumber(round.total_offers)}
-                        </td>
-
-                        <td className="border p-3 text-right font-bold text-green-700">
-                          {formatBaht(round.total_highest_offer)}
                         </td>
 
                         <td className="border p-3">
@@ -543,12 +521,6 @@ export default function AdminRoundsPage() {
                               ดูรายละเอียด
                             </a>
 
-                            <a
-                              href="/admin/history"
-                              className="rounded-lg border bg-white px-3 py-2 text-xs font-bold hover:bg-gray-100"
-                            >
-                              ดูประวัติ
-                            </a>
                           </div>
                         </td>
                       </tr>
