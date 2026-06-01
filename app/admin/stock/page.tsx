@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -48,6 +48,8 @@ type StaffProfile = {
   email: string;
   role: string;
 };
+
+type SaveMode = "draft" | "complete";
 
 const sourceBranchOptions: SourceBranch[] = [
   "",
@@ -123,7 +125,25 @@ function getSavedStaffProfile() {
   }
 }
 
+function isMissingIsCompleteColumn(error: unknown) {
+  if (!error || typeof error !== "object" || !("message" in error)) {
+    return false;
+  }
+
+  const message = String(error.message).toLowerCase();
+  return message.includes("is_complete") && message.includes("column");
+}
+
+function getIsCompleteMigrationMessage() {
+  return [
+    "ยังไม่พบคอลัมน์ is_complete ในตาราง stock_motorcycles",
+    "กรุณารัน SQL นี้ก่อนใช้งานบันทึกร่าง:",
+    "alter table public.stock_motorcycles add column if not exists is_complete boolean not null default true;",
+  ].join("\n");
+}
+
 export default function AdminStockPage() {
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(() => {
     if (typeof window === "undefined") return null;
     return getSavedStaffProfile();
@@ -141,9 +161,19 @@ export default function AdminStockPage() {
     createEmptyDetails()
   );
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
+  const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  const photoPreviews = useMemo(
+    () =>
+      photoFiles.map((file, index) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+        name: file.name,
+        url: URL.createObjectURL(file),
+      })),
+    [photoFiles]
+  );
 
   async function generateStockNumber(branch: SourceBranch) {
     if (!branch) {
@@ -183,6 +213,12 @@ export default function AdminStockPage() {
   useEffect(() => {
     setStaffProfile(getSavedStaffProfile());
   }, []);
+
+  useEffect(() => {
+    return () => {
+      photoPreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
+    };
+  }, [photoPreviews]);
 
   async function logoutStaff() {
     localStorage.removeItem("staffProfile");
@@ -269,7 +305,7 @@ export default function AdminStockPage() {
     return photoRows.length;
   }
 
-  async function addStockMotorcycle() {
+  async function addStockMotorcycle(saveMode: SaveMode) {
     if (!sourceBranch) {
       alert("กรุณาเลือกแหล่งที่มา");
       return;
@@ -288,6 +324,11 @@ export default function AdminStockPage() {
       return;
     }
 
+    if (photoFiles.length === 0) {
+      alert("กรุณาเลือกรูปอย่างน้อย 1 รูป");
+      return;
+    }
+
     const finalRegistrationStatus =
       registrationStatus === "อื่น"
         ? customRegistrationStatus.trim()
@@ -296,31 +337,40 @@ export default function AdminStockPage() {
     const finalBrand =
       brandOption === "อื่น" ? customBrand.trim() : brandOption;
 
-    if (!brandOption) {
+    if (saveMode === "complete" && !brandOption) {
       alert("กรุณาเลือกยี่ห้อ");
       return;
     }
 
-    if (brandOption === "อื่น" && !finalBrand) {
+    if (saveMode === "complete" && brandOption === "อื่น" && !finalBrand) {
       alert("กรุณาระบุยี่ห้อ");
       return;
     }
 
-    if (!details.model.trim()) {
+    if (saveMode === "complete" && !details.model.trim()) {
       alert("กรุณาระบุรุ่น");
       return;
     }
 
-    if (registrationStatus === "อื่น" && !finalRegistrationStatus) {
+    if (saveMode === "complete" && cleanMoney(costPrice) === null) {
+      alert("กรุณาระบุต้นทุน");
+      return;
+    }
+
+    if (
+      saveMode === "complete" &&
+      registrationStatus === "อื่น" &&
+      !finalRegistrationStatus
+    ) {
       alert("กรุณาระบุสถานะเล่ม");
       return;
     }
 
     const generatedMotorcycleName =
       [finalBrand, details.model.trim()].filter(Boolean).join(" ") ||
-      "ไม่ระบุรุ่น";
+      `รอกรอกข้อมูล ${stockNumber.trim()}`;
 
-    setIsAdding(true);
+    setSavingMode(saveMode);
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -332,6 +382,7 @@ export default function AdminStockPage() {
         stock_status: "อยู่ในสต็อก",
         current_auction_motorcycle_id: null,
         current_auction_round_id: null,
+        is_complete: saveMode === "complete",
         brand: finalBrand || null,
         source_name: finalSourceName,
         registration_status: finalRegistrationStatus || null,
@@ -365,6 +416,7 @@ export default function AdminStockPage() {
           motorcycle_name: stockData.motorcycle_name,
           cost_price: Number(stockData.cost_price || 0),
           brand: finalBrand || "",
+          is_complete: saveMode === "complete",
           stock_status: stockData.stock_status,
           stock_status_thai: stockData.stock_status,
           source_name: finalSourceName,
@@ -374,27 +426,60 @@ export default function AdminStockPage() {
         },
       });
 
-      setStockNumber("");
       setCostPrice("");
-      setSourceBranch("");
-      setCustomSourceName("");
       setBrandOption("");
       setCustomBrand("");
       setRegistrationStatus("");
       setCustomRegistrationStatus("");
       setDetails(createEmptyDetails());
       setPhotoFiles([]);
-      setSuccessMessage("เพิ่มรถเข้าคลังเรียบร้อยแล้ว");
+      if (photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
+
+      if (saveMode === "draft") {
+        await generateStockNumber(sourceBranch);
+      } else {
+        setStockNumber("");
+        setSourceBranch("");
+        setCustomSourceName("");
+      }
+
+      setSuccessMessage(
+        saveMode === "complete"
+          ? "เพิ่มรถเข้าคลังเรียบร้อยแล้ว"
+          : "บันทึกไว้ก่อนแล้ว สามารถเพิ่มคันถัดไปได้"
+      );
     } catch (error) {
       const message =
-        error instanceof Error
+        isMissingIsCompleteColumn(error)
+          ? getIsCompleteMigrationMessage()
+          : error instanceof Error
           ? error.message
           : "เกิดข้อผิดพลาดระหว่างเพิ่มรถเข้าคลัง";
 
       setErrorMessage(message);
     }
 
-    setIsAdding(false);
+    setSavingMode(null);
+  }
+
+  function openPhotoPicker() {
+    photoInputRef.current?.click();
+  }
+
+  function handlePhotoSelection(files: FileList | null) {
+    setPhotoFiles(Array.from(files || []));
+  }
+
+  function removeSelectedPhoto(indexToRemove: number) {
+    setPhotoFiles((currentFiles) =>
+      currentFiles.filter((_, index) => index !== indexToRemove)
+    );
+
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+    }
   }
 
   function renderDetailInput({
@@ -667,18 +752,68 @@ export default function AdminStockPage() {
                 </label>
 
                 <input
+                  ref={photoInputRef}
                   type="file"
                   multiple
                   accept="image/*"
-                  className="mt-2 w-full rounded-2xl border bg-white p-3 outline-none"
+                  className="hidden"
                   onChange={(event) =>
-                    setPhotoFiles(Array.from(event.target.files || []))
+                    handlePhotoSelection(event.target.files)
                   }
                 />
 
-                <p className="mt-1 text-xs text-gray-500">
-                  เลือกได้หลายรูป เช่น 5-7 รูปต่อคัน
-                </p>
+                <div className="mt-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4">
+                  <button
+                    type="button"
+                    onClick={openPhotoPicker}
+                    className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white shadow hover:bg-gray-800"
+                  >
+                    เลือกรูป
+                  </button>
+
+                  <p className="mt-2 text-xs text-gray-500">
+                    เลือกรูปได้หลายรูป เช่น 5-7 รูปต่อคัน
+                  </p>
+
+                  {photoFiles.length > 0 && (
+                    <p className="mt-3 text-sm font-semibold text-gray-800">
+                      เลือกแล้ว {photoFiles.length} รูป
+                    </p>
+                  )}
+
+                  {photoPreviews.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {photoPreviews.map((preview, index) => (
+                        <div
+                          key={preview.id}
+                          className="overflow-hidden rounded-xl border bg-white"
+                        >
+                          <div className="aspect-[4/3] bg-gray-100">
+                            <img
+                              src={preview.url}
+                              alt={`รูปที่ ${index + 1}`}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 p-2">
+                            <p className="truncate text-xs text-gray-500">
+                              {preview.name}
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={() => removeSelectedPhoto(index)}
+                              className="shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              ลบ
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -690,14 +825,25 @@ export default function AdminStockPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={addStockMotorcycle}
-              disabled={isAdding}
-              className="mt-5 w-full rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
-            >
-              {isAdding ? "กำลังเพิ่ม..." : "เพิ่มรถเข้าคลัง"}
-            </button>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => addStockMotorcycle("draft")}
+                disabled={savingMode !== null}
+                className="w-full rounded-2xl border bg-white px-5 py-3 font-semibold shadow hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-400 sm:w-auto"
+              >
+                {savingMode === "draft" ? "กำลังบันทึก..." : "บันทึกไว้ก่อน"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => addStockMotorcycle("complete")}
+                disabled={savingMode !== null}
+                className="w-full rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
+              >
+                {savingMode === "complete" ? "กำลังบันทึก..." : "บันทึกเข้าคลัง"}
+              </button>
+            </div>
           </section>
         </section>
       </main>
