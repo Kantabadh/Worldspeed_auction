@@ -60,6 +60,10 @@ type CurrentAuctionRound = {
   is_current: boolean | null;
 };
 
+type AuctionRoundReference = {
+  id: number;
+};
+
 type StaffProfile = {
   id: string;
   email: string;
@@ -125,43 +129,54 @@ function getStatusLabel(status: string | null | undefined) {
   return status ? statusLabels[status] || status : "-";
 }
 
-function getStockLocationLabel(bike: StockMotorcycle) {
+function hasExistingAuctionRoundLink(
+  bike: StockMotorcycle,
+  existingAuctionRoundIds: Set<number>
+) {
+  return (
+    bike.current_auction_round_id !== null &&
+    existingAuctionRoundIds.has(bike.current_auction_round_id)
+  );
+}
+
+function getStockLocationLabel(
+  bike: StockMotorcycle,
+  existingAuctionRoundIds: Set<number>
+) {
   if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
     return "ขายแล้ว";
   }
 
-  if (
-    bike.stock_status === "in_auction" ||
-    bike.stock_status === "อยู่ในรอบเสนอราคา" ||
-    bike.current_auction_round_id ||
-    bike.current_auction_motorcycle_id
-  ) {
+  if (hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)) {
     return "อยู่ในการประมูล";
   }
 
   return "อยู่ในคลัง";
 }
 
-function getStockLocationBadge(bike: StockMotorcycle) {
+function getStockLocationBadge(
+  bike: StockMotorcycle,
+  existingAuctionRoundIds: Set<number>
+) {
   if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
     return "bg-purple-100 text-purple-700";
   }
 
-  if (bike.current_auction_round_id || bike.current_auction_motorcycle_id) {
+  if (hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)) {
     return "bg-blue-100 text-blue-700";
   }
 
   return "bg-gray-100 text-gray-700";
 }
 
-function isAvailableStockBike(bike: StockMotorcycle) {
-  const isInStockStatus =
-    bike.stock_status === "อยู่ในสต็อก" || bike.stock_status === "in_stock";
-
+function isAvailableStockBike(
+  bike: StockMotorcycle,
+  existingAuctionRoundIds: Set<number>
+) {
   return (
-    isInStockStatus &&
-    bike.current_auction_round_id === null &&
-    bike.current_auction_motorcycle_id === null
+    bike.stock_status !== "sold" &&
+    bike.stock_status !== "ขายแล้ว" &&
+    !hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)
   );
 }
 
@@ -221,8 +236,11 @@ function getErrorMessage(error: unknown) {
   return "เกิดข้อผิดพลาดระหว่างส่งเข้ารอบเสนอราคา";
 }
 
-function canSendStockBikeToRound(bike: StockMotorcycle) {
-  return isAvailableStockBike(bike);
+function canSendStockBikeToRound(
+  bike: StockMotorcycle,
+  existingAuctionRoundIds: Set<number>
+) {
+  return isAvailableStockBike(bike, existingAuctionRoundIds);
 }
 
 function formatRoundLotNumber(index: number) {
@@ -244,6 +262,9 @@ export default function AdminStockListPage() {
   const [stockMotorcycles, setStockMotorcycles] = useState<StockMotorcycle[]>(
     []
   );
+  const [existingAuctionRoundIds, setExistingAuctionRoundIds] = useState<
+    Set<number>
+  >(new Set());
   const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(
     null
   );
@@ -337,6 +358,24 @@ export default function AdminStockListPage() {
     return round;
   }
 
+  async function loadExistingAuctionRoundIds() {
+    const { data, error } = await supabase.from("auction_rounds").select("id");
+
+    if (error) {
+      setErrorMessage(error.message);
+      setExistingAuctionRoundIds(new Set());
+      return;
+    }
+
+    setExistingAuctionRoundIds(
+      new Set(
+        ((data || []) as AuctionRoundReference[])
+          .map((round) => round.id)
+          .filter((id): id is number => typeof id === "number")
+      )
+    );
+  }
+
   async function loadStockMotorcycles() {
     const { data, error } = await supabase
       .from("stock_motorcycles")
@@ -409,6 +448,7 @@ export default function AdminStockListPage() {
 
     await Promise.all([
       loadCurrentAuctionRound(),
+      loadExistingAuctionRoundIds(),
       loadStockMotorcycles(),
       loadReturnedStockIds(),
     ]);
@@ -428,15 +468,25 @@ export default function AdminStockListPage() {
     const keyword = searchText.trim().toLowerCase();
 
     return stockMotorcycles.filter((bike) => {
-      if (statusFilter === "in_stock" && !isAvailableStockBike(bike)) {
+      if (
+        statusFilter === "in_stock" &&
+        !isAvailableStockBike(bike, existingAuctionRoundIds)
+      ) {
         return false;
       }
 
-      if (statusFilter === "in_auction" && getStockLocationLabel(bike) !== "อยู่ในการประมูล") {
+      if (
+        statusFilter === "in_auction" &&
+        getStockLocationLabel(bike, existingAuctionRoundIds) !==
+          "อยู่ในการประมูล"
+      ) {
         return false;
       }
 
-      if (statusFilter === "sold" && getStockLocationLabel(bike) !== "ขายแล้ว") {
+      if (
+        statusFilter === "sold" &&
+        getStockLocationLabel(bike, existingAuctionRoundIds) !== "ขายแล้ว"
+      ) {
         return false;
       }
 
@@ -452,7 +502,7 @@ export default function AdminStockListPage() {
         bike.frame_number,
         bike.acquisition_type,
         bike.source_name,
-        getStockLocationLabel(bike),
+        getStockLocationLabel(bike, existingAuctionRoundIds),
         getStatusLabel(bike.stock_status),
       ]
         .filter(Boolean)
@@ -461,10 +511,20 @@ export default function AdminStockListPage() {
 
       return searchableText.includes(keyword);
     });
-  }, [stockMotorcycles, searchText, statusFilter, returnedStockIds]);
+  }, [
+    stockMotorcycles,
+    searchText,
+    statusFilter,
+    returnedStockIds,
+    existingAuctionRoundIds,
+  ]);
 
   const selectableIds = filteredStockMotorcycles
-    .filter((bike) => statusFilter === "in_stock" && canSendStockBikeToRound(bike))
+    .filter(
+      (bike) =>
+        statusFilter === "in_stock" &&
+        canSendStockBikeToRound(bike, existingAuctionRoundIds)
+    )
     .map((bike) => bike.id);
 
   function toggleSelection(stockMotorcycleId: number) {
@@ -472,7 +532,7 @@ export default function AdminStockListPage() {
 
     const bike = stockMotorcycles.find((item) => item.id === stockMotorcycleId);
 
-    if (!bike || !canSendStockBikeToRound(bike)) return;
+    if (!bike || !canSendStockBikeToRound(bike, existingAuctionRoundIds)) return;
 
     setSelectedIds((current) =>
       current.includes(stockMotorcycleId)
@@ -650,7 +710,7 @@ export default function AdminStockListPage() {
     }
 
     const sendableBikes = selectedBikes.filter((bike) =>
-      canSendStockBikeToRound(bike)
+      canSendStockBikeToRound(bike, existingAuctionRoundIds)
     );
 
     if (sendableBikes.length === 0) {
@@ -963,7 +1023,8 @@ export default function AdminStockListPage() {
                   <tbody>
                     {filteredStockMotorcycles.map((bike) => {
                       const canSend =
-                        isSelectionMode && canSendStockBikeToRound(bike);
+                        isSelectionMode &&
+                        canSendStockBikeToRound(bike, existingAuctionRoundIds);
                       const isSelected = selectedIds.includes(bike.id);
                       const thumbnail =
                         bike.stock_motorcycle_photos?.[0]?.image_url || null;
@@ -1021,10 +1082,14 @@ export default function AdminStockListPage() {
                           <td className="border p-3">
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-bold ${getStockLocationBadge(
-                                bike
+                                bike,
+                                existingAuctionRoundIds
                               )}`}
                             >
-                              {getStockLocationLabel(bike)}
+                              {getStockLocationLabel(
+                                bike,
+                                existingAuctionRoundIds
+                              )}
                             </span>
                             {returnedStockIds.has(bike.id) && (
                               <p className="mt-2 text-xs font-semibold text-red-600">
