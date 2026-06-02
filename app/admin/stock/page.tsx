@@ -47,6 +47,9 @@ type StaffProfile = {
   id: string;
   email: string;
   role: string;
+  active?: boolean;
+  branch_code?: string | null;
+  branch_name?: string | null;
 };
 
 type SaveMode = "draft" | "complete";
@@ -60,6 +63,16 @@ const sourceBranchOptions: SourceBranch[] = [
   "โต๊ะลิ้ม",
   "อื่น",
 ];
+
+function isSourceBranch(value?: string | null): value is SourceBranch {
+  return sourceBranchOptions.includes((value || "") as SourceBranch);
+}
+
+function getProfileSourceBranch(profile?: StaffProfile | null): SourceBranch {
+  return profile?.branch_name && isSourceBranch(profile.branch_name)
+    ? profile.branch_name
+    : "";
+}
 
 const sourcePrefixMap: Record<Exclude<SourceBranch, "">, string> = {
   บางกะปิ: "A",
@@ -164,6 +177,9 @@ export default function AdminStockPage() {
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const isStockStaff = staffProfile?.role === "stock_staff";
+  const staffSourceBranch = getProfileSourceBranch(staffProfile);
+  const staffBranchName = staffProfile?.branch_name?.trim() || "";
 
   const photoPreviews = useMemo(
     () =>
@@ -206,13 +222,50 @@ export default function AdminStockPage() {
     setStockNumber(`${prefix}${String(highestNumber + 1).padStart(4, "0")}`);
   }
 
+  async function refreshStaffProfile() {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user) return;
+
+    const { data, error } = await supabase
+      .from("staff_profiles")
+      .select("id, email, role, active, branch_code, branch_name")
+      .eq("id", userData.user.id)
+      .eq("active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return;
+
+    const updatedProfile = {
+      ...(getSavedStaffProfile() || {}),
+      id: data.id,
+      email: data.email,
+      role: data.role,
+      active: data.active,
+      branch_code: data.branch_code,
+      branch_name: data.branch_name,
+    } as StaffProfile;
+
+    localStorage.setItem("staffProfile", JSON.stringify(updatedProfile));
+    setStaffProfile(updatedProfile);
+  }
+
   useEffect(() => {
     generateStockNumber(sourceBranch);
   }, [sourceBranch]);
 
   useEffect(() => {
     setStaffProfile(getSavedStaffProfile());
+    refreshStaffProfile();
   }, []);
+
+  useEffect(() => {
+    if (!isStockStaff) return;
+
+    setSourceBranch(staffSourceBranch);
+    setCustomSourceName("");
+  }, [isStockStaff, staffSourceBranch]);
 
   useEffect(() => {
     return () => {
@@ -306,21 +359,31 @@ export default function AdminStockPage() {
   }
 
   async function addStockMotorcycle(saveMode: SaveMode) {
-    if (!sourceBranch) {
-      alert("กรุณาเลือกแหล่งที่มา");
+    const selectedSourceBranch = isStockStaff ? staffSourceBranch : sourceBranch;
+
+    if (isStockStaff && (!staffProfile?.branch_code || !staffBranchName)) {
+      alert("บัญชีเจ้าหน้าที่รับรถยังไม่ได้ผูกสาขา กรุณาติดต่อ Admin");
+      return;
+    }
+
+    if (!selectedSourceBranch) {
+      alert("กรุณาเลือกสาขา");
       return;
     }
 
     if (!stockNumber.trim()) {
-      alert("ระบบยังไม่ได้สร้างรหัสสต็อก กรุณาเลือกแหล่งที่มาอีกครั้ง");
+      alert("ระบบยังไม่ได้สร้างรหัสสต็อก กรุณาเลือกสาขาอีกครั้ง");
       return;
     }
 
-    const finalSourceName =
-      sourceBranch === "อื่น" ? customSourceName.trim() : sourceBranch;
+    const finalSourceName = isStockStaff
+      ? staffBranchName
+      : selectedSourceBranch === "อื่น"
+      ? customSourceName.trim()
+      : selectedSourceBranch;
 
     if (!finalSourceName) {
-      alert("กรุณาระบุแหล่งที่มา");
+      alert("กรุณาระบุสาขา");
       return;
     }
 
@@ -379,20 +442,27 @@ export default function AdminStockPage() {
         stock_number: stockNumber.trim(),
         motorcycle_name: generatedMotorcycleName,
         cost_price: cleanMoney(costPrice),
-        stock_status: "อยู่ในสต็อก",
+        stock_status: isStockStaff ? "branch_stock" : "center_stock",
         current_auction_motorcycle_id: null,
         current_auction_round_id: null,
         is_complete: saveMode === "complete",
         brand: finalBrand || null,
         source_name: finalSourceName,
         registration_status: finalRegistrationStatus || null,
+        ...(isStockStaff
+          ? {
+              stock_branch_code: staffProfile?.branch_code || null,
+              stock_branch_name: staffBranchName,
+              created_by_staff_email: staffProfile?.email || null,
+            }
+          : {}),
         ...cleanDetails(details),
       };
 
       const { data: stockData, error: stockError } = await supabase
         .from("stock_motorcycles")
         .insert(newStockInput)
-        .select()
+        .select("id, stock_number, motorcycle_name, cost_price, stock_status")
         .single();
 
       if (stockError) throw stockError;
@@ -419,6 +489,9 @@ export default function AdminStockPage() {
           is_complete: saveMode === "complete",
           stock_status: stockData.stock_status,
           stock_status_thai: stockData.stock_status,
+          stock_branch_code: isStockStaff ? staffProfile?.branch_code || "" : "",
+          stock_branch_name: isStockStaff ? staffBranchName : "",
+          created_by_staff_email: isStockStaff ? staffProfile?.email || "" : "",
           source_name: finalSourceName,
           registration_status: finalRegistrationStatus || "",
           uploaded_photo_count: uploadedPhotoCount,
@@ -437,8 +510,8 @@ export default function AdminStockPage() {
         photoInputRef.current.value = "";
       }
 
-      if (saveMode === "draft") {
-        await generateStockNumber(sourceBranch);
+      if (saveMode === "draft" || isStockStaff) {
+        await generateStockNumber(selectedSourceBranch);
       } else {
         setStockNumber("");
         setSourceBranch("");
@@ -446,7 +519,9 @@ export default function AdminStockPage() {
       }
 
       setSuccessMessage(
-        saveMode === "complete"
+        isStockStaff
+          ? "บันทึกรถเข้าคลังสาขาเรียบร้อยแล้ว"
+          : saveMode === "complete"
           ? "เพิ่มรถเข้าคลังเรียบร้อยแล้ว"
           : "บันทึกไว้ก่อนแล้ว สามารถเพิ่มคันถัดไปได้"
       );
@@ -579,9 +654,9 @@ export default function AdminStockPage() {
           placeholder: "เช่น 2020",
         })}
         {renderDetailInput({
-          keyName: "color",
-          label: "สี",
-          placeholder: "เช่น แดง",
+          keyName: "frame_number",
+          label: "เลขตัวถัง",
+          placeholder: "เลขตัวถัง",
         })}
         {renderDetailInput({
           keyName: "license_plate",
@@ -589,9 +664,9 @@ export default function AdminStockPage() {
           placeholder: "เช่น 1กก 1234",
         })}
         {renderDetailInput({
-          keyName: "frame_number",
-          label: "เลขตัวถัง",
-          placeholder: "เลขตัวถัง",
+          keyName: "color",
+          label: "สี",
+          placeholder: "เช่น แดง",
         })}
 
         <div>
@@ -679,6 +754,12 @@ export default function AdminStockPage() {
             <h1 className="mt-1 text-2xl font-bold text-gray-900">
               คลังรถบริษัท
             </h1>
+
+            {isStockStaff && staffBranchName && (
+              <p className="mt-2 inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700 ring-1 ring-blue-200">
+                คลังสาขา: {staffBranchName}
+              </p>
+            )}
           </div>
 
           {errorMessage && (
@@ -696,37 +777,50 @@ export default function AdminStockPage() {
 
           <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
             <h2 className="text-xl font-bold text-gray-900">
-              เพิ่มรถเข้าคลัง
+              {isStockStaff ? "เพิ่มรถเข้าคลังสาขา" : "เพิ่มรถเข้าคลัง"}
             </h2>
 
             <div className="mt-4 grid gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">มาจาก</label>
+              {isStockStaff ? (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">สาขา</label>
 
-                <select
-                  className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                  value={sourceBranch}
-                  onChange={(event) =>
-                    setSourceBranch(event.target.value as SourceBranch)
-                  }
-                >
-                  {sourceBranchOptions.map((option) => (
-                    <option key={option || "empty"} value={option}>
-                      {option || "เลือกแหล่งที่มา"}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <input
+                    readOnly
+                    className="mt-2 w-full rounded-2xl border bg-gray-50 p-3 text-gray-700 outline-none"
+                    value={staffBranchName ? `คลังสาขา: ${staffBranchName}` : ""}
+                    placeholder="ยังไม่ได้ผูกสาขา"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">สาขา</label>
 
-              {sourceBranch === "อื่น" && (
+                  <select
+                    className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
+                    value={sourceBranch}
+                    onChange={(event) =>
+                      setSourceBranch(event.target.value as SourceBranch)
+                    }
+                  >
+                    {sourceBranchOptions.map((option) => (
+                      <option key={option || "empty"} value={option}>
+                        {option || "เลือกสาขา"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {!isStockStaff && sourceBranch === "อื่น" && (
                 <div>
                   <label className="text-sm font-medium text-gray-700">
-                    ระบุแหล่งที่มา
+                    ระบุสาขา
                   </label>
 
                   <input
                     className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
-                    placeholder="เช่น สาขาอื่น / ชื่อร้าน / แหล่งที่มา"
+                    placeholder="เช่น สาขาอื่น"
                     value={customSourceName}
                     onChange={(event) => setCustomSourceName(event.target.value)}
                   />
@@ -741,7 +835,7 @@ export default function AdminStockPage() {
                 <input
                   readOnly
                   className="mt-2 w-full rounded-2xl border bg-gray-50 p-3 text-gray-700 outline-none"
-                  placeholder="เลือกแหล่งที่มาก่อน"
+                  placeholder="เลือกสาขาก่อน"
                   value={stockNumber}
                 />
               </div>
@@ -792,6 +886,9 @@ export default function AdminStockPage() {
                             <img
                               src={preview.url}
                               alt={`รูปที่ ${index + 1}`}
+                              width={320}
+                              height={240}
+                              decoding="async"
                               className="h-full w-full object-cover"
                             />
                           </div>
@@ -826,23 +923,49 @@ export default function AdminStockPage() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => addStockMotorcycle("draft")}
-                disabled={savingMode !== null}
-                className="w-full rounded-2xl border bg-white px-5 py-3 font-semibold shadow hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-400 sm:w-auto"
-              >
-                {savingMode === "draft" ? "กำลังบันทึก..." : "บันทึกไว้ก่อน"}
-              </button>
+              {isStockStaff ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => addStockMotorcycle("draft")}
+                    disabled={savingMode !== null}
+                    className="w-full rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
+                  >
+                    {savingMode === "draft"
+                      ? "กำลังบันทึก..."
+                      : "บันทึกเข้าคลังสาขา"}
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => addStockMotorcycle("complete")}
-                disabled={savingMode !== null}
-                className="w-full rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
-              >
-                {savingMode === "complete" ? "กำลังบันทึก..." : "บันทึกเข้าคลัง"}
-              </button>
+                  <a
+                    href="/admin/stock/branch"
+                    className="w-full rounded-2xl border bg-white px-5 py-3 text-center font-semibold shadow hover:bg-gray-100 sm:w-auto"
+                  >
+                    ไปคลังสาขา
+                  </a>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => addStockMotorcycle("draft")}
+                    disabled={savingMode !== null}
+                    className="w-full rounded-2xl border bg-white px-5 py-3 font-semibold shadow hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-400 sm:w-auto"
+                  >
+                    {savingMode === "draft" ? "กำลังบันทึก..." : "บันทึกไว้ก่อน"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => addStockMotorcycle("complete")}
+                    disabled={savingMode !== null}
+                    className="w-full rounded-2xl bg-black px-5 py-3 font-semibold text-white shadow disabled:bg-gray-400 sm:w-auto"
+                  >
+                    {savingMode === "complete"
+                      ? "กำลังบันทึก..."
+                      : "บันทึกเข้าคลัง"}
+                  </button>
+                </>
+              )}
             </div>
           </section>
         </section>

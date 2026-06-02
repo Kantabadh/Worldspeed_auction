@@ -66,7 +66,7 @@ export default function AdminStaffPage() {
 
     const { data: currentProfile, error: currentProfileError } = await supabase
       .from("staff_profiles")
-      .select("*")
+      .select("id, email, role, active, created_at")
       .eq("id", userData.user.id)
       .limit(1);
 
@@ -91,7 +91,7 @@ export default function AdminStaffPage() {
 
     const { data, error } = await supabase
       .from("staff_profiles")
-      .select("*")
+      .select("id, email, role, active, created_at")
       .order("created_at", { ascending: true });
 
     if (error) {

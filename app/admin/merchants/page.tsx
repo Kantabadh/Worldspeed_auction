@@ -193,7 +193,9 @@ export default function AdminMerchantsPage() {
     const { data: merchantAccountsData, error: merchantAccountsError } =
       await supabase
         .from("merchant_accounts")
-        .select("*")
+        .select(
+          "id, merchant_code, merchant_name, shop_name, phone, active, approval_status, can_edit_submission, is_starred, created_at"
+        )
         .order("is_starred", { ascending: false })
         .order("created_at", { ascending: false });
 

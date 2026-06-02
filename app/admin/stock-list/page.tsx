@@ -13,6 +13,8 @@ type StockPhoto = {
 type StockStatus =
   | "in_stock"
   | "อยู่ในสต็อก"
+  | "branch_stock"
+  | "center_stock"
   | "repairing"
   | "ready_to_sell"
   | "in_auction"
@@ -45,6 +47,10 @@ type StockMotorcycle = {
   source_name: string | null;
   repair_notes: string | null;
   stock_status: StockStatus;
+  stock_branch_code: string | null;
+  stock_branch_name: string | null;
+  created_by_staff_email: string | null;
+  missing_detail_remark: string | null;
   is_complete: boolean | null;
   current_auction_motorcycle_id: number | null;
   current_auction_round_id: number | null;
@@ -65,6 +71,8 @@ type StaffProfile = {
   id: string;
   email: string;
   role: string;
+  branch_code?: string | null;
+  branch_name?: string | null;
 };
 
 type AuditLogInput = {
@@ -93,21 +101,24 @@ type RoundMotorcycle = {
 };
 
 type StockEditForm = {
+  stock_number: string;
   brand: string;
   model: string;
   cost_price: string;
-  source_name: string;
   year: string;
   color: string;
   license_plate: string;
   frame_number: string;
-  engine_number: string;
+  registration_status: string;
+  tax_expiry: string;
   notes: string;
 };
 
 const statusLabels: Record<string, string> = {
   in_stock: "อยู่ในคลัง",
   "อยู่ในสต็อก": "อยู่ในคลัง",
+  branch_stock: "อยู่ในคลังสาขา",
+  center_stock: "อยู่ในคลัง",
   repairing: "กำลังซ่อม",
   ready_to_sell: "พร้อมขาย",
   in_auction: "อยู่ในรอบเสนอราคา",
@@ -126,6 +137,10 @@ const statusFilterOptions: { value: StatusFilter; label: string }[] = [
 
 function getStatusLabel(status: string | null | undefined) {
   return status ? statusLabels[status] || status : "-";
+}
+
+function normalizeFrameNumber(value?: string | null) {
+  return (value || "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
 function isIncompleteStockBike(bike: StockMotorcycle) {
@@ -234,15 +249,16 @@ function getIsCompleteMigrationMessage() {
 
 function createStockEditForm(bike: StockMotorcycle): StockEditForm {
   return {
+    stock_number: bike.stock_number || "",
     brand: bike.brand || "",
     model: bike.model || "",
     cost_price: formatMoneyInput(bike.cost_price),
-    source_name: bike.source_name || "",
     year: bike.year || "",
     color: bike.color || "",
     license_plate: bike.license_plate || "",
     frame_number: bike.frame_number || "",
-    engine_number: bike.engine_number || "",
+    registration_status: bike.registration_status || "",
+    tax_expiry: bike.tax_expiry || "",
     notes: bike.notes || "",
   };
 }
@@ -329,6 +345,10 @@ export default function AdminStockListPage() {
   const [stockMotorcycles, setStockMotorcycles] = useState<StockMotorcycle[]>(
     []
   );
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getSavedStaffProfile();
+  });
   const [existingAuctionRoundIds, setExistingAuctionRoundIds] = useState<
     Set<number>
   >(new Set());
@@ -346,6 +366,7 @@ export default function AdminStockListPage() {
   const [editingStockId, setEditingStockId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<StockEditForm | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [deletingStockId, setDeletingStockId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -401,6 +422,10 @@ export default function AdminStockListPage() {
       source_name: bike.source_name || "",
       repair_notes: bike.repair_notes || "",
       stock_status: bike.stock_status,
+      stock_branch_code: bike.stock_branch_code || "",
+      stock_branch_name: bike.stock_branch_name || "",
+      created_by_staff_email: bike.created_by_staff_email || "",
+      missing_detail_remark: bike.missing_detail_remark || "",
       is_complete: bike.is_complete !== false,
       stock_status_thai: getStatusLabel(bike.stock_status),
       current_auction_motorcycle_id: bike.current_auction_motorcycle_id,
@@ -433,7 +458,13 @@ export default function AdminStockListPage() {
   }
 
   async function queryStockMotorcycles(includeIsComplete: boolean) {
-    const { data, error } = await supabase
+    const currentStaffProfile = getSavedStaffProfile();
+
+    if (currentStaffProfile?.role === "stock_staff" && !currentStaffProfile.branch_code) {
+      return { data: [], error: null };
+    }
+
+    let query = supabase
       .from("stock_motorcycles")
       .select(
         `
@@ -458,6 +489,10 @@ export default function AdminStockListPage() {
         source_name,
         repair_notes,
         stock_status,
+        stock_branch_code,
+        stock_branch_name,
+        created_by_staff_email,
+        missing_detail_remark,
         ${includeIsComplete ? "is_complete," : ""}
         current_auction_motorcycle_id,
         current_auction_round_id,
@@ -468,8 +503,13 @@ export default function AdminStockListPage() {
           image_url
         )
       `
-      )
-      .order("created_at", { ascending: false });
+      );
+
+    if (currentStaffProfile?.role === "stock_staff") {
+      query = query.eq("stock_branch_code", currentStaffProfile.branch_code);
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
 
     return { data, error };
   }
@@ -531,6 +571,7 @@ export default function AdminStockListPage() {
   }
 
   useEffect(() => {
+    setStaffProfile(getSavedStaffProfile());
     loadPageData();
   }, []);
 
@@ -574,8 +615,7 @@ export default function AdminStockListPage() {
         bike.year,
         bike.license_plate,
         bike.frame_number,
-        bike.acquisition_type,
-        bike.source_name,
+        bike.stock_branch_name,
         getStockLocationLabel(bike, existingAuctionRoundIds),
         getStatusLabel(bike.stock_status),
       ]
@@ -591,6 +631,28 @@ export default function AdminStockListPage() {
     statusFilter,
     existingAuctionRoundIds,
   ]);
+
+  const duplicateFrameNumbers = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    stockMotorcycles.forEach((bike) => {
+      const frameNumber = normalizeFrameNumber(bike.frame_number);
+      if (!frameNumber) return;
+
+      counts.set(frameNumber, (counts.get(frameNumber) || 0) + 1);
+    });
+
+    return new Set(
+      [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([frameNumber]) => frameNumber)
+    );
+  }, [stockMotorcycles]);
+
+  function isDuplicateStockBike(bike: StockMotorcycle) {
+    const frameNumber = normalizeFrameNumber(bike.frame_number);
+    return Boolean(frameNumber && duplicateFrameNumbers.has(frameNumber));
+  }
 
   const selectableIds = filteredStockMotorcycles
     .filter(
@@ -656,37 +718,30 @@ export default function AdminStockListPage() {
     const costPrice = cleanMoney(editForm.cost_price);
     const finalBrand = editForm.brand.trim();
     const finalModel = editForm.model.trim();
-    const finalSourceName = editForm.source_name.trim();
-
-    if (!finalBrand || !finalModel || costPrice === null || !finalSourceName) {
-      setErrorMessage("กรุณากรอกยี่ห้อ รุ่น ต้นทุน และแหล่งที่มาให้ครบ");
-      return;
-    }
-
-    if ((bike.stock_motorcycle_photos?.length || 0) === 0) {
-      setErrorMessage("กรุณาเพิ่มรูปภาพอย่างน้อย 1 รูปก่อนบันทึกข้อมูลรถให้ครบ");
-      return;
-    }
 
     setIsSavingEdit(true);
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
-      const motorcycleName = [finalBrand, finalModel].join(" ");
+      const motorcycleName =
+        [finalBrand, finalModel].filter(Boolean).join(" ") ||
+        bike.motorcycle_name ||
+        `รอกรอกข้อมูล ${editForm.stock_number.trim() || bike.id}`;
       const updatedStockInput = {
         motorcycle_name: motorcycleName,
-        brand: finalBrand,
-        model: finalModel,
+        stock_number: editForm.stock_number.trim() || null,
+        brand: finalBrand || null,
+        model: finalModel || null,
         cost_price: costPrice,
-        source_name: finalSourceName,
         year: editForm.year.trim() || null,
         color: editForm.color.trim() || null,
         license_plate: editForm.license_plate.trim() || null,
         frame_number: editForm.frame_number.trim() || null,
-        engine_number: editForm.engine_number.trim() || null,
+        registration_status: editForm.registration_status.trim() || null,
+        tax_expiry: editForm.tax_expiry.trim() || null,
         notes: editForm.notes.trim() || null,
-        is_complete: true,
+        is_complete: Boolean(finalBrand && finalModel && costPrice !== null),
         updated_at: new Date().toISOString(),
       };
 
@@ -722,6 +777,67 @@ export default function AdminStockListPage() {
     }
 
     setIsSavingEdit(false);
+  }
+
+  function isStockBikeDeleteBlocked(bike: StockMotorcycle) {
+    return (
+      bike.stock_status === "in_auction" ||
+      bike.stock_status === "อยู่ในรอบเสนอราคา" ||
+      bike.current_auction_round_id === currentRound?.id ||
+      bike.current_auction_motorcycle_id !== null
+    );
+  }
+
+  async function deleteStockBike(bike: StockMotorcycle) {
+    if (isStockBikeDeleteBlocked(bike)) {
+      setErrorMessage("ไม่สามารถลบรถที่อยู่ในรอบประมูลได้");
+      return;
+    }
+
+    const confirmed = confirm("ต้องการลบรถคันนี้ออกจากคลังหรือไม่?");
+    if (!confirmed) return;
+
+    setDeletingStockId(bike.id);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const { error: photoRowsError } = await supabase
+        .from("stock_motorcycle_photos")
+        .delete()
+        .eq("stock_motorcycle_id", bike.id);
+
+      if (photoRowsError) throw photoRowsError;
+
+      const { error } = await supabase
+        .from("stock_motorcycles")
+        .delete()
+        .eq("id", bike.id);
+
+      if (error) throw error;
+
+      await createAuditLog({
+        action: "stock_motorcycle_deleted",
+        targetType: "stock_motorcycle",
+        targetId: String(bike.id),
+        targetName: getStockTargetName(bike),
+        details: getStockDetailPayload(bike),
+      });
+
+      if (editingStockId === bike.id) {
+        cancelEditingStockBike();
+      }
+
+      setSelectedIds((current) => current.filter((id) => id !== bike.id));
+      await loadStockMotorcycles();
+      setSuccessMessage("ลบรถออกจากคลังเรียบร้อยแล้ว");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "ลบรถออกจากคลังไม่สำเร็จ"
+      );
+    }
+
+    setDeletingStockId(null);
   }
 
   async function roundHasSubmittedOffers(roundId: number) {
@@ -983,7 +1099,7 @@ export default function AdminStockListPage() {
             auction_round_id: currentRound.id,
             lot_sale_status: "in_auction",
           })
-          .select()
+          .select("id")
           .single();
 
         if (auctionError) throw auctionError;
@@ -1122,7 +1238,7 @@ export default function AdminStockListPage() {
 
               <input
                 className="w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black md:w-96"
-                placeholder="ค้นหารหัสคลัง / ชื่อรถ / รุ่น / ทะเบียน / แหล่งที่มา"
+                placeholder="ค้นหารหัสคลัง / ชื่อรถ / รุ่น / ทะเบียน / สาขา"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -1190,7 +1306,7 @@ export default function AdminStockListPage() {
                       <th className="border p-3">รถ</th>
                       <th className="border p-3 text-right">ต้นทุน</th>
                       <th className="border p-3">สถานะ</th>
-                      <th className="border p-3">ที่มา</th>
+                      <th className="border p-3">สาขา</th>
                       <th className="border p-3">วันที่เพิ่ม</th>
                       <th className="border p-3">จัดการ</th>
                     </tr>
@@ -1225,6 +1341,10 @@ export default function AdminStockListPage() {
                               <img
                                 src={thumbnail}
                                 alt={bike.motorcycle_name}
+                                loading="lazy"
+                                decoding="async"
+                                width={96}
+                                height={64}
                                 className="h-16 w-24 rounded-xl bg-gray-50 object-contain"
                               />
                             ) : (
@@ -1235,7 +1355,14 @@ export default function AdminStockListPage() {
                           </td>
 
                           <td className="border p-3 font-bold">
-                            {bike.stock_number || "-"}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{bike.stock_number || "-"}</span>
+                              {isDuplicateStockBike(bike) && (
+                                <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">
+                                  ซ้ำ
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           <td className="border p-3">
@@ -1250,6 +1377,11 @@ export default function AdminStockListPage() {
                             <p className="mt-1 text-xs text-gray-500">
                               ทะเบียน: {bike.license_plate || "-"}
                             </p>
+                            {bike.missing_detail_remark && (
+                              <p className="mt-2 rounded-lg bg-yellow-50 px-2 py-1 text-xs font-semibold text-yellow-800">
+                                {bike.missing_detail_remark}
+                              </p>
+                            )}
                           </td>
 
                           <td className="border p-3 text-right font-bold text-orange-700">
@@ -1276,10 +1408,7 @@ export default function AdminStockListPage() {
                           </td>
 
                           <td className="border p-3">
-                            <p>{bike.acquisition_type || "-"}</p>
-                            <p className="text-xs text-gray-500">
-                              {bike.source_name || "-"}
-                            </p>
+                            {bike.stock_branch_name || "-"}
                           </td>
 
                           <td className="border p-3">
@@ -1287,17 +1416,24 @@ export default function AdminStockListPage() {
                           </td>
 
                           <td className="border p-3">
-                            {isIncompleteStockBike(bike) ? (
+                            <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
                                 onClick={() => startEditingStockBike(bike)}
                                 className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold hover:bg-gray-100"
                               >
-                                แก้ไขข้อมูล
+                                แก้ไข
                               </button>
-                            ) : (
-                              <span className="text-xs text-gray-400">-</span>
-                            )}
+
+                              <button
+                                type="button"
+                                onClick={() => deleteStockBike(bike)}
+                                disabled={deletingStockId === bike.id}
+                                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                {deletingStockId === bike.id ? "กำลังลบ..." : "ลบ"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {editingStockId === bike.id && editForm && (
@@ -1307,6 +1443,22 @@ export default function AdminStockListPage() {
                               colSpan={isSelectionMode ? 9 : 8}
                             >
                               <div className="grid gap-3 md:grid-cols-4">
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    รหัสสต๊อก
+                                  </label>
+                                  <input
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.stock_number}
+                                    onChange={(event) =>
+                                      updateEditForm(
+                                        "stock_number",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </div>
+
                                 <div>
                                   <label className="text-xs font-semibold text-gray-700">
                                     ยี่ห้อ
@@ -1335,39 +1487,6 @@ export default function AdminStockListPage() {
 
                                 <div>
                                   <label className="text-xs font-semibold text-gray-700">
-                                    ต้นทุน
-                                  </label>
-                                  <input
-                                    inputMode="decimal"
-                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
-                                    value={editForm.cost_price}
-                                    onChange={(event) =>
-                                      updateEditForm(
-                                        "cost_price",
-                                        event.target.value
-                                      )
-                                    }
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-700">
-                                    มาจาก
-                                  </label>
-                                  <input
-                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
-                                    value={editForm.source_name}
-                                    onChange={(event) =>
-                                      updateEditForm(
-                                        "source_name",
-                                        event.target.value
-                                      )
-                                    }
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-700">
                                     ปี
                                   </label>
                                   <input
@@ -1375,35 +1494,6 @@ export default function AdminStockListPage() {
                                     value={editForm.year}
                                     onChange={(event) =>
                                       updateEditForm("year", event.target.value)
-                                    }
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-700">
-                                    สี
-                                  </label>
-                                  <input
-                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
-                                    value={editForm.color}
-                                    onChange={(event) =>
-                                      updateEditForm("color", event.target.value)
-                                    }
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-700">
-                                    ทะเบียน
-                                  </label>
-                                  <input
-                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
-                                    value={editForm.license_plate}
-                                    onChange={(event) =>
-                                      updateEditForm(
-                                        "license_plate",
-                                        event.target.value
-                                      )
                                     }
                                   />
                                 </div>
@@ -1426,23 +1516,85 @@ export default function AdminStockListPage() {
 
                                 <div>
                                   <label className="text-xs font-semibold text-gray-700">
-                                    เลขเครื่อง
+                                    ทะเบียน
                                   </label>
                                   <input
                                     className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
-                                    value={editForm.engine_number}
+                                    value={editForm.license_plate}
                                     onChange={(event) =>
                                       updateEditForm(
-                                        "engine_number",
+                                        "license_plate",
                                         event.target.value
                                       )
                                     }
                                   />
                                 </div>
 
-                                <div className="md:col-span-3">
+                                <div>
                                   <label className="text-xs font-semibold text-gray-700">
-                                    หมายเหตุ
+                                    สี
+                                  </label>
+                                  <input
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.color}
+                                    onChange={(event) =>
+                                      updateEditForm("color", event.target.value)
+                                    }
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    สถานะเล่ม
+                                  </label>
+                                  <input
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.registration_status}
+                                    onChange={(event) =>
+                                      updateEditForm(
+                                        "registration_status",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    ภาษีหมดอายุ
+                                  </label>
+                                  <input
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.tax_expiry}
+                                    onChange={(event) =>
+                                      updateEditForm(
+                                        "tax_expiry",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    ต้นทุน
+                                  </label>
+                                  <input
+                                    inputMode="decimal"
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.cost_price}
+                                    onChange={(event) =>
+                                      updateEditForm(
+                                        "cost_price",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    หมายเหตุเพิ่มเติม
                                   </label>
                                   <input
                                     className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"

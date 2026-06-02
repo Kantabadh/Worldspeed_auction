@@ -17,7 +17,7 @@ export default function TestDbPage() {
     async function testConnection() {
       const { data, error } = await supabase
         .from("motorcycles")
-        .select("*")
+        .select("id, lot_number, motorcycle_name")
         .order("lot_number");
 
       if (error) {

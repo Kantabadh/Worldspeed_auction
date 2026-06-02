@@ -82,7 +82,7 @@ export default function HomePage() {
 
     const { data, error } = await supabase
       .from("merchant_accounts")
-      .select("*")
+      .select("id, merchant_code, merchant_name, shop_name, phone, active, approval_status")
       .eq("phone", cleanPhoneNumber)
       .eq("merchant_code", cleanCode)
       .limit(1);
@@ -172,7 +172,7 @@ export default function HomePage() {
 
     const { data: profileData, error: profileError } = await supabase
       .from("staff_profiles")
-      .select("id, email, role, active")
+      .select("id, email, role, active, branch_code, branch_name")
       .eq("id", loginData.user.id)
       .eq("active", true)
       .limit(1);
@@ -195,6 +195,8 @@ export default function HomePage() {
         email: profile.email,
         role: profile.role,
         active: profile.active,
+        branch_code: profile.branch_code,
+        branch_name: profile.branch_name,
         expiresAt: Date.now() + 10 * 60 * 1000,
       })
     );
@@ -211,6 +213,9 @@ export default function HomePage() {
             <img
               src="/worldspeed-logo.png"
               alt="เวิลด์สปีด"
+              width={440}
+              height={80}
+              decoding="async"
               className="h-auto max-h-[4.5rem] w-full object-contain sm:max-h-20"
             />
           </div>

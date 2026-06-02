@@ -919,6 +919,10 @@ setIsAllowingEditId(null);
                         key={photo.id}
                         src={photo.image_url}
                         alt={motorcycle.motorcycle_name}
+                        loading="lazy"
+                        decoding="async"
+                        width={240}
+                        height={128}
                         className="h-32 w-full rounded-2xl bg-white object-contain ring-1 ring-gray-200"
                       />
                     ))}

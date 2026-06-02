@@ -42,6 +42,8 @@ type StaffProfile = {
   email: string;
   role: string;
   active: boolean;
+  branch_code?: string | null;
+  branch_name?: string | null;
   expiresAt?: number;
 };
 
@@ -162,7 +164,7 @@ export default function AdminPage() {
 
     const { data: profile, error: profileError } = await supabase
       .from("staff_profiles")
-      .select("id, email, role, active")
+      .select("id, email, role, active, branch_code, branch_name")
       .eq("id", userData.user.id)
       .eq("active", true)
       .limit(1);
@@ -177,6 +179,8 @@ export default function AdminPage() {
       email: profile[0].email,
       role: profile[0].role,
       active: profile[0].active,
+      branch_code: profile[0].branch_code,
+      branch_name: profile[0].branch_name,
     };
 
     saveStaffSession(verifiedProfile);
@@ -1241,7 +1245,14 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                   href="/admin/stock"
                   className="rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white shadow-sm hover:bg-blue-700"
                 >
-                  เพิ่มรถเข้าคลัง
+                  เพิ่มรถเข้าคลังสาขา
+                </a>
+
+                <a
+                  href="/admin/stock/branch"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
+                >
+                  คลังสาขา
                 </a>
 
                 {staffProfile?.role !== "stock_staff" && (
@@ -1249,7 +1260,7 @@ Lot ที่บันทึก: ${archiveResult.archivedLotCount}
                     href="/admin/stock-list"
                     className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-medium text-gray-800 shadow-sm hover:border-gray-300 hover:bg-gray-50"
                   >
-                    เลือกรถเข้ารอบเสนอราคา
+                    คลังกลาง
                   </a>
                 )}
 

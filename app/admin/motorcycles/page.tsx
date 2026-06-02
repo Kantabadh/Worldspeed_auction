@@ -559,7 +559,9 @@ export default function AdminMotorcyclesPage() {
       const { data: motorcycleData, error: motorcycleError } = await supabase
         .from("motorcycles")
         .insert(newMotorcycleInput)
-        .select()
+        .select(
+          "id, lot_number, motorcycle_name, cost_price, brand, model, year, color, license_plate, mileage, frame_number, engine_number, registration_status, tax_expiry, acquisition_type, source_name, condition, notes, active"
+        )
         .single();
 
       if (motorcycleError) {
@@ -1422,6 +1424,10 @@ export default function AdminMotorcyclesPage() {
                                     <img
                                       src={photo.image_url}
                                       alt={bike.motorcycle_name}
+                                      loading="lazy"
+                                      decoding="async"
+                                      width={240}
+                                      height={112}
                                       className="h-28 w-full bg-white object-contain"
                                     />
 

@@ -71,7 +71,7 @@ export default function StaffGuard({
 
     const { data: profile, error: profileError } = await supabase
       .from("staff_profiles")
-      .select("id, email, role, active")
+      .select("id, email, role, active, branch_code, branch_name")
       .eq("id", userData.user.id)
       .eq("active", true)
       .limit(1);
@@ -93,6 +93,8 @@ export default function StaffGuard({
       email: verifiedProfile.email,
       role: verifiedProfile.role,
       active: verifiedProfile.active,
+      branch_code: verifiedProfile.branch_code,
+      branch_name: verifiedProfile.branch_name,
     });
 
     setIsAllowed(true);

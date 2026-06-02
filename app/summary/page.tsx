@@ -403,7 +403,7 @@ export default function SummaryPage() {
         merchant_account_id: accountId,
         auction_round_id: auctionRoundId,
       })
-      .select()
+      .select("id")
       .limit(1);
 
     if (merchantError) {

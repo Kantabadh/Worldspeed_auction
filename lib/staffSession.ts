@@ -5,6 +5,8 @@ export type StaffProfile = {
   email: string;
   role: StaffRole;
   active: boolean;
+  branch_code?: string | null;
+  branch_name?: string | null;
   expiresAt?: number;
   checkedAt?: number;
 };
