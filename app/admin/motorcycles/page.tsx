@@ -967,7 +967,6 @@ export default function AdminMotorcyclesPage() {
 
     const headers = [
       "ลำดับ",
-      "ล็อต",
       "ยี่ห้อ",
       "รุ่น",
       "เลขตัวถัง",
@@ -980,7 +979,6 @@ export default function AdminMotorcyclesPage() {
 
     const rows = checklistMotorcycles.map((bike, index) => [
       index + 1,
-      getRoundLotDisplay(bike),
       getDisplayBrand(bike) || "-",
       getDisplayModel(bike) || "-",
       bike.frame_number || "-",
@@ -996,7 +994,6 @@ export default function AdminMotorcyclesPage() {
 
     sheet["!cols"] = [
       { wch: 8 },
-      { wch: 12 },
       { wch: 16 },
       { wch: 22 },
       { wch: 24 },
