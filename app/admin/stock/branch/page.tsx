@@ -559,10 +559,11 @@ export default function BranchStockPage() {
         <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <a
-              href="/admin/stock"
-              className="rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+              href="/admin"
+              aria-label="กลับหน้าแอดมิน"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xl font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
             >
-              กลับหน้าเพิ่มรถ
+              ←
             </a>
 
             <button
