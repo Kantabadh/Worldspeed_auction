@@ -59,14 +59,19 @@ type ArrangementMotorcycle = {
   lot_number: string | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
+  stock_number?: string | null;
   motorcycle_name: string | null;
   brand: string | null;
   model: string | null;
+  year?: string | null;
+  license_plate?: string | null;
   frame_number: string | null;
   engine_number: string | null;
   color: string | null;
+  registration_status?: string | null;
   source_name: string | null;
   cost_price: number | null;
+  stock_branch_name?: string | null;
   stock_motorcycle_id: number | null;
   notes: string | null;
   active: boolean | null;
@@ -81,6 +86,22 @@ type RoundLotMapping = {
   lot_number: string | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
+};
+
+type StockMotorcycleSnapshot = {
+  id: number;
+  stock_number: string | null;
+  brand: string | null;
+  model: string | null;
+  motorcycle_name: string | null;
+  license_plate: string | null;
+  frame_number: string | null;
+  registration_status: string | null;
+  cost_price: number | null;
+  stock_branch_name: string | null;
+  year: string | null;
+  color: string | null;
+  notes: string | null;
 };
 
 type StaffProfile = {
@@ -230,34 +251,39 @@ function getArrangementLotNumber(motorcycle: ArrangementMotorcycle | null) {
   return motorcycle?.round_lot_number || motorcycle?.lot_number || "-";
 }
 
-function sortArrangementMotorcycles(items: ArrangementMotorcycle[]) {
-  return [...items].sort((a, b) => {
-    const sortA = a.sort_order;
-    const sortB = b.sort_order;
+function getArrangementStockOrLotNumber(motorcycle: ArrangementMotorcycle | null) {
+  return motorcycle?.stock_number || getArrangementLotNumber(motorcycle);
+}
 
-    if (sortA !== null && sortA !== undefined && sortB !== null && sortB !== undefined) {
-      return Number(sortA) - Number(sortB);
-    }
+function compareArrangementMotorcycles(
+  a: ArrangementMotorcycle | null,
+  b: ArrangementMotorcycle | null
+) {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
 
-    if (sortA !== null && sortA !== undefined) return -1;
-    if (sortB !== null && sortB !== undefined) return 1;
-
-    const roundLotA = a.round_lot_number;
-    const roundLotB = b.round_lot_number;
-
-    if (roundLotA && roundLotB) {
-      return roundLotA.localeCompare(roundLotB, "th", { numeric: true });
-    }
-
-    if (roundLotA) return -1;
-    if (roundLotB) return 1;
-
-    return [a.brand, a.model, a.frame_number]
-      .join(" ")
-      .localeCompare([b.brand, b.model, b.frame_number].join(" "), "th", {
-        numeric: true,
-      });
+  const modelCompare = (a.model || "").localeCompare(b.model || "", "th", {
+    numeric: true,
+    sensitivity: "base",
   });
+  if (modelCompare !== 0) return modelCompare;
+
+  const brandCompare = (a.brand || "").localeCompare(b.brand || "", "th", {
+    numeric: true,
+    sensitivity: "base",
+  });
+  if (brandCompare !== 0) return brandCompare;
+
+  return getArrangementStockOrLotNumber(a).localeCompare(
+    getArrangementStockOrLotNumber(b),
+    "th",
+    { numeric: true, sensitivity: "base" }
+  );
+}
+
+function sortArrangementMotorcycles(items: ArrangementMotorcycle[]) {
+  return [...items].sort(compareArrangementMotorcycles);
 }
 
 export default function AdminRoundDetailPage() {
@@ -323,9 +349,12 @@ export default function AdminRoundDetailPage() {
         motorcycle_name,
         brand,
         model,
+        year,
+        license_plate,
         frame_number,
         engine_number,
         color,
+        registration_status,
         source_name,
         cost_price,
         stock_motorcycle_id,
@@ -340,6 +369,46 @@ export default function AdminRoundDetailPage() {
       .eq("auction_round_id", roundId);
 
     if (error) throw new Error(error.message);
+
+    const rawMotorcycles =
+      (data as unknown as ArrangementMotorcycle[]) || [];
+    const stockMotorcycleIds = [
+      ...new Set(
+        rawMotorcycles
+          .map((motorcycle) => motorcycle.stock_motorcycle_id)
+          .filter((id): id is number => typeof id === "number")
+      ),
+    ];
+    const stockSnapshotById = new Map<number, StockMotorcycleSnapshot>();
+
+    if (stockMotorcycleIds.length > 0) {
+      const { data: stockData, error: stockError } = await supabase
+        .from("stock_motorcycles")
+        .select(
+          `
+          id,
+          stock_number,
+          brand,
+          model,
+          motorcycle_name,
+          license_plate,
+          frame_number,
+          registration_status,
+          cost_price,
+          stock_branch_name,
+          year,
+          color,
+          notes
+        `
+        )
+        .in("id", stockMotorcycleIds);
+
+      if (stockError) throw new Error(stockError.message);
+
+      ((stockData as StockMotorcycleSnapshot[]) || []).forEach((stock) => {
+        stockSnapshotById.set(stock.id, stock);
+      });
+    }
 
     let mappingRows: RoundLotMapping[] = [];
     const mappingResult = await supabase
@@ -368,12 +437,36 @@ export default function AdminRoundDetailPage() {
       }
     });
 
-    const motorcycles = ((data as unknown as ArrangementMotorcycle[]) || []).map(
+    const roundMotorcycles = rawMotorcycles.map(
       (motorcycle) => {
         const mapping = mappingByMotorcycleId.get(motorcycle.id);
+        const stockSnapshot = motorcycle.stock_motorcycle_id
+          ? stockSnapshotById.get(motorcycle.stock_motorcycle_id)
+          : undefined;
 
         return {
           ...motorcycle,
+          stock_number: stockSnapshot?.stock_number || motorcycle.stock_number || null,
+          brand: stockSnapshot?.brand || motorcycle.brand,
+          model: stockSnapshot?.model || motorcycle.model,
+          motorcycle_name:
+            stockSnapshot?.motorcycle_name || motorcycle.motorcycle_name,
+          license_plate:
+            stockSnapshot?.license_plate || motorcycle.license_plate || null,
+          frame_number:
+            stockSnapshot?.frame_number || motorcycle.frame_number || null,
+          registration_status:
+            stockSnapshot?.registration_status ||
+            motorcycle.registration_status ||
+            null,
+          cost_price: stockSnapshot?.cost_price ?? motorcycle.cost_price,
+          stock_branch_name:
+            stockSnapshot?.stock_branch_name ||
+            motorcycle.stock_branch_name ||
+            null,
+          year: stockSnapshot?.year || motorcycle.year || null,
+          color: stockSnapshot?.color || motorcycle.color || null,
+          notes: stockSnapshot?.notes || motorcycle.notes || null,
           round_lot_number:
             mapping?.round_lot_number || mapping?.lot_number || motorcycle.lot_number,
           sort_order: mapping?.sort_order || null,
@@ -382,7 +475,7 @@ export default function AdminRoundDetailPage() {
     );
 
     setArrangementMotorcycles(
-      sortArrangementMotorcycles(motorcycles)
+      sortArrangementMotorcycles(roundMotorcycles)
     );
   }
 
@@ -552,11 +645,16 @@ export default function AdminRoundDetailPage() {
                 sort_order: null,
                 brand: null,
                 model: null,
+                year: null,
+                license_plate: null,
                 frame_number: null,
                 engine_number: null,
                 color: null,
+                registration_status: null,
                 source_name: null,
                 stock_motorcycle_id: null,
+                stock_branch_name: null,
+                stock_number: null,
                 notes: null,
               } as ArrangementMotorcycle)
             : null,
@@ -587,25 +685,7 @@ export default function AdminRoundDetailPage() {
         };
       })
       .sort((a, b) => {
-        const sortA = a.motorcycle?.sort_order;
-        const sortB = b.motorcycle?.sort_order;
-
-        if (
-          sortA !== null &&
-          sortA !== undefined &&
-          sortB !== null &&
-          sortB !== undefined
-        ) {
-          return Number(sortA) - Number(sortB);
-        }
-
-        if (sortA !== null && sortA !== undefined) return -1;
-        if (sortB !== null && sortB !== undefined) return 1;
-
-        const lotA = getArrangementLotNumber(a.motorcycle);
-        const lotB = getArrangementLotNumber(b.motorcycle);
-
-        return lotA.localeCompare(lotB, "th", { numeric: true });
+        return compareArrangementMotorcycles(a.motorcycle, b.motorcycle);
       });
   }, [arrangementMotorcycles, offers]);
 
@@ -1097,60 +1177,38 @@ export default function AdminRoundDetailPage() {
   function exportRoundExcel() {
     if (!round) return;
 
-    const rows = filteredLotResults.map((lot) => {
-      const cost = Number(lot.motorcycle?.cost_price || 0);
-      const result = getLotFinalResult(lot);
-      const highestOffer = lot.offers[0] || null;
-      const highestPrice = highestOffer
-        ? Number(highestOffer.offer_price || 0)
-        : null;
-      const runnerUpOffer = highestPrice
-        ? lot.offers.find(
-            (offer) => Number(offer.offer_price || 0) < highestPrice
-          )
-        : null;
-      const actualSoldPrice = result.price == null ? null : Number(result.price);
-      const grossProfit =
-        actualSoldPrice === null ? null : actualSoldPrice - cost;
-
+    const sortedExportLots = [...filteredLotResults].sort((a, b) =>
+      compareArrangementMotorcycles(a.motorcycle, b.motorcycle)
+    );
+    const rows = sortedExportLots.map((lot, index) => {
       return [
-        getArrangementLotNumber(lot.motorcycle),
-        lot.motorcycle?.motorcycle_name || "-",
+        String(index + 1).padStart(3, "0"),
+        lot.motorcycle?.stock_number || "-",
         lot.motorcycle?.brand || "-",
         lot.motorcycle?.model || "-",
+        lot.motorcycle?.year || "-",
+        lot.motorcycle?.color || "-",
+        lot.motorcycle?.license_plate || "-",
         lot.motorcycle?.frame_number || "-",
-        cost || "-",
-        highestPrice || "-",
-        lot.topOffers.length > 0
-          ? lot.topOffers.map(getMerchantName).join(", ")
-          : "-",
-        runnerUpOffer
-          ? `${getMerchantName(runnerUpOffer)} (${Number(
-              runnerUpOffer.offer_price || 0
-            ).toLocaleString()})`
-          : "-",
-        actualSoldPrice === null ? "-" : actualSoldPrice,
-        result.merchant || "-",
-        grossProfit === null ? "-" : grossProfit,
-        result.status,
-        result.note || "-",
+        lot.motorcycle?.registration_status || "-",
+        lot.motorcycle?.cost_price || "-",
+        lot.motorcycle?.stock_branch_name || "-",
+        lot.motorcycle?.notes || "-",
       ];
     });
 
     const headers = [
-      "ล็อต",
-      "รถ",
+      "ลำดับ",
+      "รหัสสต๊อก",
       "ยี่ห้อ",
       "รุ่น",
+      "ปี",
+      "สี",
+      "ทะเบียน",
       "เลขตัวถัง",
+      "สถานะเล่ม",
       "ต้นทุน",
-      "ราคาสูงสุด",
-      "ผู้เสนอราคาสูงสุด",
-      "อันดับ 2",
-      "ราคาขายจริง",
-      "ผู้ซื้อจริง",
-      "กำไรขั้นต้น",
-      "สถานะผล",
+      "สาขา",
       "หมายเหตุ",
     ];
 
@@ -1159,18 +1217,16 @@ export default function AdminRoundDetailPage() {
 
     sheet["!cols"] = [
       { wch: 12 },
-      { wch: 28 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 10 },
       { wch: 16 },
       { wch: 18 },
       { wch: 24 },
+      { wch: 18 },
       { wch: 14 },
-      { wch: 14 },
-      { wch: 28 },
-      { wch: 32 },
-      { wch: 16 },
-      { wch: 28 },
-      { wch: 16 },
-      { wch: 24 },
+      { wch: 20 },
       { wch: 42 },
     ];
 
@@ -1181,7 +1237,7 @@ export default function AdminRoundDetailPage() {
       }),
     };
 
-    XLSX.utils.book_append_sheet(workbook, sheet, "ผลราคา");
+    XLSX.utils.book_append_sheet(workbook, sheet, "รายการรถ");
 
     const roundFileName = (round.round_name || `round-${round.id}`)
       .replace(/[\\/:*?"<>|]/g, "")
@@ -1343,13 +1399,16 @@ export default function AdminRoundDetailPage() {
 
             {!isLoading && lotResults.length > 0 && (
               <div className="mt-4 overflow-x-auto rounded-2xl border">
-                <table className="w-full min-w-[1700px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1900px] border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
                       <th className="border p-3">ล็อต</th>
+                      <th className="border p-3">รหัสสต๊อก</th>
                       <th className="border p-3">ยี่ห้อ</th>
                       <th className="border p-3">รุ่น</th>
+                      <th className="border p-3">ทะเบียน</th>
                       <th className="border p-3">เลขตัวถัง</th>
+                      <th className="border p-3">สถานะเล่ม</th>
                       <th className="border p-3">สถานะ</th>
                       <th className="border p-3 text-right">ราคาสูงสุด</th>
                       <th className="border p-3 text-right">ต้นทุน</th>
@@ -1388,6 +1447,10 @@ export default function AdminRoundDetailPage() {
                           </td>
 
                           <td className="border p-3">
+                            {lot.motorcycle?.stock_number || "-"}
+                          </td>
+
+                          <td className="border p-3">
                             {lot.motorcycle?.brand || "-"}
                           </td>
 
@@ -1398,7 +1461,15 @@ export default function AdminRoundDetailPage() {
                           </td>
 
                           <td className="border p-3">
+                            {lot.motorcycle?.license_plate || "-"}
+                          </td>
+
+                          <td className="border p-3">
                             {lot.motorcycle?.frame_number || "-"}
+                          </td>
+
+                          <td className="border p-3">
+                            {lot.motorcycle?.registration_status || "-"}
                           </td>
 
                           <td className="border p-3">
