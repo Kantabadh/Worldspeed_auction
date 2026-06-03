@@ -87,6 +87,8 @@ type StaffProfile = {
   expiresAt?: number;
 };
 
+type SortMode = "default" | "brandModel";
+
 type AuditLogInput = {
   action: string;
   targetType?: string;
@@ -237,6 +239,10 @@ function getDisplayModel(bike: Motorcycle) {
   return cleanOptionalText(bike.model) || getMotorcycleNameParts(bike.motorcycle_name).rest;
 }
 
+function normalizeSortText(value: string | null | undefined) {
+  return cleanOptionalText(value).toLowerCase();
+}
+
 function getRoundLotDisplay(bike: Motorcycle) {
   return (
     cleanOptionalText(bike.round_lot_number) ||
@@ -286,6 +292,34 @@ function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
       numeric: true,
     })
   );
+}
+
+function sortMotorcyclesByBrandModel(a: Motorcycle, b: Motorcycle) {
+  const brandResult = normalizeSortText(getDisplayBrand(a)).localeCompare(
+    normalizeSortText(getDisplayBrand(b)),
+    "th",
+    { numeric: true, sensitivity: "base" }
+  );
+
+  if (brandResult !== 0) return brandResult;
+
+  const modelResult = normalizeSortText(getDisplayModel(a)).localeCompare(
+    normalizeSortText(getDisplayModel(b)),
+    "th",
+    { numeric: true, sensitivity: "base" }
+  );
+
+  if (modelResult !== 0) return modelResult;
+
+  const stockNumberResult = normalizeSortText(a.stock_number).localeCompare(
+    normalizeSortText(b.stock_number),
+    "th",
+    { numeric: true, sensitivity: "base" }
+  );
+
+  if (stockNumberResult !== 0) return stockNumberResult;
+
+  return sortChecklistMotorcycles(a, b);
 }
 
 function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
@@ -345,6 +379,7 @@ export default function AdminMotorcyclesPage() {
 
   const [searchText, setSearchText] = useState("");
   const [isSearchHelpOpen, setIsSearchHelpOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("default");
   const [currentPage, setCurrentPage] = useState(1);
   const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
   const [movingBackId, setMovingBackId] = useState<number | null>(null);
@@ -921,9 +956,9 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
-    const checklistMotorcycles = motorcycles
-      .filter((bike) => bike.auction_round_id === currentRound.id)
-      .sort(sortChecklistMotorcycles);
+    const checklistMotorcycles = filteredMotorcycles.filter(
+      (bike) => bike.auction_round_id === currentRound.id
+    );
 
     if (checklistMotorcycles.length === 0) {
       alert("ยังไม่มีรถในรอบเสนอราคาปัจจุบัน");
@@ -1176,7 +1211,7 @@ export default function AdminMotorcyclesPage() {
   const filteredMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
-    return motorcycles.filter((bike) => {
+    const matchingMotorcycles = motorcycles.filter((bike) => {
       const searchableText = [
         getRoundLotDisplay(bike),
         bike.motorcycle_name,
@@ -1204,7 +1239,13 @@ export default function AdminMotorcyclesPage() {
 
       return matchSearch;
     });
-  }, [motorcycles, searchText]);
+
+    return [...matchingMotorcycles].sort(
+      sortMode === "brandModel"
+        ? sortMotorcyclesByBrandModel
+        : sortChecklistMotorcycles
+    );
+  }, [motorcycles, searchText, sortMode]);
 
   const totalPages = Math.max(
     1,
@@ -1241,6 +1282,22 @@ export default function AdminMotorcyclesPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSortMode("brandModel");
+                  setCurrentPage(1);
+                }}
+                disabled={!currentRound}
+                className={
+                  sortMode === "brandModel"
+                    ? "rounded-xl bg-blue-600 px-4 py-2 font-medium text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    : "rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                }
+              >
+                เรียงตามยี่ห้อ/รุ่น
+              </button>
+
               <button
                 type="button"
                 onClick={exportChecklistExcel}
@@ -1455,8 +1512,11 @@ export default function AdminMotorcyclesPage() {
                 <div className="mt-5">{renderPaginationControls()}</div>
 
                 <div className="mt-5 space-y-4">
-                  {paginatedMotorcycles.map((bike) => {
+                  {paginatedMotorcycles.map((bike, index) => {
                     const isDetailOpen = openDetailIds.includes(bike.id);
+                    const displayOrderNumber = String(
+                      (safeCurrentPage - 1) * ITEMS_PER_PAGE + index + 1
+                    ).padStart(3, "0");
 
                     return (
                       <article
@@ -1466,7 +1526,7 @@ export default function AdminMotorcyclesPage() {
                         <div className="bg-gray-50 p-3 sm:p-4">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 sm:text-sm">
-                              ลำดับ {getRoundLotDisplay(bike)}
+                              ลำดับ {displayOrderNumber}
                             </p>
                           </div>
 
