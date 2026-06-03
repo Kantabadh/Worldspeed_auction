@@ -121,10 +121,49 @@ function cleanMoney(value: string) {
   return Number.isNaN(numberValue) ? null : numberValue;
 }
 
+function sanitizeEnglishNumber(value: string) {
+  return value.replace(/[^A-Za-z0-9\s/.\-_]/g, "");
+}
+
+function sanitizeYear(value: string) {
+  return value.replace(/\D/g, "").slice(0, 4);
+}
+
+function sanitizeFrameNumber(value: string) {
+  return value.replace(/[^A-Za-z0-9\s-]/g, "").toUpperCase();
+}
+
+function sanitizeThaiNumber(value: string) {
+  return value.replace(/[^\u0E00-\u0E7F0-9๐-๙\s/.\-_]/g, "");
+}
+
+function sanitizeNumber(value: string) {
+  return value.replace(/[^\d,]/g, "");
+}
+
+function sanitizeTaxExpiry(value: string) {
+  return value.replace(/[^\u0E00-\u0E7F0-9๐-๙\s/.\-_]/g, "");
+}
+
 function cleanDetails(details: MotorcycleDetails) {
   return Object.fromEntries(
     Object.entries(details).map(([key, value]) => [key, value.trim() || null])
   );
+}
+
+function sanitizeMotorcycleDetailValue(
+  keyName: keyof MotorcycleDetails,
+  value: string
+) {
+  if (keyName === "model") return sanitizeEnglishNumber(value);
+  if (keyName === "year") return sanitizeYear(value);
+  if (keyName === "frame_number") return sanitizeFrameNumber(value);
+  if (keyName === "license_plate") return sanitizeThaiNumber(value);
+  if (keyName === "color") return sanitizeThaiNumber(value);
+  if (keyName === "tax_expiry") return sanitizeTaxExpiry(value);
+  if (keyName === "notes") return sanitizeThaiNumber(value);
+
+  return value;
 }
 
 function getSavedStaffProfile() {
@@ -580,7 +619,10 @@ export default function AdminStockPage() {
             onChange={(event) =>
               setDetails({
                 ...details,
-                [keyName]: event.target.value,
+                [keyName]: sanitizeMotorcycleDetailValue(
+                  keyName,
+                  event.target.value
+                ),
               })
             }
           />
@@ -599,9 +641,13 @@ export default function AdminStockPage() {
           onChange={(event) =>
             setDetails({
               ...details,
-              [keyName]: event.target.value,
+              [keyName]: sanitizeMotorcycleDetailValue(
+                keyName,
+                event.target.value
+              ),
             })
           }
+          maxLength={keyName === "year" ? 4 : undefined}
         />
       </div>
     );
@@ -638,7 +684,9 @@ export default function AdminStockPage() {
               className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
               placeholder="เช่น แบรนด์อื่น"
               value={customBrand}
-              onChange={(event) => setCustomBrand(event.target.value)}
+              onChange={(event) =>
+                setCustomBrand(sanitizeEnglishNumber(event.target.value))
+              }
             />
           </div>
         )}
@@ -698,7 +746,9 @@ export default function AdminStockPage() {
               placeholder="ระบุสถานะเล่ม"
               value={customRegistrationStatus}
               onChange={(event) =>
-                setCustomRegistrationStatus(event.target.value)
+                setCustomRegistrationStatus(
+                  sanitizeThaiNumber(event.target.value)
+                )
               }
             />
           </div>
@@ -718,7 +768,7 @@ export default function AdminStockPage() {
             className="mt-2 w-full rounded-2xl border p-3 outline-none focus:ring-2 focus:ring-black"
             placeholder="เช่น 12000"
             value={costPrice}
-            onChange={(event) => setCostPrice(event.target.value)}
+            onChange={(event) => setCostPrice(sanitizeNumber(event.target.value))}
           />
         </div>
 
