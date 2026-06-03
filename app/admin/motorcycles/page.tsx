@@ -39,11 +39,29 @@ type Motorcycle = MotorcycleDetails & {
   sort_order?: number | null;
   auction_round_id?: number | null;
   stock_motorcycle_id?: number | null;
+  stock_number?: string | null;
+  stock_branch_name?: string | null;
   motorcycle_name: string;
   cost_price: number | null;
   active: boolean;
   created_at: string;
   motorcycle_photos: MotorcyclePhoto[];
+};
+
+type StockMotorcycleSnapshot = {
+  id: number;
+  stock_number: string | null;
+  brand: string | null;
+  model: string | null;
+  motorcycle_name: string | null;
+  license_plate: string | null;
+  frame_number: string | null;
+  registration_status: string | null;
+  cost_price: number | null;
+  stock_branch_name: string | null;
+  year: string | null;
+  color: string | null;
+  notes: string | null;
 };
 
 type CurrentAuctionRound = {
@@ -202,6 +220,23 @@ function cleanOptionalText(value: string | null | undefined) {
   return value?.trim() || "";
 }
 
+function getMotorcycleNameParts(motorcycleName?: string | null) {
+  const parts = cleanOptionalText(motorcycleName).split(/\s+/).filter(Boolean);
+
+  return {
+    firstWord: parts[0] || "",
+    rest: parts.slice(1).join(" "),
+  };
+}
+
+function getDisplayBrand(bike: Motorcycle) {
+  return cleanOptionalText(bike.brand) || getMotorcycleNameParts(bike.motorcycle_name).firstWord;
+}
+
+function getDisplayModel(bike: Motorcycle) {
+  return cleanOptionalText(bike.model) || getMotorcycleNameParts(bike.motorcycle_name).rest;
+}
+
 function getRoundLotDisplay(bike: Motorcycle) {
   return (
     cleanOptionalText(bike.round_lot_number) ||
@@ -211,15 +246,11 @@ function getRoundLotDisplay(bike: Motorcycle) {
 }
 
 function getMotorcycleDisplayTitle(bike: Motorcycle) {
-  const brand = cleanOptionalText(bike.brand);
-  const model = cleanOptionalText(bike.model);
-  const licensePlate = cleanOptionalText(bike.license_plate);
-  const details = [model, licensePlate].filter(Boolean).join(" / ");
-
-  if (brand && details) return `${brand} (${details})`;
-  if (brand) return brand;
-
-  return cleanOptionalText(bike.motorcycle_name) || "ไม่ระบุรุ่น";
+  return (
+    cleanOptionalText(bike.motorcycle_name) ||
+    [getDisplayBrand(bike), getDisplayModel(bike)].filter(Boolean).join(" ") ||
+    "ไม่ระบุรุ่น"
+  );
 }
 
 function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
@@ -249,8 +280,8 @@ function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
   if (lotResult !== 0) return lotResult;
 
   return (
-    (a.brand || "").localeCompare(b.brand || "", "th", { numeric: true }) ||
-    (a.model || "").localeCompare(b.model || "", "th", { numeric: true }) ||
+    getDisplayBrand(a).localeCompare(getDisplayBrand(b), "th", { numeric: true }) ||
+    getDisplayModel(a).localeCompare(getDisplayModel(b), "th", { numeric: true }) ||
     (a.frame_number || "").localeCompare(b.frame_number || "", "th", {
       numeric: true,
     })
@@ -259,8 +290,8 @@ function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
 
 function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
   return {
-    brand: bike.brand || "",
-    model: bike.model || "",
+    brand: getDisplayBrand(bike),
+    model: getDisplayModel(bike),
     year: bike.year || "",
     color: bike.color || "",
     license_plate: bike.license_plate || "",
@@ -517,11 +548,71 @@ export default function AdminMotorcyclesPage() {
       );
     }
 
-    const mergedMotorcycles = ((data as Motorcycle[]) || []).map((bike) => {
+    const rawMotorcycles = (data as Motorcycle[]) || [];
+    const stockMotorcycleIds = [
+      ...new Set(
+        rawMotorcycles
+          .map((bike) => bike.stock_motorcycle_id)
+          .filter((id): id is number => typeof id === "number")
+      ),
+    ];
+    const stockSnapshotById = new Map<number, StockMotorcycleSnapshot>();
+
+    if (stockMotorcycleIds.length > 0) {
+      const { data: stockData, error: stockError } = await supabase
+        .from("stock_motorcycles")
+        .select(
+          `
+          id,
+          stock_number,
+          brand,
+          model,
+          motorcycle_name,
+          license_plate,
+          frame_number,
+          registration_status,
+          cost_price,
+          stock_branch_name,
+          year,
+          color,
+          notes
+        `
+        )
+        .in("id", stockMotorcycleIds);
+
+      if (stockError) {
+        setErrorMessage(stockError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      ((stockData as StockMotorcycleSnapshot[]) || []).forEach((stock) => {
+        stockSnapshotById.set(stock.id, stock);
+      });
+    }
+
+    const mergedMotorcycles = rawMotorcycles.map((bike) => {
       const mapping = roundLotByMotorcycleId.get(bike.id);
+      const stockSnapshot = bike.stock_motorcycle_id
+        ? stockSnapshotById.get(bike.stock_motorcycle_id)
+        : undefined;
 
       return {
         ...bike,
+        stock_number: stockSnapshot?.stock_number || bike.stock_number || null,
+        brand: stockSnapshot?.brand || bike.brand,
+        model: stockSnapshot?.model || bike.model,
+        motorcycle_name: stockSnapshot?.motorcycle_name || bike.motorcycle_name,
+        license_plate: stockSnapshot?.license_plate || bike.license_plate,
+        frame_number: stockSnapshot?.frame_number || bike.frame_number,
+        registration_status:
+          stockSnapshot?.registration_status || bike.registration_status,
+        cost_price: stockSnapshot?.cost_price ?? bike.cost_price,
+        stock_branch_name:
+          stockSnapshot?.stock_branch_name || bike.stock_branch_name || null,
+        year: stockSnapshot?.year || bike.year,
+        color: stockSnapshot?.color || bike.color,
+        notes: stockSnapshot?.notes || bike.notes,
         round_lot_number:
           mapping?.round_lot_number || mapping?.lot_number || null,
         sort_order: mapping?.sort_order ?? null,
@@ -856,8 +947,8 @@ export default function AdminMotorcyclesPage() {
     const rows = checklistMotorcycles.map((bike, index) => [
       index + 1,
       getRoundLotDisplay(bike),
-      bike.brand || "-",
-      bike.model || "-",
+      getDisplayBrand(bike) || "-",
+      getDisplayModel(bike) || "-",
       bike.frame_number || "-",
       bike.engine_number || "-",
       bike.color || "-",
@@ -976,13 +1067,14 @@ export default function AdminMotorcyclesPage() {
           ? `${Number(bike.cost_price).toLocaleString()} บาท`
           : "-",
       ],
-      ["ยี่ห้อ", bike.brand],
-      ["รุ่น", bike.model],
+      ["ยี่ห้อ", getDisplayBrand(bike)],
+      ["รุ่น", getDisplayModel(bike)],
       ["ปี", bike.year],
       ["สี", bike.color],
       ["ทะเบียน", bike.license_plate],
       ["เลขตัวถัง", bike.frame_number],
       ["สถานะเล่ม", bike.registration_status],
+      ["สาขา", bike.stock_branch_name],
       ["ภาษีหมดอายุ", bike.tax_expiry],
       ["มาจาก", bike.source_name],
       ["หมายเหตุ", bike.notes],
@@ -1088,8 +1180,9 @@ export default function AdminMotorcyclesPage() {
       const searchableText = [
         getRoundLotDisplay(bike),
         bike.motorcycle_name,
-        bike.brand,
-        bike.model,
+        getDisplayBrand(bike),
+        getDisplayModel(bike),
+        bike.stock_number,
         bike.year,
         bike.color,
         bike.license_plate,
@@ -1098,6 +1191,7 @@ export default function AdminMotorcyclesPage() {
         bike.registration_status,
         bike.tax_expiry,
         bike.acquisition_type,
+        bike.stock_branch_name,
         bike.source_name,
         bike.condition,
         bike.notes,
@@ -1379,6 +1473,10 @@ export default function AdminMotorcyclesPage() {
                           <h3 className="mt-1 text-base font-bold text-gray-900 sm:text-lg">
                             {getMotorcycleDisplayTitle(bike)}
                           </h3>
+
+                          <p className="mt-1 text-sm font-medium text-gray-600">
+                            ทะเบียน: {bike.license_plate || "-"}
+                          </p>
 
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <div className="flex flex-wrap gap-2">

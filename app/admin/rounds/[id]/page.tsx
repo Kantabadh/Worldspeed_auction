@@ -251,6 +251,45 @@ function getArrangementLotNumber(motorcycle: ArrangementMotorcycle | null) {
   return motorcycle?.round_lot_number || motorcycle?.lot_number || "-";
 }
 
+function getMotorcycleNameParts(motorcycleName?: string | null) {
+  const parts = (motorcycleName || "").trim().split(/\s+/).filter(Boolean);
+
+  return {
+    firstWord: parts[0] || "",
+    rest: parts.slice(1).join(" "),
+  };
+}
+
+function getArrangementBrand(motorcycle: ArrangementMotorcycle | null) {
+  if (!motorcycle) return "-";
+
+  const brand = motorcycle.brand?.trim();
+  if (brand) return brand;
+
+  return getMotorcycleNameParts(motorcycle.motorcycle_name).firstWord || "-";
+}
+
+function getArrangementModel(motorcycle: ArrangementMotorcycle | null) {
+  if (!motorcycle) return "-";
+
+  const model = motorcycle.model?.trim();
+  if (model) return model;
+
+  return getMotorcycleNameParts(motorcycle.motorcycle_name).rest || "-";
+}
+
+function getArrangementTitle(motorcycle: ArrangementMotorcycle | null) {
+  if (!motorcycle) return "-";
+
+  return (
+    motorcycle.motorcycle_name ||
+    [getArrangementBrand(motorcycle), getArrangementModel(motorcycle)]
+      .filter((value) => value && value !== "-")
+      .join(" ") ||
+    "-"
+  );
+}
+
 function getArrangementStockOrLotNumber(motorcycle: ArrangementMotorcycle | null) {
   return motorcycle?.stock_number || getArrangementLotNumber(motorcycle);
 }
@@ -263,16 +302,24 @@ function compareArrangementMotorcycles(
   if (!a) return 1;
   if (!b) return -1;
 
-  const modelCompare = (a.model || "").localeCompare(b.model || "", "th", {
-    numeric: true,
-    sensitivity: "base",
-  });
+  const modelCompare = getArrangementModel(a).localeCompare(
+    getArrangementModel(b),
+    "th",
+    {
+      numeric: true,
+      sensitivity: "base",
+    }
+  );
   if (modelCompare !== 0) return modelCompare;
 
-  const brandCompare = (a.brand || "").localeCompare(b.brand || "", "th", {
-    numeric: true,
-    sensitivity: "base",
-  });
+  const brandCompare = getArrangementBrand(a).localeCompare(
+    getArrangementBrand(b),
+    "th",
+    {
+      numeric: true,
+      sensitivity: "base",
+    }
+  );
   if (brandCompare !== 0) return brandCompare;
 
   return getArrangementStockOrLotNumber(a).localeCompare(
@@ -1184,8 +1231,8 @@ export default function AdminRoundDetailPage() {
       return [
         String(index + 1).padStart(3, "0"),
         lot.motorcycle?.stock_number || "-",
-        lot.motorcycle?.brand || "-",
-        lot.motorcycle?.model || "-",
+        getArrangementBrand(lot.motorcycle),
+        getArrangementModel(lot.motorcycle),
         lot.motorcycle?.year || "-",
         lot.motorcycle?.color || "-",
         lot.motorcycle?.license_plate || "-",
@@ -1402,7 +1449,7 @@ export default function AdminRoundDetailPage() {
                 <table className="w-full min-w-[1900px] border-collapse text-left text-sm">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700">
-                      <th className="border p-3">ล็อต</th>
+                      <th className="border p-3">ลำดับ</th>
                       <th className="border p-3">รหัสสต๊อก</th>
                       <th className="border p-3">ยี่ห้อ</th>
                       <th className="border p-3">รุ่น</th>
@@ -1442,8 +1489,16 @@ export default function AdminRoundDetailPage() {
 
                       return (
                         <tr key={lot.lotKey} className="hover:bg-gray-50">
-                          <td className="border p-3 font-bold text-gray-900">
-                            {getArrangementLotNumber(lot.motorcycle)}
+                          <td className="border p-3">
+                            <p className="font-bold text-gray-900">
+                              ลำดับ {getArrangementLotNumber(lot.motorcycle)}
+                            </p>
+                            <p className="mt-1 font-semibold text-gray-900">
+                              {getArrangementTitle(lot.motorcycle)}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              ทะเบียน {lot.motorcycle?.license_plate || "-"}
+                            </p>
                           </td>
 
                           <td className="border p-3">
@@ -1451,13 +1506,11 @@ export default function AdminRoundDetailPage() {
                           </td>
 
                           <td className="border p-3">
-                            {lot.motorcycle?.brand || "-"}
+                            {getArrangementBrand(lot.motorcycle)}
                           </td>
 
                           <td className="border p-3">
-                            {lot.motorcycle?.model ||
-                              lot.motorcycle?.motorcycle_name ||
-                              "-"}
+                            {getArrangementModel(lot.motorcycle)}
                           </td>
 
                           <td className="border p-3">

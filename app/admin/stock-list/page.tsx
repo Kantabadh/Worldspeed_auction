@@ -172,6 +172,21 @@ function hasActiveAuctionRoundLink(
   );
 }
 
+function getSupabaseErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return String(error || "unknown error");
+}
+
 function getStockLocationLabel(
   bike: StockMotorcycle,
   existingAuctionRoundIds: Set<number>
@@ -793,8 +808,8 @@ export default function AdminStockListPage() {
     return (
       bike.stock_status === "in_auction" ||
       bike.stock_status === "อยู่ในรอบเสนอราคา" ||
-      hasActiveAuctionRoundLink(bike, existingAuctionRoundIds) ||
-      bike.current_auction_round_id === currentRound?.id
+      (bike.current_auction_motorcycle_id !== null &&
+        bike.current_auction_round_id !== null)
     );
   }
 
@@ -812,6 +827,45 @@ export default function AdminStockListPage() {
     setSuccessMessage("");
 
     try {
+      const { error: staleMotorcycleLinkError } = await supabase
+        .from("motorcycles")
+        .update({ stock_motorcycle_id: null })
+        .eq("stock_motorcycle_id", bike.id);
+
+      if (staleMotorcycleLinkError) throw staleMotorcycleLinkError;
+
+      const { data: soldLinks, error: soldLinksError } = await supabase
+        .from("sold_motorcycles")
+        .select("id")
+        .eq("original_stock_motorcycle_id", bike.id);
+
+      if (soldLinksError) throw soldLinksError;
+
+      if ((soldLinks || []).length > 0) {
+        const { error: soldUnlinkError } = await supabase
+          .from("sold_motorcycles")
+          .update({ original_stock_motorcycle_id: null })
+          .eq("original_stock_motorcycle_id", bike.id);
+
+        if (soldUnlinkError) throw soldUnlinkError;
+      }
+
+      const { data: unsoldLinks, error: unsoldLinksError } = await supabase
+        .from("unsold_motorcycles")
+        .select("id")
+        .eq("original_stock_motorcycle_id", bike.id);
+
+      if (unsoldLinksError) throw unsoldLinksError;
+
+      if ((unsoldLinks || []).length > 0) {
+        const { error: unsoldUnlinkError } = await supabase
+          .from("unsold_motorcycles")
+          .update({ original_stock_motorcycle_id: null })
+          .eq("original_stock_motorcycle_id", bike.id);
+
+        if (unsoldUnlinkError) throw unsoldUnlinkError;
+      }
+
       if (
         bike.current_auction_motorcycle_id !== null ||
         bike.current_auction_round_id !== null
@@ -858,9 +912,8 @@ export default function AdminStockListPage() {
       await loadStockMotorcycles();
       setSuccessMessage("ลบรถออกจากคลังแล้ว");
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "ลบรถออกจากคลังไม่สำเร็จ"
-      );
+      console.error("delete stock failed", error);
+      setErrorMessage(`ลบไม่สำเร็จ: ${getSupabaseErrorMessage(error)}`);
     }
 
     setDeletingStockId(null);
