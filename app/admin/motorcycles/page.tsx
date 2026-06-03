@@ -971,12 +971,11 @@ export default function AdminMotorcyclesPage() {
       "ยี่ห้อ",
       "รุ่น",
       "เลขตัวถัง",
-      "เลขเครื่อง",
       "สี",
       "ทะเบียน",
+      "สถานะเล่ม",
       "มาจาก",
       "หมายเหตุ",
-      "ช่องตรวจสอบ",
     ];
 
     const rows = checklistMotorcycles.map((bike, index) => [
@@ -985,12 +984,11 @@ export default function AdminMotorcyclesPage() {
       getDisplayBrand(bike) || "-",
       getDisplayModel(bike) || "-",
       bike.frame_number || "-",
-      bike.engine_number || "-",
       bike.color || "-",
       bike.license_plate || "-",
+      bike.registration_status || "-",
       bike.source_name || "-",
       bike.notes || "",
-      "",
     ]);
 
     const workbook = XLSX.utils.book_new();
@@ -1002,12 +1000,11 @@ export default function AdminMotorcyclesPage() {
       { wch: 16 },
       { wch: 22 },
       { wch: 24 },
-      { wch: 24 },
       { wch: 14 },
       { wch: 18 },
       { wch: 18 },
+      { wch: 18 },
       { wch: 34 },
-      { wch: 16 },
     ];
 
     XLSX.utils.book_append_sheet(workbook, sheet, "จัดเรียงล็อต");
