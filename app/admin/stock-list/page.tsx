@@ -35,17 +35,13 @@ type StockMotorcycle = {
   year: string | null;
   color: string | null;
   license_plate: string | null;
-  mileage: string | null;
   frame_number: string | null;
   engine_number: string | null;
   registration_status: string | null;
   tax_expiry: string | null;
-  condition: string | null;
   notes: string | null;
-  purchase_date: string | null;
   acquisition_type: string | null;
   source_name: string | null;
-  repair_notes: string | null;
   stock_status: StockStatus;
   stock_branch_code: string | null;
   stock_branch_name: string | null;
@@ -410,17 +406,13 @@ export default function AdminStockListPage() {
       year: bike.year || "",
       color: bike.color || "",
       license_plate: bike.license_plate || "",
-      mileage: bike.mileage || "",
       frame_number: bike.frame_number || "",
       engine_number: bike.engine_number || "",
       registration_status: bike.registration_status || "",
       tax_expiry: bike.tax_expiry || "",
-      condition: bike.condition || "",
       notes: bike.notes || "",
-      purchase_date: bike.purchase_date || "",
       acquisition_type: bike.acquisition_type || "",
       source_name: bike.source_name || "",
-      repair_notes: bike.repair_notes || "",
       stock_status: bike.stock_status,
       stock_branch_code: bike.stock_branch_code || "",
       stock_branch_name: bike.stock_branch_name || "",
@@ -477,17 +469,13 @@ export default function AdminStockListPage() {
         year,
         color,
         license_plate,
-        mileage,
         frame_number,
         engine_number,
         registration_status,
         tax_expiry,
-        condition,
         notes,
-        purchase_date,
         acquisition_type,
         source_name,
-        repair_notes,
         stock_status,
         stock_branch_code,
         stock_branch_name,
@@ -1082,17 +1070,13 @@ export default function AdminStockListPage() {
             year: bike.year || null,
             color: bike.color || null,
             license_plate: bike.license_plate || null,
-            mileage: bike.mileage || null,
             frame_number: bike.frame_number || null,
             engine_number: bike.engine_number || null,
             registration_status: bike.registration_status || null,
             tax_expiry: bike.tax_expiry || null,
-            condition: bike.condition || null,
             notes: bike.notes || null,
-            purchase_date: bike.purchase_date || null,
             acquisition_type: bike.acquisition_type || null,
             source_name: bike.source_name || null,
-            repair_notes: bike.repair_notes || null,
             active: true,
             image_url: firstPhoto,
             stock_motorcycle_id: bike.id,

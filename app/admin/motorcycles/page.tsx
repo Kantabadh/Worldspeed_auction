@@ -20,7 +20,6 @@ type MotorcycleDetails = {
   year: string;
   color: string;
   license_plate: string;
-  mileage: string;
   frame_number: string;
   engine_number: string;
   registration_status: string;
@@ -99,7 +98,6 @@ const detailFields: {
   { key: "year", label: "ปี", placeholder: "เช่น 2020" },
   { key: "color", label: "สี", placeholder: "เช่น แดง" },
   { key: "license_plate", label: "ทะเบียน", placeholder: "เช่น 1กก 1234" },
-  { key: "mileage", label: "เลขไมล์", placeholder: "เช่น 25,000 กม." },
   { key: "frame_number", label: "เลขตัวถัง", placeholder: "เลขตัวถัง" },
   { key: "engine_number", label: "เลขเครื่อง", placeholder: "เลขเครื่อง" },
   {
@@ -143,7 +141,6 @@ function createEmptyDetails(): MotorcycleDetails {
     year: "",
     color: "",
     license_plate: "",
-    mileage: "",
     frame_number: "",
     engine_number: "",
     registration_status: "",
@@ -267,7 +264,6 @@ function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
     year: bike.year || "",
     color: bike.color || "",
     license_plate: bike.license_plate || "",
-    mileage: bike.mileage || "",
     frame_number: bike.frame_number || "",
     engine_number: bike.engine_number || "",
     registration_status: bike.registration_status || "",
@@ -369,7 +365,6 @@ export default function AdminMotorcyclesPage() {
       year: bike.year || "",
       color: bike.color || "",
       license_plate: bike.license_plate || "",
-      mileage: bike.mileage || "",
       frame_number: bike.frame_number || "",
       engine_number: bike.engine_number || "",
       registration_status: bike.registration_status || "",
@@ -476,7 +471,6 @@ export default function AdminMotorcyclesPage() {
         year,
         color,
         license_plate,
-        mileage,
         frame_number,
         engine_number,
         registration_status,
@@ -560,7 +554,7 @@ export default function AdminMotorcyclesPage() {
         .from("motorcycles")
         .insert(newMotorcycleInput)
         .select(
-          "id, lot_number, motorcycle_name, cost_price, brand, model, year, color, license_plate, mileage, frame_number, engine_number, registration_status, tax_expiry, acquisition_type, source_name, condition, notes, active"
+          "id, lot_number, motorcycle_name, cost_price, brand, model, year, color, license_plate, frame_number, engine_number, registration_status, tax_expiry, acquisition_type, source_name, condition, notes, active"
         )
         .single();
 
@@ -589,7 +583,6 @@ export default function AdminMotorcyclesPage() {
           year: motorcycleData.year || "",
           color: motorcycleData.color || "",
           license_plate: motorcycleData.license_plate || "",
-          mileage: motorcycleData.mileage || "",
           frame_number: motorcycleData.frame_number || "",
           engine_number: motorcycleData.engine_number || "",
           registration_status: motorcycleData.registration_status || "",
@@ -1100,7 +1093,6 @@ export default function AdminMotorcyclesPage() {
         bike.year,
         bike.color,
         bike.license_plate,
-        bike.mileage,
         bike.frame_number,
         bike.engine_number,
         bike.registration_status,

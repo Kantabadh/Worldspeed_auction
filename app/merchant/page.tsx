@@ -19,7 +19,6 @@ type Motorcycle = {
   year: string | null;
   color: string | null;
   license_plate: string | null;
-  mileage: string | null;
   frame_number: string | null;
   engine_number: string | null;
   registration_status: string | null;
@@ -38,7 +37,6 @@ type Offer = {
   year: string;
   color: string;
   license_plate: string;
-  mileage: string;
   frame_number: string;
   engine_number: string;
   registration_status: string;
@@ -439,7 +437,6 @@ export default function MerchantPage() {
           year,
           color,
           license_plate,
-          mileage,
           frame_number,
           engine_number,
           registration_status,
@@ -500,7 +497,6 @@ export default function MerchantPage() {
           year: bike.year || "",
           color: bike.color || "",
           license_plate: bike.license_plate || "",
-          mileage: bike.mileage || "",
           frame_number: bike.frame_number || "",
           engine_number: bike.engine_number || "",
           registration_status: bike.registration_status || "",
@@ -739,7 +735,6 @@ export default function MerchantPage() {
         offer.year,
         offer.color,
         offer.license_plate,
-        offer.mileage,
         offer.frame_number,
         offer.engine_number,
         offer.registration_status,
