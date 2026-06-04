@@ -1536,7 +1536,7 @@ export default function MerchantPage() {
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                            <p className="text-xl font-bold text-slate-900">
                               {isStarred ? "⭐ " : ""}
                               ลำดับ {displayVisibleNumber}
                             </p>
