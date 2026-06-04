@@ -57,11 +57,30 @@ type StockEditForm = {
   notes: string;
 };
 
+type BranchCode =
+  | "all"
+  | "bangkapi"
+  | "bangbon"
+  | "rangsit"
+  | "sukhapiban3"
+  | "tohlim"
+  | "other";
+
 const registrationStatusOptions: RegistrationStatus[] = [
   "",
   "มีเล่ม",
   "ปิดบัญชี",
   "อื่น",
+];
+
+const branchFilterOptions: { code: BranchCode; label: string }[] = [
+  { code: "all", label: "ทั้งหมด" },
+  { code: "bangkapi", label: "บางกะปิ" },
+  { code: "bangbon", label: "บางบอน" },
+  { code: "rangsit", label: "รังสิต" },
+  { code: "sukhapiban3", label: "สุขาภิบาล3" },
+  { code: "tohlim", label: "โต๊ะลิ้ม" },
+  { code: "other", label: "อื่น" },
 ];
 
 function getSavedStaffProfile() {
@@ -129,6 +148,16 @@ function normalizeFrameNumber(value?: string | null) {
   return (value || "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function isAdminOrOwner(profile?: StaffProfile | null) {
+  return profile?.role === "owner" || profile?.role === "admin";
+}
+
+function matchesBranchFilter(bike: StockMotorcycle, branchCode: BranchCode) {
+  if (branchCode === "all") return true;
+
+  return bike.stock_branch_code === branchCode;
+}
+
 function getMotorcycleTitle(bike: StockMotorcycle) {
   return (
     [bike.brand, bike.model].filter(Boolean).join(" ") ||
@@ -137,9 +166,18 @@ function getMotorcycleTitle(bike: StockMotorcycle) {
   );
 }
 
+function getDisplayBrand(bike: StockMotorcycle) {
+  if (bike.brand?.trim()) return bike.brand.trim();
+
+  const nameParts = (bike.motorcycle_name || "").trim().split(/\s+/);
+  const [fallbackBrand = ""] = nameParts;
+
+  return nameParts.length > 1 ? fallbackBrand : "";
+}
+
 function createStockEditForm(bike: StockMotorcycle): StockEditForm {
   return {
-    brand: bike.brand || "",
+    brand: bike.brand || getDisplayBrand(bike),
     model: bike.model || "",
     year: bike.year || "",
     frame_number: bike.frame_number || "",
@@ -191,8 +229,20 @@ export default function BranchStockPage() {
   const [sendingCenterId, setSendingCenterId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [selectedBranchCode, setSelectedBranchCode] =
+    useState<BranchCode>("all");
 
   const branchName = staffProfile?.branch_name?.trim() || "";
+  const canViewAllBranches = isAdminOrOwner(staffProfile);
+  const isStockStaff = staffProfile?.role === "stock_staff";
+  const visibleStockMotorcycles = useMemo(() => {
+    if (!canViewAllBranches) return stockMotorcycles;
+
+    return stockMotorcycles.filter((bike) =>
+      matchesBranchFilter(bike, selectedBranchCode)
+    );
+  }, [canViewAllBranches, selectedBranchCode, stockMotorcycles]);
+
   const duplicateFrameNumbers = useMemo(() => {
     const counts = new Map<string, number>();
 
@@ -343,11 +393,14 @@ export default function BranchStockPage() {
   }
 
   function canManageBranchStock(bike: StockMotorcycle) {
+    if (bike.stock_status !== "branch_stock") return false;
+
+    if (isAdminOrOwner(staffProfile)) return true;
+
     return Boolean(
       staffProfile?.role === "stock_staff" &&
         staffProfile.branch_code &&
-        bike.stock_branch_code === staffProfile.branch_code &&
-        bike.stock_status === "branch_stock"
+        bike.stock_branch_code === staffProfile.branch_code
     );
   }
 
@@ -406,12 +459,20 @@ export default function BranchStockPage() {
         missing_detail_remark: null,
       };
 
-      const { error } = await supabase
+      let updateQuery = supabase
         .from("stock_motorcycles")
         .update(updatedStockInput)
         .eq("id", bike.id)
-        .eq("stock_branch_code", staffProfile?.branch_code || "")
         .eq("stock_status", "branch_stock");
+
+      if (staffProfile?.role === "stock_staff") {
+        updateQuery = updateQuery.eq(
+          "stock_branch_code",
+          staffProfile.branch_code || ""
+        );
+      }
+
+      const { error } = await updateQuery;
 
       if (error) throw error;
 
@@ -457,12 +518,20 @@ export default function BranchStockPage() {
 
       if (photoError) throw photoError;
 
-      const { error } = await supabase
+      let deleteQuery = supabase
         .from("stock_motorcycles")
         .delete()
         .eq("id", bike.id)
-        .eq("stock_branch_code", staffProfile?.branch_code || "")
         .eq("stock_status", "branch_stock");
+
+      if (staffProfile?.role === "stock_staff") {
+        deleteQuery = deleteQuery.eq(
+          "stock_branch_code",
+          staffProfile.branch_code || ""
+        );
+      }
+
+      const { error } = await deleteQuery;
 
       if (error) throw error;
 
@@ -508,12 +577,20 @@ export default function BranchStockPage() {
         missing_detail_remark: missingDetailRemark,
       };
 
-      const { error } = await supabase
+      let updateQuery = supabase
         .from("stock_motorcycles")
         .update(updateInput)
         .eq("id", bike.id)
-        .eq("stock_branch_code", staffProfile?.branch_code || "")
         .eq("stock_status", "branch_stock");
+
+      if (staffProfile?.role === "stock_staff") {
+        updateQuery = updateQuery.eq(
+          "stock_branch_code",
+          staffProfile.branch_code || ""
+        );
+      }
+
+      const { error } = await updateQuery;
 
       if (error) throw error;
 
@@ -576,10 +653,12 @@ export default function BranchStockPage() {
           </div>
 
           <div className="mt-4">
-            <h1 className="text-2xl font-bold text-gray-900">คลังสาขา</h1>
-            {branchName && (
+            <h1 className="text-2xl font-bold text-gray-900">
+              {canViewAllBranches ? "คลังสาขาทั้งหมด" : "คลังสาขา"}
+            </h1>
+            {!canViewAllBranches && (
               <p className="mt-2 inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700 ring-1 ring-blue-200">
-                คลังสาขา: {branchName}
+                คลังสาขา: {branchName || "-"}
               </p>
             )}
           </div>
@@ -599,16 +678,13 @@ export default function BranchStockPage() {
 
           <section className="mt-5 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-200 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  รายการรถในคลังสาขา
-                </h2>
-                {branchName && (
-                  <p className="mt-1 text-sm text-gray-600">
-                    คลังสาขา: {branchName}
-                  </p>
-                )}
-              </div>
+              {isStockStaff ? (
+                <p className="text-sm text-gray-600">
+                  คลังสาขา: {branchName || "-"}
+                </p>
+              ) : (
+                <div />
+              )}
 
               <button
                 type="button"
@@ -619,24 +695,46 @@ export default function BranchStockPage() {
               </button>
             </div>
 
+            {canViewAllBranches && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {branchFilterOptions.map((option) => {
+                  const isActive = selectedBranchCode === option.code;
+
+                  return (
+                    <button
+                      key={option.code}
+                      type="button"
+                      onClick={() => setSelectedBranchCode(option.code)}
+                      className={
+                        isActive
+                          ? "rounded-full bg-black px-4 py-2 text-sm font-semibold text-white"
+                          : "rounded-full border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {isLoading && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5 text-gray-600">
                 กำลังโหลดข้อมูล...
               </div>
             )}
 
-            {!isLoading && stockMotorcycles.length === 0 && (
+            {!isLoading && visibleStockMotorcycles.length === 0 && (
               <div className="mt-4 rounded-2xl bg-gray-50 p-5">
-                <p className="font-semibold text-gray-900">ยังไม่มีรถในคลังสาขา</p>
-                <p className="mt-1 text-sm text-gray-600">
-                  เพิ่มรถจากหน้าเพิ่มรถเข้าคลัง แล้วรายการจะแสดงที่นี่
+                <p className="font-semibold text-gray-900">
+                  ยังไม่มีรถในคลังสาขานี้
                 </p>
               </div>
             )}
 
-            {!isLoading && stockMotorcycles.length > 0 && (
+            {!isLoading && visibleStockMotorcycles.length > 0 && (
               <div className="mt-4 grid gap-3">
-                {stockMotorcycles.map((bike) => {
+                {visibleStockMotorcycles.map((bike) => {
                   const thumbnail =
                     bike.stock_motorcycle_photos?.[0]?.image_url || null;
                   const canManage = canManageBranchStock(bike);
@@ -688,8 +786,12 @@ export default function BranchStockPage() {
 
                           <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-2">
                             <p>
+                              <span className="font-semibold">สาขา:</span>{" "}
+                              {bike.stock_branch_name || "-"}
+                            </p>
+                            <p>
                               <span className="font-semibold">ยี่ห้อ:</span>{" "}
-                              {bike.brand || "-"}
+                              {getDisplayBrand(bike) || "-"}
                             </p>
                             <p>
                               <span className="font-semibold">รุ่น:</span>{" "}

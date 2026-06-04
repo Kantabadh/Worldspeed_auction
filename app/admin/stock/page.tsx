@@ -230,10 +230,9 @@ export default function AdminStockPage() {
     [photoFiles]
   );
 
-  async function generateStockNumber(branch: SourceBranch) {
+  async function getNextUniqueStockNumber(branch: SourceBranch) {
     if (!branch) {
-      setStockNumber("");
-      return;
+      return "";
     }
 
     const prefix = sourcePrefixMap[branch];
@@ -244,21 +243,46 @@ export default function AdminStockPage() {
       .like("stock_number", `${prefix}%`);
 
     if (error) {
-      setErrorMessage(error.message);
-      setStockNumber("");
-      return;
+      throw error;
     }
 
+    const existingStockNumbers = new Set(
+      (data || [])
+        .map((item) => item.stock_number || "")
+        .filter(Boolean)
+    );
     const highestNumber = (data || []).reduce((highest, item) => {
       const stockNumberText = item.stock_number || "";
-      const numericPart = Number(stockNumberText.slice(prefix.length));
+      const stockNumberMatch = stockNumberText.match(
+        new RegExp(`^${prefix}(\\d+)$`)
+      );
+      const numericPart = Number(stockNumberMatch?.[1]);
 
       if (Number.isNaN(numericPart)) return highest;
 
       return Math.max(highest, numericPart);
     }, 0);
+    let nextNumber = highestNumber + 1;
+    let nextStockNumber = `${prefix}${String(nextNumber).padStart(4, "0")}`;
 
-    setStockNumber(`${prefix}${String(highestNumber + 1).padStart(4, "0")}`);
+    while (existingStockNumbers.has(nextStockNumber)) {
+      nextNumber += 1;
+      nextStockNumber = `${prefix}${String(nextNumber).padStart(4, "0")}`;
+    }
+
+    return nextStockNumber;
+  }
+
+  async function generateStockNumber(branch: SourceBranch) {
+    try {
+      const nextStockNumber = await getNextUniqueStockNumber(branch);
+      setStockNumber(nextStockNumber);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "สร้างรหัสสต็อกไม่สำเร็จ"
+      );
+      setStockNumber("");
+    }
   }
 
   async function refreshStaffProfile() {
@@ -410,11 +434,6 @@ export default function AdminStockPage() {
       return;
     }
 
-    if (!stockNumber.trim()) {
-      alert("ระบบยังไม่ได้สร้างรหัสสต็อก กรุณาเลือกสาขาอีกครั้ง");
-      return;
-    }
-
     const finalSourceName = isStockStaff
       ? staffBranchName
       : selectedSourceBranch === "อื่น"
@@ -468,17 +487,27 @@ export default function AdminStockPage() {
       return;
     }
 
-    const generatedMotorcycleName =
-      [finalBrand, details.model.trim()].filter(Boolean).join(" ") ||
-      `รอกรอกข้อมูล ${stockNumber.trim()}`;
-
     setSavingMode(saveMode);
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
+      const finalStockNumber = await getNextUniqueStockNumber(
+        selectedSourceBranch
+      );
+
+      if (!finalStockNumber) {
+        throw new Error("ไม่สามารถสร้างรหัสสต็อกได้ กรุณาเลือกสาขาใหม่");
+      }
+
+      const generatedMotorcycleName =
+        [finalBrand, details.model.trim()].filter(Boolean).join(" ") ||
+        `รอกรอกข้อมูล ${finalStockNumber}`;
+
+      const cleanedDetails = cleanDetails(details);
       const newStockInput = {
-        stock_number: stockNumber.trim(),
+        ...cleanedDetails,
+        stock_number: finalStockNumber,
         motorcycle_name: generatedMotorcycleName,
         cost_price: cleanMoney(costPrice),
         stock_status: isStockStaff ? "branch_stock" : "center_stock",
@@ -495,7 +524,6 @@ export default function AdminStockPage() {
               created_by_staff_email: staffProfile?.email || null,
             }
           : {}),
-        ...cleanDetails(details),
       };
 
       const { data: stockData, error: stockError } = await supabase
@@ -509,7 +537,7 @@ export default function AdminStockPage() {
       const uploadedPhotoCount = await uploadMultipleStockPhotos(
         photoFiles,
         Number(stockData.id),
-        stockNumber || generatedMotorcycleName
+        finalStockNumber || generatedMotorcycleName
       );
 
       await createAuditLog({
@@ -524,7 +552,6 @@ export default function AdminStockPage() {
           stock_number: stockData.stock_number || "",
           motorcycle_name: stockData.motorcycle_name,
           cost_price: Number(stockData.cost_price || 0),
-          brand: finalBrand || "",
           is_complete: saveMode === "complete",
           stock_status: stockData.stock_status,
           stock_status_thai: stockData.stock_status,
@@ -534,7 +561,8 @@ export default function AdminStockPage() {
           source_name: finalSourceName,
           registration_status: finalRegistrationStatus || "",
           uploaded_photo_count: uploadedPhotoCount,
-          ...cleanDetails(details),
+          ...cleanedDetails,
+          brand: finalBrand || "",
         },
       });
 
