@@ -12,6 +12,7 @@ type MotorcyclePhoto = {
 type Motorcycle = {
   id: number;
   auction_round_id: number | null;
+  stock_motorcycle_id: number | null;
   lot_number: string;
   motorcycle_name: string;
   brand: string | null;
@@ -31,6 +32,7 @@ type Motorcycle = {
 type Offer = {
   motorcycle_id: number;
   lot: string;
+  sortOrder: number | null;
   motorcycle: string;
   brand: string;
   model: string;
@@ -84,8 +86,89 @@ type RoundLotMapping = {
   sort_order?: number | null;
 };
 
+type StockMotorcycleOrderSnapshot = {
+  id: number;
+  display_order: number | null;
+};
+
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
+
+function cleanOptionalText(value: string | null | undefined) {
+  return value?.trim() || "";
+}
+
+function normalizeSortText(value: string | null | undefined) {
+  return cleanOptionalText(value).toLowerCase();
+}
+
+function parseSortYear(value: string | null | undefined) {
+  const year = Number(cleanOptionalText(value));
+
+  return Number.isFinite(year) ? year : null;
+}
+
+function formatVisibleNumber(value: number) {
+  return String(value).padStart(3, "0");
+}
+
+function compareSortYearDescending(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  const yearA = parseSortYear(a);
+  const yearB = parseSortYear(b);
+
+  if (yearA !== null && yearB !== null) return yearB - yearA;
+  if (yearA !== null) return -1;
+  if (yearB !== null) return 1;
+
+  return 0;
+}
+
+function compareOfferSortFields(a: Offer, b: Offer) {
+  return (
+    normalizeSortText(a.brand).localeCompare(normalizeSortText(b.brand), "th", {
+      numeric: true,
+      sensitivity: "base",
+    }) ||
+    normalizeSortText(a.model).localeCompare(normalizeSortText(b.model), "th", {
+      numeric: true,
+      sensitivity: "base",
+    }) ||
+    compareSortYearDescending(a.year, b.year) ||
+    normalizeSortText(a.license_plate).localeCompare(
+      normalizeSortText(b.license_plate),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    normalizeSortText(a.frame_number).localeCompare(
+      normalizeSortText(b.frame_number),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    Number(a.motorcycle_id) - Number(b.motorcycle_id)
+  );
+}
+
+function sortOffersBySavedOrder(a: Offer, b: Offer) {
+  const sortA = a.sortOrder;
+  const sortB = b.sortOrder;
+
+  if (sortA !== null && sortA !== undefined) {
+    if (sortB !== null && sortB !== undefined) {
+      const sortResult = Number(sortA) - Number(sortB);
+
+      if (sortResult !== 0) return sortResult;
+    }
+
+    return -1;
+  }
+
+  if (sortB !== null && sortB !== undefined) return 1;
+
+  return compareOfferSortFields(a, b);
+}
 
 export default function MerchantPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
@@ -430,6 +513,7 @@ export default function MerchantPage() {
         .select(`
           id,
           auction_round_id,
+          stock_motorcycle_id,
           lot_number,
           motorcycle_name,
           brand,
@@ -481,6 +565,34 @@ export default function MerchantPage() {
         }
       });
 
+      const stockMotorcycleIds = [
+        ...new Set(
+          ((data as Motorcycle[] | null) || [])
+            .map((bike) => bike.stock_motorcycle_id)
+            .filter((id): id is number => typeof id === "number")
+        ),
+      ];
+      const stockDisplayOrderById = new Map<number, number | null>();
+
+      if (stockMotorcycleIds.length > 0) {
+        const { data: stockOrderData, error: stockOrderError } = await supabase
+          .from("stock_motorcycles")
+          .select("id, display_order")
+          .in("id", stockMotorcycleIds);
+
+        if (stockOrderError) {
+          setErrorMessage(stockOrderError.message);
+          setIsLoadingCurrentRound(false);
+          return;
+        }
+
+        ((stockOrderData as StockMotorcycleOrderSnapshot[]) || []).forEach(
+          (stock) => {
+            stockDisplayOrderById.set(stock.id, stock.display_order);
+          }
+        );
+      }
+
       const motorcycleOffers =
         data?.map((bike: Motorcycle) => ({
           motorcycle_id: Number(bike.id),
@@ -490,7 +602,9 @@ export default function MerchantPage() {
             bike.lot_number ||
             String(bike.id),
           sortOrder:
-            mappingByMotorcycleId.get(Number(bike.id))?.sort_order || null,
+            bike.stock_motorcycle_id
+              ? stockDisplayOrderById.get(bike.stock_motorcycle_id) ?? null
+              : null,
           motorcycle: bike.motorcycle_name,
           brand: bike.brand || "",
           model: bike.model || "",
@@ -507,12 +621,7 @@ export default function MerchantPage() {
           price: "",
         })) || [];
 
-      motorcycleOffers.sort((a, b) => {
-        if (a.sortOrder && b.sortOrder) return a.sortOrder - b.sortOrder;
-        if (a.sortOrder) return -1;
-        if (b.sortOrder) return 1;
-        return a.lot.localeCompare(b.lot, "th", { numeric: true });
-      });
+      motorcycleOffers.sort(sortOffersBySavedOrder);
 
       const savedPricesText = localStorage.getItem("merchantOfferPrices");
       const savedPrices = savedPricesText ? JSON.parse(savedPricesText) : {};
@@ -708,8 +817,17 @@ export default function MerchantPage() {
     (!hasSubmitted || editableLotCount > 0);
 
   const sortedOffers = useMemo(() => {
-    return [...offers].sort((a, b) => a.lot.localeCompare(b.lot));
+    return [...offers].sort(sortOffersBySavedOrder);
   }, [offers]);
+
+  const sortedOfferNumberById = useMemo(() => {
+    return new Map(
+      sortedOffers.map((offer, index) => [
+        Number(offer.motorcycle_id),
+        index + 1,
+      ])
+    );
+  }, [sortedOffers]);
 
   const starredOffers = useMemo(() => {
     return sortedOffers.filter((offer) =>
@@ -728,6 +846,7 @@ export default function MerchantPage() {
       const lotCanEdit = canEditThisLot(Number(offer.motorcycle_id));
 
       const searchableText = [
+        sortedOfferNumberById.get(Number(offer.motorcycle_id)),
         offer.lot,
         offer.motorcycle,
         offer.brand,
@@ -764,6 +883,7 @@ export default function MerchantPage() {
     starredLotIds,
     editableLotIds,
     hasSubmitted,
+    sortedOfferNumberById,
   ]);
 
   const totalPages = Math.max(
@@ -814,10 +934,16 @@ export default function MerchantPage() {
     }, 0);
   }
 
-  function jumpToStarredLot(lotNumber: string) {
+  function jumpToStarredLot(motorcycleId: number) {
+    const sortedIndex = sortedOffers.findIndex(
+      (offer) => Number(offer.motorcycle_id) === Number(motorcycleId)
+    );
+
     setOfferFilter("all");
-    setSearchText(lotNumber);
-    setCurrentPage(1);
+    setSearchText("");
+    setCurrentPage(
+      sortedIndex >= 0 ? Math.floor(sortedIndex / ITEMS_PER_PAGE) + 1 : 1
+    );
   }
 
   function renderPaginationControls() {
@@ -1053,32 +1179,39 @@ export default function MerchantPage() {
               </div>
 
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                {starredOffers.map((offer) => (
-                  <button
-                    key={offer.motorcycle_id}
-                    type="button"
-                    onClick={() => jumpToStarredLot(offer.lot)}
-                    className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
-                      ลำดับ {offer.lot}
-                    </p>
+                {starredOffers.map((offer) => {
+                  const starredVisibleNumber =
+                    sortedOfferNumberById.get(Number(offer.motorcycle_id)) || 0;
 
-                    <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
-                      {offer.motorcycle}
-                    </p>
+                  return (
+                    <button
+                      key={offer.motorcycle_id}
+                      type="button"
+                      onClick={() =>
+                        jumpToStarredLot(Number(offer.motorcycle_id))
+                      }
+                      className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
+                        ลำดับ {formatVisibleNumber(starredVisibleNumber)}
+                      </p>
 
-                    {offer.price ? (
-                      <p className="mt-1 text-xs font-semibold text-green-700">
-                        {Number(offer.price).toLocaleString()} บาท
+                      <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
+                        {offer.motorcycle}
                       </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-gray-500">
-                        ยังไม่ใส่ราคา
-                      </p>
-                    )}
-                  </button>
-                ))}
+
+                      {offer.price ? (
+                        <p className="mt-1 text-xs font-semibold text-green-700">
+                          {Number(offer.price).toLocaleString()} บาท
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-gray-500">
+                          ยังไม่ใส่ราคา
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -1106,7 +1239,11 @@ export default function MerchantPage() {
               <div className="mt-4">{renderPaginationControls()}</div>
 
               <div className="mt-4 space-y-4">
-                {paginatedOffers.map((offer) => {
+                {paginatedOffers.map((offer, index) => {
+                  const visibleNumber =
+                    (safeCurrentPage - 1) * ITEMS_PER_PAGE + index + 1;
+                  const displayVisibleNumber =
+                    formatVisibleNumber(visibleNumber);
                   const originalIndex = offers.findIndex(
                     (item) =>
                       Number(item.motorcycle_id) === Number(offer.motorcycle_id)
@@ -1207,7 +1344,7 @@ export default function MerchantPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                               {isStarred ? "⭐ " : ""}
-                              ลำดับ {offer.lot}
+                              ลำดับ {displayVisibleNumber}
                             </p>
 
                             <h3 className="mt-1 text-lg font-bold text-gray-900">
@@ -1280,7 +1417,7 @@ export default function MerchantPage() {
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div>
                                 <p className="font-semibold text-gray-900">ลำดับ</p>
-                                <p>{offer.lot || "-"}</p>
+                                <p>{displayVisibleNumber}</p>
                               </div>
 
                               <div>

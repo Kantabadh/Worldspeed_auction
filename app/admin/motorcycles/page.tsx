@@ -35,6 +35,7 @@ type DetailKey = keyof MotorcycleDetails;
 type Motorcycle = MotorcycleDetails & {
   id: number;
   lot_number: string;
+  round_lot_id?: number | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
   auction_round_id?: number | null;
@@ -51,14 +52,17 @@ type Motorcycle = MotorcycleDetails & {
 type StockMotorcycleSnapshot = {
   id: number;
   stock_number: string | null;
+  display_order: number | null;
   brand: string | null;
   model: string | null;
   motorcycle_name: string | null;
   license_plate: string | null;
   frame_number: string | null;
   registration_status: string | null;
+  tax_expiry: string | null;
   cost_price: number | null;
   stock_branch_name: string | null;
+  source_name: string | null;
   year: string | null;
   color: string | null;
   notes: string | null;
@@ -73,6 +77,7 @@ type CurrentAuctionRound = {
 };
 
 type RoundLotMapping = {
+  id: number;
   original_motorcycle_id: number | null;
   lot_number: string | null;
   round_lot_number?: string | null;
@@ -86,8 +91,6 @@ type StaffProfile = {
   active: boolean;
   expiresAt?: number;
 };
-
-type SortMode = "default" | "brandModel";
 
 type AuditLogInput = {
   action: string;
@@ -243,23 +246,13 @@ function normalizeSortText(value: string | null | undefined) {
   return cleanOptionalText(value).toLowerCase();
 }
 
-function getRoundLotDisplay(bike: Motorcycle) {
-  return (
-    cleanOptionalText(bike.round_lot_number) ||
-    cleanOptionalText(bike.lot_number) ||
-    "-"
-  );
+function parseSortYear(value: string | null | undefined) {
+  const year = Number(cleanOptionalText(value));
+
+  return Number.isFinite(year) ? year : null;
 }
 
-function getMotorcycleDisplayTitle(bike: Motorcycle) {
-  return (
-    cleanOptionalText(bike.motorcycle_name) ||
-    [getDisplayBrand(bike), getDisplayModel(bike)].filter(Boolean).join(" ") ||
-    "ไม่ระบุรุ่น"
-  );
-}
-
-function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
+function compareSortOrder(a: Motorcycle, b: Motorcycle) {
   const sortA = a.sort_order;
   const sortB = b.sort_order;
 
@@ -277,49 +270,72 @@ function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
   if (sortA !== null && sortA !== undefined) return -1;
   if (sortB !== null && sortB !== undefined) return 1;
 
-  const lotResult = getRoundLotDisplay(a).localeCompare(
-    getRoundLotDisplay(b),
-    "th",
-    { numeric: true }
-  );
+  return 0;
+}
 
-  if (lotResult !== 0) return lotResult;
-
+function getRoundLotDisplay(bike: Motorcycle) {
   return (
-    getDisplayBrand(a).localeCompare(getDisplayBrand(b), "th", { numeric: true }) ||
-    getDisplayModel(a).localeCompare(getDisplayModel(b), "th", { numeric: true }) ||
-    (a.frame_number || "").localeCompare(b.frame_number || "", "th", {
-      numeric: true,
-    })
+    cleanOptionalText(bike.round_lot_number) ||
+    cleanOptionalText(bike.lot_number) ||
+    "-"
+  );
+}
+
+function getMotorcycleDisplayTitle(bike: Motorcycle) {
+  return (
+    cleanOptionalText(bike.motorcycle_name) ||
+    [getDisplayBrand(bike), getDisplayModel(bike)].filter(Boolean).join(" ") ||
+    "ไม่ระบุรุ่น"
+  );
+}
+
+function compareSortYearDescending(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  const yearA = parseSortYear(a);
+  const yearB = parseSortYear(b);
+
+  if (yearA !== null && yearB !== null) return yearB - yearA;
+  if (yearA !== null) return -1;
+  if (yearB !== null) return 1;
+
+  return 0;
+}
+
+function compareMotorcycleSortFields(a: Motorcycle, b: Motorcycle) {
+  return (
+    normalizeSortText(getDisplayBrand(a)).localeCompare(
+      normalizeSortText(getDisplayBrand(b)),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    normalizeSortText(getDisplayModel(a)).localeCompare(
+      normalizeSortText(getDisplayModel(b)),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    compareSortYearDescending(a.year, b.year) ||
+    normalizeSortText(a.license_plate).localeCompare(
+      normalizeSortText(b.license_plate),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    normalizeSortText(a.frame_number).localeCompare(
+      normalizeSortText(b.frame_number),
+      "th",
+      { numeric: true, sensitivity: "base" }
+    ) ||
+    Number(a.id) - Number(b.id)
   );
 }
 
 function sortMotorcyclesByBrandModel(a: Motorcycle, b: Motorcycle) {
-  const brandResult = normalizeSortText(getDisplayBrand(a)).localeCompare(
-    normalizeSortText(getDisplayBrand(b)),
-    "th",
-    { numeric: true, sensitivity: "base" }
-  );
+  return compareMotorcycleSortFields(a, b);
+}
 
-  if (brandResult !== 0) return brandResult;
-
-  const modelResult = normalizeSortText(getDisplayModel(a)).localeCompare(
-    normalizeSortText(getDisplayModel(b)),
-    "th",
-    { numeric: true, sensitivity: "base" }
-  );
-
-  if (modelResult !== 0) return modelResult;
-
-  const stockNumberResult = normalizeSortText(a.stock_number).localeCompare(
-    normalizeSortText(b.stock_number),
-    "th",
-    { numeric: true, sensitivity: "base" }
-  );
-
-  if (stockNumberResult !== 0) return stockNumberResult;
-
-  return sortChecklistMotorcycles(a, b);
+function sortChecklistMotorcycles(a: Motorcycle, b: Motorcycle) {
+  return compareSortOrder(a, b) || compareMotorcycleSortFields(a, b);
 }
 
 function getDetailsFromBike(bike: Motorcycle): MotorcycleDetails {
@@ -379,13 +395,13 @@ export default function AdminMotorcyclesPage() {
 
   const [searchText, setSearchText] = useState("");
   const [isSearchHelpOpen, setIsSearchHelpOpen] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("default");
   const [currentPage, setCurrentPage] = useState(1);
   const [openDetailIds, setOpenDetailIds] = useState<number[]>([]);
   const [movingBackId, setMovingBackId] = useState<number | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [isSavingSortOrder, setIsSavingSortOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   async function createAuditLog({
@@ -567,7 +583,7 @@ export default function AdminMotorcyclesPage() {
     if (activeRound) {
       const { data: roundLotData, error: roundLotError } = await supabase
         .from("auction_round_lots")
-        .select("original_motorcycle_id, lot_number, round_lot_number, sort_order")
+        .select("id, original_motorcycle_id, lot_number, round_lot_number, sort_order")
         .eq("auction_round_id", activeRound.id);
 
       if (roundLotError) {
@@ -600,14 +616,17 @@ export default function AdminMotorcyclesPage() {
           `
           id,
           stock_number,
+          display_order,
           brand,
           model,
           motorcycle_name,
           license_plate,
           frame_number,
           registration_status,
+          tax_expiry,
           cost_price,
           stock_branch_name,
+          source_name,
           year,
           color,
           notes
@@ -642,15 +661,18 @@ export default function AdminMotorcyclesPage() {
         frame_number: stockSnapshot?.frame_number || bike.frame_number,
         registration_status:
           stockSnapshot?.registration_status || bike.registration_status,
+        tax_expiry: stockSnapshot?.tax_expiry || bike.tax_expiry,
         cost_price: stockSnapshot?.cost_price ?? bike.cost_price,
         stock_branch_name:
           stockSnapshot?.stock_branch_name || bike.stock_branch_name || null,
+        source_name: stockSnapshot?.source_name || bike.source_name,
         year: stockSnapshot?.year || bike.year,
         color: stockSnapshot?.color || bike.color,
         notes: stockSnapshot?.notes || bike.notes,
+        round_lot_id: mapping?.id ?? null,
         round_lot_number:
           mapping?.round_lot_number || mapping?.lot_number || null,
-        sort_order: mapping?.sort_order ?? null,
+        sort_order: stockSnapshot?.display_order ?? null,
       };
     });
 
@@ -765,46 +787,83 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
+    const stockMotorcycleId = bike.stock_motorcycle_id;
+    const auctionMotorcycleId = bike.id;
+
+    if (!stockMotorcycleId) {
+      setErrorMessage("ไม่พบรหัสรถในคลังสำหรับบันทึกข้อมูล");
+      return;
+    }
+
     setErrorMessage("");
 
     try {
       const oldBikeData = getMotorcycleDetailPayload(bike);
+      const cleanedEditDetails = cleanDetails(editDetails);
+      const stockUpdatePayload = {
+        motorcycle_name: editMotorcycleName.trim(),
+        brand: cleanedEditDetails.brand,
+        model: cleanedEditDetails.model,
+        year: cleanedEditDetails.year,
+        color: cleanedEditDetails.color,
+        license_plate: cleanedEditDetails.license_plate,
+        frame_number: cleanedEditDetails.frame_number,
+        registration_status: cleanedEditDetails.registration_status,
+        tax_expiry: cleanedEditDetails.tax_expiry,
+        cost_price: cleanMoney(editCostPrice),
+        notes: cleanedEditDetails.notes,
+        source_name: cleanedEditDetails.source_name,
+      };
 
-      const updatedMotorcycleInput = {
+      const auctionUpdatePayload = {
         lot_number: editLotNumber.trim(),
         motorcycle_name: editMotorcycleName.trim(),
         cost_price: cleanMoney(editCostPrice),
-        ...cleanDetails(editDetails),
+        ...cleanedEditDetails,
       };
 
-      const { error } = await supabase
-        .from("motorcycles")
-        .update(updatedMotorcycleInput)
-        .eq("id", bike.id);
+      const { error: stockUpdateError } = await supabase
+        .from("stock_motorcycles")
+        .update(stockUpdatePayload)
+        .eq("id", stockMotorcycleId)
+        .select()
+        .single();
 
-      if (error) {
-        throw error;
+      if (stockUpdateError) {
+        throw stockUpdateError;
+      }
+
+      const { error: auctionUpdateError } = await supabase
+        .from("motorcycles")
+        .update(auctionUpdatePayload)
+        .eq("id", auctionMotorcycleId)
+        .select()
+        .single();
+
+      if (auctionUpdateError) {
+        throw auctionUpdateError;
       }
 
       const uploadedPhotoCount = await uploadMultiplePhotos(
         editPhotoFiles,
-        bike.id,
+        auctionMotorcycleId,
         editLotNumber
       );
 
       await createAuditLog({
         action: "motorcycle_updated",
-        targetType: "motorcycle",
-        targetId: String(bike.id),
+        targetType: "stock_motorcycle",
+        targetId: String(stockMotorcycleId),
         targetName: `Lot ${editLotNumber.trim()} • ${editMotorcycleName.trim()}`,
         details: {
           old_data: oldBikeData,
           new_data: {
-            motorcycle_id: bike.id,
+            stock_motorcycle_id: stockMotorcycleId,
+            auction_motorcycle_id: auctionMotorcycleId,
             lot_number: editLotNumber.trim(),
             motorcycle_name: editMotorcycleName.trim(),
             cost_price: cleanMoney(editCostPrice),
-            ...cleanDetails(editDetails),
+            ...cleanedEditDetails,
             active: bike.active,
           },
           uploaded_photo_count: uploadedPhotoCount,
@@ -813,10 +872,12 @@ export default function AdminMotorcyclesPage() {
 
       cancelEditing();
       await loadMotorcycles();
+      alert("บันทึกข้อมูลแล้ว");
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "บันทึกข้อมูลไม่สำเร็จ"
-      );
+      console.error("update auction motorcycle failed", error);
+      const message =
+        error instanceof Error ? error.message : "บันทึกข้อมูลไม่สำเร็จ";
+      setErrorMessage(`บันทึกไม่สำเร็จ: ${message}`);
     }
   }
 
@@ -950,6 +1011,110 @@ export default function AdminMotorcyclesPage() {
     );
   }
 
+  async function saveBrandModelSortOrder() {
+    if (!currentRound) {
+      setErrorMessage("ยังไม่มีรอบเสนอราคาปัจจุบัน");
+      return;
+    }
+
+    const currentRoundMotorcycles = motorcycles.filter(
+      (bike) => bike.auction_round_id === currentRound.id
+    );
+
+    if (currentRoundMotorcycles.length === 0) {
+      setErrorMessage("ยังไม่มีรถในรอบเสนอราคาปัจจุบัน");
+      return;
+    }
+
+    setIsSavingSortOrder(true);
+    setErrorMessage("");
+
+    try {
+      const sortedMotorcycles = [...currentRoundMotorcycles].sort(
+        sortMotorcyclesByBrandModel
+      ).map((bike, index) => ({
+        ...bike,
+        sort_order: index + 1,
+      }));
+
+      setMotorcycles((currentMotorcycles) => {
+        const sortedById = new Map(
+          sortedMotorcycles.map((bike) => [Number(bike.id), bike])
+        );
+
+        return currentMotorcycles
+          .map((bike) => sortedById.get(Number(bike.id)) || bike)
+          .sort(sortChecklistMotorcycles);
+      });
+      setCurrentPage(1);
+
+      const missingStockMotorcycle = sortedMotorcycles.find(
+        (bike) => !bike.stock_motorcycle_id
+      );
+
+      if (missingStockMotorcycle) {
+        throw new Error(
+          `ไม่พบ stock_motorcycles.id สำหรับรถ id ${missingStockMotorcycle.id}`
+        );
+      }
+
+      const { error: sortUpdateError } = await supabase.rpc(
+        "update_stock_motorcycle_display_order",
+        {
+          order_items: sortedMotorcycles.map((bike, index) => {
+            const stockMotorcycleId = bike.stock_motorcycle_id ?? bike.id;
+
+            return {
+              id: stockMotorcycleId,
+              display_order: index + 1,
+            };
+          }),
+        }
+      );
+
+      if (sortUpdateError) throw sortUpdateError;
+
+      await createAuditLog({
+        action: "auction_motorcycles_sorted",
+        targetType: "auction_round",
+        targetId: String(currentRound.id),
+        targetName: currentRound.round_name || `Round ${currentRound.id}`,
+        details: {
+          sort: "brand_model_year_license_frame_id",
+          motorcycle_count: sortedMotorcycles.length,
+          order: sortedMotorcycles.map((bike, index) => ({
+            motorcycle_id: bike.id,
+            stock_motorcycle_id: bike.stock_motorcycle_id || null,
+            display_order: index + 1,
+          })),
+        },
+      });
+
+      await loadMotorcycles();
+      alert("เรียงลำดับแล้ว");
+    } catch (error) {
+      const sortError = error as {
+        message?: string;
+        details?: string;
+        hint?: string;
+        code?: string;
+      };
+
+      console.error("sort auction motorcycles failed", {
+        message: sortError?.message,
+        details: sortError?.details,
+        hint: sortError?.hint,
+        code: sortError?.code,
+        error,
+      });
+      const message =
+        sortError?.message || "เรียงลำดับไม่สำเร็จ";
+      setErrorMessage(`เรียงลำดับไม่สำเร็จ: ${message}`);
+    }
+
+    setIsSavingSortOrder(false);
+  }
+
   function exportChecklistExcel() {
     if (!currentRound) {
       alert("ยังไม่มีรอบเสนอราคาปัจจุบัน");
@@ -969,10 +1134,13 @@ export default function AdminMotorcyclesPage() {
       "ลำดับ",
       "ยี่ห้อ",
       "รุ่น",
+      "ปีผลิต",
       "เลขตัวถัง",
       "สี",
       "ทะเบียน",
       "สถานะเล่ม",
+      "ภาษีหมดอายุ",
+      "ต้นทุน",
       "มาจาก",
       "หมายเหตุ",
     ];
@@ -981,10 +1149,13 @@ export default function AdminMotorcyclesPage() {
       index + 1,
       getDisplayBrand(bike) || "-",
       getDisplayModel(bike) || "-",
+      bike.year || "-",
       bike.frame_number || "-",
       bike.color || "-",
       bike.license_plate || "-",
       bike.registration_status || "-",
+      bike.tax_expiry || "-",
+      bike.cost_price ?? "",
       bike.source_name || "-",
       bike.notes || "",
     ]);
@@ -996,10 +1167,14 @@ export default function AdminMotorcyclesPage() {
       { wch: 8 },
       { wch: 16 },
       { wch: 22 },
+      { wch: 10 },
       { wch: 24 },
       { wch: 14 },
       { wch: 18 },
       { wch: 18 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 14 },
       { wch: 18 },
       { wch: 34 },
     ];
@@ -1234,12 +1409,8 @@ export default function AdminMotorcyclesPage() {
       return matchSearch;
     });
 
-    return [...matchingMotorcycles].sort(
-      sortMode === "brandModel"
-        ? sortMotorcyclesByBrandModel
-        : sortChecklistMotorcycles
-    );
-  }, [motorcycles, searchText, sortMode]);
+    return [...matchingMotorcycles].sort(sortChecklistMotorcycles);
+  }, [motorcycles, searchText]);
 
   const totalPages = Math.max(
     1,
@@ -1278,18 +1449,13 @@ export default function AdminMotorcyclesPage() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setSortMode("brandModel");
-                  setCurrentPage(1);
-                }}
-                disabled={!currentRound}
-                className={
-                  sortMode === "brandModel"
-                    ? "rounded-xl bg-blue-600 px-4 py-2 font-medium text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                    : "rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-                }
+                onClick={saveBrandModelSortOrder}
+                disabled={!currentRound || isSavingSortOrder}
+                className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               >
-                เรียงตามยี่ห้อ/รุ่น
+                {isSavingSortOrder
+                  ? "กำลังเรียง..."
+                  : "เรียงตามยี่ห้อ/รุ่น"}
               </button>
 
               <button
