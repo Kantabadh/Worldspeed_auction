@@ -27,7 +27,8 @@ type AuditLog = {
   created_at: string;
 };
 
-const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
+const ADMIN_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const STAFF_TIMEOUT_MS = ADMIN_SESSION_TIMEOUT_MS;
 
 const ACTION_LABELS: Record<string, string> = {
   auction_round_status_changed: "เปลี่ยนสถานะรอบเสนอราคา",

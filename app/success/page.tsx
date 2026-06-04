@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  formatAuctionDisplayOrder,
+  getAuctionDisplayLabel,
+} from "@/lib/auctionDisplayOrder";
 
 type Offer = {
   motorcycle_id: number;
+  display_order?: number | null;
   lot: string;
   motorcycle: string;
+  brand?: string;
+  model?: string;
+  year?: string;
+  license_plate?: string;
   price: string;
   wasEdited?: boolean;
 };
@@ -187,6 +196,27 @@ export default function SuccessPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {submission.offers.map((offer) => (
+              <div
+                key={offer.motorcycle_id}
+                className="rounded-2xl border bg-gray-50 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-bold text-gray-900">
+                    ลำดับ{" "}
+                    {formatAuctionDisplayOrder(offer.display_order ?? offer.lot)}{" "}
+                    {getAuctionDisplayLabel(offer)}
+                  </p>
+
+                  <p className="text-lg font-bold text-green-700">
+                    {Number(offer.price).toLocaleString()} บาท
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">

@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import {
+  formatAuctionDisplayOrder,
+  sortAuctionMotorcycles,
+} from "@/lib/auctionDisplayOrder";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -59,6 +63,7 @@ type ArrangementMotorcycle = {
   lot_number: string | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
+  display_order?: number | null;
   stock_number?: string | null;
   motorcycle_name: string | null;
   brand: string | null;
@@ -290,47 +295,8 @@ function getArrangementTitle(motorcycle: ArrangementMotorcycle | null) {
   );
 }
 
-function getArrangementStockOrLotNumber(motorcycle: ArrangementMotorcycle | null) {
-  return motorcycle?.stock_number || getArrangementLotNumber(motorcycle);
-}
-
-function compareArrangementMotorcycles(
-  a: ArrangementMotorcycle | null,
-  b: ArrangementMotorcycle | null
-) {
-  if (!a && !b) return 0;
-  if (!a) return 1;
-  if (!b) return -1;
-
-  const modelCompare = getArrangementModel(a).localeCompare(
-    getArrangementModel(b),
-    "th",
-    {
-      numeric: true,
-      sensitivity: "base",
-    }
-  );
-  if (modelCompare !== 0) return modelCompare;
-
-  const brandCompare = getArrangementBrand(a).localeCompare(
-    getArrangementBrand(b),
-    "th",
-    {
-      numeric: true,
-      sensitivity: "base",
-    }
-  );
-  if (brandCompare !== 0) return brandCompare;
-
-  return getArrangementStockOrLotNumber(a).localeCompare(
-    getArrangementStockOrLotNumber(b),
-    "th",
-    { numeric: true, sensitivity: "base" }
-  );
-}
-
 function sortArrangementMotorcycles(items: ArrangementMotorcycle[]) {
-  return [...items].sort(compareArrangementMotorcycles);
+  return sortAuctionMotorcycles(items);
 }
 
 export default function AdminRoundDetailPage() {
@@ -392,6 +358,7 @@ export default function AdminRoundDetailPage() {
       .select(
         `
         id,
+        display_order,
         lot_number,
         motorcycle_name,
         brand,
@@ -514,6 +481,7 @@ export default function AdminRoundDetailPage() {
           year: stockSnapshot?.year || motorcycle.year || null,
           color: stockSnapshot?.color || motorcycle.color || null,
           notes: stockSnapshot?.notes || motorcycle.notes || null,
+          display_order: motorcycle.display_order ?? null,
           round_lot_number:
             mapping?.round_lot_number || mapping?.lot_number || motorcycle.lot_number,
           sort_order: mapping?.sort_order || null,
@@ -522,7 +490,10 @@ export default function AdminRoundDetailPage() {
     );
 
     setArrangementMotorcycles(
-      sortArrangementMotorcycles(roundMotorcycles)
+      sortArrangementMotorcycles(roundMotorcycles).map((motorcycle, index) => ({
+        ...motorcycle,
+        display_order: index + 1,
+      }))
     );
   }
 
@@ -663,6 +634,12 @@ export default function AdminRoundDetailPage() {
     loadRoundDetail();
   }, [roundId]);
 
+  function getArrangementDisplayOrder(motorcycle: ArrangementMotorcycle | null) {
+    if (!motorcycle) return "---";
+
+    return formatAuctionDisplayOrder(motorcycle.display_order);
+  }
+
   const lotResults = useMemo(() => {
     const groupedLots = arrangementMotorcycles.reduce((summary, motorcycle) => {
       summary[String(motorcycle.id)] = {
@@ -732,7 +709,14 @@ export default function AdminRoundDetailPage() {
         };
       })
       .sort((a, b) => {
-        return compareArrangementMotorcycles(a.motorcycle, b.motorcycle);
+        const orderA = Number(a.motorcycle?.display_order);
+        const orderB = Number(b.motorcycle?.display_order);
+
+        if (Number.isFinite(orderA) && Number.isFinite(orderB)) {
+          return orderA - orderB;
+        }
+
+        return 0;
       });
   }, [arrangementMotorcycles, offers]);
 
@@ -744,7 +728,7 @@ export default function AdminRoundDetailPage() {
     return lotResults.filter((lot) => {
       const winnerText = lot.topOffers.map(getMerchantName).join(" ");
       const text = [
-        getArrangementLotNumber(lot.motorcycle),
+        getArrangementDisplayOrder(lot.motorcycle),
         lot.motorcycle?.motorcycle_name,
         winnerText,
       ]
@@ -1224,12 +1208,19 @@ export default function AdminRoundDetailPage() {
   function exportRoundExcel() {
     if (!round) return;
 
-    const sortedExportLots = [...filteredLotResults].sort((a, b) =>
-      compareArrangementMotorcycles(a.motorcycle, b.motorcycle)
-    );
+    const sortedExportLots = [...filteredLotResults].sort((a, b) => {
+      const orderA = Number(a.motorcycle?.display_order);
+      const orderB = Number(b.motorcycle?.display_order);
+
+      if (Number.isFinite(orderA) && Number.isFinite(orderB)) {
+        return orderA - orderB;
+      }
+
+      return 0;
+    });
     const rows = sortedExportLots.map((lot, index) => {
       return [
-        String(index + 1).padStart(3, "0"),
+        getArrangementDisplayOrder(lot.motorcycle),
         lot.motorcycle?.stock_number || "-",
         getArrangementBrand(lot.motorcycle),
         getArrangementModel(lot.motorcycle),
@@ -1491,7 +1482,7 @@ export default function AdminRoundDetailPage() {
                         <tr key={lot.lotKey} className="hover:bg-gray-50">
                           <td className="border p-3">
                             <p className="font-bold text-gray-900">
-                              ลำดับ {getArrangementLotNumber(lot.motorcycle)}
+                              ลำดับ {getArrangementDisplayOrder(lot.motorcycle)}
                             </p>
                             <p className="mt-1 font-semibold text-gray-900">
                               {getArrangementTitle(lot.motorcycle)}
@@ -1709,7 +1700,7 @@ export default function AdminRoundDetailPage() {
                   </h2>
 
                   <p className="mt-1 text-sm text-gray-600">
-                    Lot {getArrangementLotNumber(winnerChooser.lot.motorcycle)} •{" "}
+                    Lot {getArrangementDisplayOrder(winnerChooser.lot.motorcycle)} •{" "}
                     {winnerChooser.lot.motorcycle?.motorcycle_name || "-"}
                   </p>
                 </div>

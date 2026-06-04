@@ -82,7 +82,8 @@ type CurrentAuctionRound = {
   archived_at: string | null;
 };
 
-const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
+const ADMIN_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const STAFF_TIMEOUT_MS = ADMIN_SESSION_TIMEOUT_MS;
 
 function getStaffRoleLabel(role: string) {
   if (role === "owner") return "Owner";

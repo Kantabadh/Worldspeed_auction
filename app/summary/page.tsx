@@ -2,12 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  formatAuctionDisplayOrder,
+  getAuctionDisplayLabel,
+  sortAuctionMotorcycles,
+} from "@/lib/auctionDisplayOrder";
+import { clearMerchantOfferDraft } from "@/lib/merchantOfferDraft";
 import BackButton from "@/components/BackButton";
 
 type Offer = {
   motorcycle_id: number;
+  display_order?: number | null;
   lot: string;
   motorcycle: string;
+  brand?: string;
+  model?: string;
+  year?: string;
+  license_plate?: string;
   photos?: {
     id: number;
     image_url: string;
@@ -57,13 +68,29 @@ type FinalOfferRow = {
   was_edited?: boolean | null;
   motorcycles: {
     id: number;
+    display_order: number | null;
     lot_number: string;
     motorcycle_name: string;
+    brand: string | null;
+    model: string | null;
+    year: string | null;
+    license_plate: string | null;
     motorcycle_photos?: {
       id: number;
       image_url: string;
     }[];
   } | null;
+};
+
+type AuctionMotorcycleRow = {
+  id: number;
+  display_order: number | null;
+  current_auction_motorcycle_id?: number | null;
+  motorcycle_name: string | null;
+  brand: string | null;
+  model: string | null;
+  year: string | null;
+  license_plate: string | null;
 };
 
 export default function SummaryPage() {
@@ -82,7 +109,24 @@ export default function SummaryPage() {
     const savedSession = localStorage.getItem("merchantSession");
 
     if (savedDraft) {
-      setDraft(JSON.parse(savedDraft));
+      const parsedDraft = JSON.parse(savedDraft) as DraftSubmission;
+      setDraft(parsedDraft);
+
+      if (parsedDraft.auctionRoundId) {
+        applyStoredDisplayOrderToOffers(
+          parsedDraft.offers,
+          Number(parsedDraft.auctionRoundId)
+        )
+          .then((orderedOffers) => {
+            setDraft({
+              ...parsedDraft,
+              offers: orderedOffers,
+            });
+          })
+          .catch((error) => {
+            console.error("โหลดลำดับรถในรอบไม่สำเร็จ", error);
+          });
+      }
     }
 
     if (savedSession) {
@@ -90,27 +134,96 @@ export default function SummaryPage() {
     }
   }, []);
 
-  function buildFinalOfferList(rows: FinalOfferRow[]): Offer[] {
-    return rows
+  async function fetchFullAuctionMotorcycles(auctionRoundId: number) {
+    const { data, error } = await supabase
+      .from("stock_motorcycles")
+      .select(
+        "id, current_auction_motorcycle_id, motorcycle_name, brand, model, year, license_plate"
+      )
+      .eq("current_auction_round_id", auctionRoundId)
+      .not("current_auction_motorcycle_id", "is", null);
+
+    if (error) throw error;
+
+    return sortAuctionMotorcycles((data as AuctionMotorcycleRow[] | null) || [])
+      .map((motorcycle, index) => ({
+        ...motorcycle,
+        id: Number(motorcycle.current_auction_motorcycle_id),
+        display_order: index + 1,
+      }));
+  }
+
+  async function applyStoredDisplayOrderToOffers(
+    offers: Offer[],
+    auctionRoundId: number
+  ) {
+    const fullAuctionMotorcycles = await fetchFullAuctionMotorcycles(
+      auctionRoundId
+    );
+    const motorcycleById = new Map(
+      fullAuctionMotorcycles.map((motorcycle) => [
+        Number(motorcycle.id),
+        motorcycle,
+      ])
+    );
+
+    return offers
+      .map((offer) => {
+        const motorcycle = motorcycleById.get(Number(offer.motorcycle_id));
+
+        return {
+          ...offer,
+          display_order: motorcycle?.display_order ?? offer.display_order ?? null,
+          lot: formatAuctionDisplayOrder(
+            motorcycle?.display_order ?? offer.display_order
+          ),
+          motorcycle: motorcycle?.model || offer.model || offer.motorcycle,
+          brand: motorcycle?.brand || offer.brand || "",
+          model: motorcycle?.model || offer.model || "",
+          year: motorcycle?.year || offer.year || "",
+          license_plate:
+            motorcycle?.license_plate || offer.license_plate || "",
+        };
+      })
+      .sort((a, b) => {
+        const orderA = Number(a.display_order);
+        const orderB = Number(b.display_order);
+
+        if (Number.isFinite(orderA) && Number.isFinite(orderB)) {
+          return orderA - orderB;
+        }
+
+        return 0;
+      });
+  }
+
+  async function buildFinalOfferList(
+    rows: FinalOfferRow[],
+    auctionRoundId?: number | null
+  ): Promise<Offer[]> {
+    const offers = rows
       .map((row) => {
         const motorcycle = row.motorcycles;
         const motorcycleId = Number(row.motorcycle_id);
 
         return {
           motorcycle_id: motorcycleId,
+          display_order: motorcycle?.display_order ?? null,
           lot: motorcycle?.lot_number || "-",
           motorcycle: motorcycle?.motorcycle_name || "-",
+          brand: motorcycle?.brand || "",
+          model: motorcycle?.model || "",
+          year: motorcycle?.year || "",
+          license_plate: motorcycle?.license_plate || "",
           photos: motorcycle?.motorcycle_photos || [],
           price: String(Number(row.offer_price || 0)),
           wasEdited: Boolean(row.was_edited),
         };
-      })
-      .sort((a, b) =>
-        a.lot.localeCompare(b.lot, "th", {
-          numeric: true,
-          sensitivity: "base",
-        })
-      );
+      });
+
+    return auctionRoundId
+      ? applyStoredDisplayOrderToOffers(offers, Number(auctionRoundId))
+      : offers;
   }
 
   async function fetchFinalSubmittedOffers(
@@ -126,8 +239,13 @@ export default function SummaryPage() {
         was_edited,
         motorcycles (
           id,
+          display_order,
           lot_number,
           motorcycle_name,
+          brand,
+          model,
+          year,
+          license_plate,
           motorcycle_photos (
             id,
             image_url
@@ -147,7 +265,10 @@ export default function SummaryPage() {
       throw error;
     }
 
-    return buildFinalOfferList((data as unknown as FinalOfferRow[]) || []);
+    return buildFinalOfferList(
+      (data as unknown as FinalOfferRow[]) || [],
+      auctionRoundId
+    );
   }
 
   async function confirmSubmit() {
@@ -364,6 +485,7 @@ export default function SummaryPage() {
 
       localStorage.setItem("latestSubmission", JSON.stringify(finalSubmission));
 
+      clearMerchantOfferDraft(accountId, auctionRoundId);
       localStorage.removeItem("draftSubmission");
       localStorage.removeItem("merchantPageDraft");
       localStorage.removeItem("merchantOfferPrices");
@@ -438,12 +560,29 @@ export default function SummaryPage() {
       return;
     }
 
+    let finalOffers: Offer[] = [];
+
+    try {
+      finalOffers = await applyStoredDisplayOrderToOffers(
+        draft.offers.map((offer) => ({
+          ...offer,
+          wasEdited: false,
+        })),
+        auctionRoundId
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "บันทึกราคาแล้ว แต่จัดลำดับใบยืนยันไม่สำเร็จ กรุณาติดต่อผู้ดูแล"
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
     const finalSubmission = {
       ...draft,
-      offers: draft.offers.map((offer) => ({
-        ...offer,
-        wasEdited: false,
-      })),
+      offers: finalOffers,
       submittedAt: new Date().toLocaleString("th-TH"),
       receiptNo: "S-" + Date.now(),
       isUpdatedSubmission: false,
@@ -451,6 +590,7 @@ export default function SummaryPage() {
 
     localStorage.setItem("latestSubmission", JSON.stringify(finalSubmission));
 
+    clearMerchantOfferDraft(accountId, auctionRoundId);
     localStorage.removeItem("draftSubmission");
     localStorage.removeItem("merchantPageDraft");
     localStorage.removeItem("merchantOfferPrices");
@@ -572,7 +712,7 @@ export default function SummaryPage() {
                     </p>
 
                     <h3 className="mt-1 font-bold text-gray-900">
-                      {offer.motorcycle}
+                      {getAuctionDisplayLabel(offer)}
                     </h3>
                   </div>
 

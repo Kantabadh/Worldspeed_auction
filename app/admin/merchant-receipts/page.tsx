@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  buildAuctionDisplayOrderMap,
+  formatAuctionDisplayOrder,
+  getAuctionDisplayLabel,
+  sortAuctionMotorcycles,
+} from "@/lib/auctionDisplayOrder";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -25,8 +31,13 @@ type ReceiptOffer = {
     id: number;
     lot_number: string;
     motorcycle_name: string;
+    brand?: string | null;
+    model?: string | null;
+    year?: string | number | null;
+    license_plate?: string | null;
     round_lot_number?: string | null;
     sort_order?: number | null;
+    display_order?: string | null;
   } | null;
 };
 
@@ -52,6 +63,16 @@ type RoundLotMapping = {
   lot_number: string | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
+};
+
+type AuctionMotorcycleOrderRow = {
+  id: number;
+  current_auction_motorcycle_id: number | null;
+  motorcycle_name: string | null;
+  brand: string | null;
+  model: string | null;
+  year: string | number | null;
+  license_plate: string | null;
 };
 
 function formatThaiDateTime(value: string) {
@@ -185,7 +206,11 @@ export default function AdminMerchantReceiptsPage() {
         motorcycles (
           id,
           lot_number,
-          motorcycle_name
+          motorcycle_name,
+          brand,
+          model,
+          year,
+          license_plate
         )
       `
       )
@@ -225,21 +250,68 @@ export default function AdminMerchantReceiptsPage() {
       }
     });
 
+    const { data: auctionOrderData, error: auctionOrderError } = await supabase
+      .from("stock_motorcycles")
+      .select(
+        "id, current_auction_motorcycle_id, motorcycle_name, brand, model, year, license_plate"
+      )
+      .eq("current_auction_round_id", loadedRound.id)
+      .not("current_auction_motorcycle_id", "is", null);
+
+    if (auctionOrderError) {
+      setErrorMessage(auctionOrderError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const fullAuctionMotorcycles = sortAuctionMotorcycles(
+      ((auctionOrderData as AuctionMotorcycleOrderRow[] | null) || []).map(
+        (motorcycle) => ({
+          ...motorcycle,
+          id: Number(motorcycle.current_auction_motorcycle_id),
+        })
+      )
+    );
+    const displayOrderByMotorcycleId = buildAuctionDisplayOrderMap(
+      fullAuctionMotorcycles
+    );
+    const auctionMotorcycleById = new Map(
+      fullAuctionMotorcycles.map((motorcycle) => [
+        Number(motorcycle.id),
+        motorcycle,
+      ])
+    );
+
     const offersWithRoundLots = ((data as unknown as ReceiptOffer[]) || []).map(
       (offer) => {
         const motorcycleId = Number(offer.motorcycles?.id || offer.motorcycle_id);
         const mapping = mappingByMotorcycleId.get(motorcycleId);
+        const auctionMotorcycle = auctionMotorcycleById.get(motorcycleId);
+        const displayOrder =
+          displayOrderByMotorcycleId[String(motorcycleId)] ||
+          formatAuctionDisplayOrder(null);
 
         return {
           ...offer,
-          motorcycles: offer.motorcycles
-            ? {
-                ...offer.motorcycles,
-                round_lot_number:
-                  mapping?.round_lot_number || mapping?.lot_number || null,
-                sort_order: mapping?.sort_order || null,
-              }
-            : offer.motorcycles,
+          motorcycles: {
+            id: motorcycleId,
+            lot_number: offer.motorcycles?.lot_number || "",
+            motorcycle_name:
+              auctionMotorcycle?.motorcycle_name ||
+              offer.motorcycles?.motorcycle_name ||
+              "",
+            brand: auctionMotorcycle?.brand || offer.motorcycles?.brand || "",
+            model: auctionMotorcycle?.model || offer.motorcycles?.model || "",
+            year: auctionMotorcycle?.year || offer.motorcycles?.year || "",
+            license_plate:
+              auctionMotorcycle?.license_plate ||
+              offer.motorcycles?.license_plate ||
+              "",
+            round_lot_number:
+              mapping?.round_lot_number || mapping?.lot_number || null,
+            sort_order: mapping?.sort_order || null,
+            display_order: displayOrder,
+          },
         };
       }
     );
@@ -327,22 +399,17 @@ export default function AdminMerchantReceiptsPage() {
 
   const sortedSelectedOffers = selectedGroup
     ? [...selectedGroup.offers].sort((a, b) => {
-        const sortA = a.motorcycles?.sort_order;
-        const sortB = b.motorcycles?.sort_order;
+        const orderA = Number(a.motorcycles?.display_order);
+        const orderB = Number(b.motorcycles?.display_order);
 
-        if (sortA && sortB) return sortA - sortB;
-        if (sortA) return -1;
-        if (sortB) return 1;
+        if (Number.isFinite(orderA) && Number.isFinite(orderB)) {
+          return orderA - orderB;
+        }
 
-        const lotA =
-          a.motorcycles?.round_lot_number || a.motorcycles?.lot_number || "";
-        const lotB =
-          b.motorcycles?.round_lot_number || b.motorcycles?.lot_number || "";
+        if (Number.isFinite(orderA)) return -1;
+        if (Number.isFinite(orderB)) return 1;
 
-        return lotA.localeCompare(lotB, "th", {
-          numeric: true,
-          sensitivity: "base",
-        });
+        return 0;
       })
     : [];
 
@@ -631,9 +698,6 @@ export default function AdminMerchantReceiptsPage() {
                       <table className="w-full border-collapse text-xs sm:text-sm">
                         <thead>
                           <tr className="bg-gray-100">
-                            <th className="w-12 border border-black p-2 text-left">
-                              ลำดับ
-                            </th>
                             <th className="w-16 border border-black p-2 text-left">
                               ลำดับ
                             </th>
@@ -653,23 +717,20 @@ export default function AdminMerchantReceiptsPage() {
                         </thead>
 
                         <tbody>
-                          {sortedSelectedOffers.map((offer, index) => {
+                          {sortedSelectedOffers.map((offer) => {
                             const editNote = getEditNote(offer);
 
                             return (
                               <tr key={offer.id} className="print-row">
-                                <td className="border border-black p-2">
-                                  {index + 1}
-                                </td>
-
                                 <td className="border border-black p-2 font-bold">
-                                  {offer.motorcycles?.round_lot_number ||
-                                    offer.motorcycles?.lot_number ||
-                                    "-"}
+                                  {offer.motorcycles?.display_order ||
+                                    formatAuctionDisplayOrder(null)}
                                 </td>
 
                                 <td className="border border-black p-2">
-                                  {offer.motorcycles?.motorcycle_name || "-"}
+                                  {offer.motorcycles
+                                    ? getAuctionDisplayLabel(offer.motorcycles)
+                                    : "-"}
                                 </td>
 
                                 <td className="border border-black p-2 text-right font-bold">

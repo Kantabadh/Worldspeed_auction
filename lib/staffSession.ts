@@ -11,7 +11,8 @@ export type StaffProfile = {
   checkedAt?: number;
 };
 
-export const STAFF_TIMEOUT_MS = 10 * 60 * 1000;
+export const ADMIN_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+export const STAFF_TIMEOUT_MS = ADMIN_SESSION_TIMEOUT_MS;
 
 const STAFF_PROFILE_KEY = "staffProfile";
 

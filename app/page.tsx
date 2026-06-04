@@ -197,7 +197,7 @@ export default function HomePage() {
         active: profile.active,
         branch_code: profile.branch_code,
         branch_name: profile.branch_name,
-        expiresAt: Date.now() + 10 * 60 * 1000,
+        expiresAt: Date.now() + 30 * 60 * 1000,
       })
     );
 

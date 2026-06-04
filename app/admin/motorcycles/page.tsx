@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import {
+  buildAuctionDisplayOrderMap,
+  formatAuctionDisplayOrder,
+  getAuctionDisplayLabel,
+  sortAuctionMotorcycles,
+} from "@/lib/auctionDisplayOrder";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -51,6 +57,8 @@ type Motorcycle = MotorcycleDetails & {
 
 type StockMotorcycleSnapshot = {
   id: number;
+  current_auction_motorcycle_id: number | null;
+  current_auction_round_id: number | null;
   stock_number: string | null;
   display_order: number | null;
   brand: string | null;
@@ -60,6 +68,7 @@ type StockMotorcycleSnapshot = {
   frame_number: string | null;
   registration_status: string | null;
   tax_expiry: string | null;
+  engine_number?: string | null;
   cost_price: number | null;
   stock_branch_name: string | null;
   source_name: string | null;
@@ -538,44 +547,87 @@ export default function AdminMotorcyclesPage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("motorcycles")
+    const { data: stockData, error: stockError } = await supabase
+      .from("stock_motorcycles")
       .select(
         `
         id,
-        lot_number,
-        auction_round_id,
-        stock_motorcycle_id,
-        motorcycle_name,
-        cost_price,
+        current_auction_motorcycle_id,
+        current_auction_round_id,
+        stock_number,
+        display_order,
         brand,
         model,
-        year,
-        color,
+        motorcycle_name,
         license_plate,
         frame_number,
-        engine_number,
         registration_status,
         tax_expiry,
-        acquisition_type,
+        engine_number,
+        cost_price,
+        stock_branch_name,
         source_name,
-        condition,
-        notes,
-        active,
-        created_at,
-        motorcycle_photos (
-          id,
-          image_url
-        )
+        year,
+        color,
+        notes
       `
       )
-      .eq("auction_round_id", activeRound.id)
-      .order("lot_number");
+      .eq("current_auction_round_id", activeRound.id)
+      .not("current_auction_motorcycle_id", "is", null);
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (stockError) {
+      setErrorMessage(stockError.message);
       setIsLoading(false);
       return;
+    }
+
+    const stockRows = (stockData as StockMotorcycleSnapshot[] | null) || [];
+    const auctionMotorcycleIds = stockRows
+      .map((stock) => stock.current_auction_motorcycle_id)
+      .filter((id): id is number => typeof id === "number");
+    let auctionRows: Motorcycle[] = [];
+
+    if (auctionMotorcycleIds.length > 0) {
+      const { data, error } = await supabase
+        .from("motorcycles")
+        .select(
+          `
+          id,
+          lot_number,
+          auction_round_id,
+          stock_motorcycle_id,
+          motorcycle_name,
+          cost_price,
+          brand,
+          model,
+          year,
+          color,
+          license_plate,
+          frame_number,
+          engine_number,
+          registration_status,
+          tax_expiry,
+          acquisition_type,
+          source_name,
+          condition,
+          notes,
+          active,
+          created_at,
+          motorcycle_photos (
+            id,
+            image_url
+          )
+        `
+        )
+        .in("id", auctionMotorcycleIds);
+
+      if (error) {
+        setErrorMessage(error.message);
+        setIsLoading(false);
+        return;
+      }
+
+      auctionRows = (data as Motorcycle[]) || [];
     }
 
     let roundLotByMotorcycleId = new Map<number, RoundLotMapping>();
@@ -599,84 +651,64 @@ export default function AdminMotorcyclesPage() {
       );
     }
 
-    const rawMotorcycles = (data as Motorcycle[]) || [];
-    const stockMotorcycleIds = [
-      ...new Set(
-        rawMotorcycles
-          .map((bike) => bike.stock_motorcycle_id)
-          .filter((id): id is number => typeof id === "number")
-      ),
-    ];
-    const stockSnapshotById = new Map<number, StockMotorcycleSnapshot>();
+    const auctionById = new Map<number, Motorcycle>();
+    auctionRows.forEach((bike) => {
+      auctionById.set(Number(bike.id), bike);
+    });
 
-    if (stockMotorcycleIds.length > 0) {
-      const { data: stockData, error: stockError } = await supabase
-        .from("stock_motorcycles")
-        .select(
-          `
-          id,
-          stock_number,
-          display_order,
-          brand,
-          model,
-          motorcycle_name,
-          license_plate,
-          frame_number,
-          registration_status,
-          tax_expiry,
-          cost_price,
-          stock_branch_name,
-          source_name,
-          year,
-          color,
-          notes
-        `
-        )
-        .in("id", stockMotorcycleIds);
-
-      if (stockError) {
-        setErrorMessage(stockError.message);
-        setIsLoading(false);
-        return;
-      }
-
-      ((stockData as StockMotorcycleSnapshot[]) || []).forEach((stock) => {
-        stockSnapshotById.set(stock.id, stock);
-      });
-    }
-
-    const mergedMotorcycles = rawMotorcycles.map((bike) => {
-      const mapping = roundLotByMotorcycleId.get(bike.id);
-      const stockSnapshot = bike.stock_motorcycle_id
-        ? stockSnapshotById.get(bike.stock_motorcycle_id)
-        : undefined;
+    const mergedMotorcycles = stockRows.map((stockSnapshot) => {
+      const auctionMotorcycleId = Number(
+        stockSnapshot.current_auction_motorcycle_id
+      );
+      const bike = auctionById.get(auctionMotorcycleId);
+      const mapping = roundLotByMotorcycleId.get(auctionMotorcycleId);
+      const brand = stockSnapshot.brand || bike?.brand || "";
+      const model = stockSnapshot.model || bike?.model || "";
 
       return {
-        ...bike,
-        stock_number: stockSnapshot?.stock_number || bike.stock_number || null,
-        brand: stockSnapshot?.brand || bike.brand,
-        model: stockSnapshot?.model || bike.model,
-        motorcycle_name: stockSnapshot?.motorcycle_name || bike.motorcycle_name,
-        license_plate: stockSnapshot?.license_plate || bike.license_plate,
-        frame_number: stockSnapshot?.frame_number || bike.frame_number,
+        ...(bike || {}),
+        id: auctionMotorcycleId,
+        lot_number: bike?.lot_number || String(auctionMotorcycleId),
+        auction_round_id: activeRound.id,
+        stock_motorcycle_id: stockSnapshot.id,
+        stock_number: stockSnapshot.stock_number || bike?.stock_number || null,
+        brand,
+        model,
+        motorcycle_name:
+          stockSnapshot.motorcycle_name ||
+          bike?.motorcycle_name ||
+          [brand, model].filter(Boolean).join(" "),
+        license_plate: stockSnapshot.license_plate || bike?.license_plate || "",
+        frame_number: stockSnapshot.frame_number || bike?.frame_number || "",
+        engine_number: stockSnapshot.engine_number || bike?.engine_number || "",
         registration_status:
-          stockSnapshot?.registration_status || bike.registration_status,
-        tax_expiry: stockSnapshot?.tax_expiry || bike.tax_expiry,
-        cost_price: stockSnapshot?.cost_price ?? bike.cost_price,
+          stockSnapshot.registration_status || bike?.registration_status || "",
+        tax_expiry: stockSnapshot.tax_expiry || bike?.tax_expiry || "",
+        cost_price: stockSnapshot.cost_price ?? bike?.cost_price ?? null,
         stock_branch_name:
-          stockSnapshot?.stock_branch_name || bike.stock_branch_name || null,
-        source_name: stockSnapshot?.source_name || bike.source_name,
-        year: stockSnapshot?.year || bike.year,
-        color: stockSnapshot?.color || bike.color,
-        notes: stockSnapshot?.notes || bike.notes,
+          stockSnapshot.stock_branch_name || bike?.stock_branch_name || null,
+        source_name: stockSnapshot.source_name || bike?.source_name || "",
+        year: stockSnapshot.year || bike?.year || "",
+        color: stockSnapshot.color || bike?.color || "",
+        acquisition_type: bike?.acquisition_type || "",
+        condition: bike?.condition || "",
+        notes: stockSnapshot.notes || bike?.notes || "",
+        active: bike?.active ?? true,
+        created_at: bike?.created_at || "",
+        motorcycle_photos: bike?.motorcycle_photos || [],
         round_lot_id: mapping?.id ?? null,
         round_lot_number:
           mapping?.round_lot_number || mapping?.lot_number || null,
-        sort_order: stockSnapshot?.display_order ?? null,
-      };
+        sort_order: stockSnapshot.display_order ?? null,
+      } as Motorcycle;
     });
 
-    setMotorcycles(mergedMotorcycles.sort(sortChecklistMotorcycles));
+    setMotorcycles(
+      sortAuctionMotorcycles(mergedMotorcycles).map((bike, index) => ({
+        ...bike,
+        sort_order: index + 1,
+      }))
+    );
     setIsLoading(false);
   }
 
@@ -1030,8 +1062,8 @@ export default function AdminMotorcyclesPage() {
     setErrorMessage("");
 
     try {
-      const sortedMotorcycles = [...currentRoundMotorcycles].sort(
-        sortMotorcyclesByBrandModel
+      const sortedMotorcycles = sortAuctionMotorcycles(
+        currentRoundMotorcycles
       ).map((bike, index) => ({
         ...bike,
         sort_order: index + 1,
@@ -1145,8 +1177,9 @@ export default function AdminMotorcyclesPage() {
       "หมายเหตุ",
     ];
 
-    const rows = checklistMotorcycles.map((bike, index) => [
-      index + 1,
+    const rows = checklistMotorcycles.map((bike) => [
+      displayOrderByMotorcycleId[String(bike.id)] ||
+        formatAuctionDisplayOrder(bike.sort_order),
       getDisplayBrand(bike) || "-",
       getDisplayModel(bike) || "-",
       bike.year || "-",
@@ -1377,10 +1410,21 @@ export default function AdminMotorcyclesPage() {
     setCurrentPage(1);
   }, [searchText]);
 
+  const sortedFullMotorcycles = useMemo(() => {
+    return sortAuctionMotorcycles(motorcycles).map((bike, index) => ({
+      ...bike,
+      sort_order: index + 1,
+    }));
+  }, [motorcycles]);
+
+  const displayOrderByMotorcycleId = useMemo(() => {
+    return buildAuctionDisplayOrderMap(sortedFullMotorcycles);
+  }, [sortedFullMotorcycles]);
+
   const filteredMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
 
-    const matchingMotorcycles = motorcycles.filter((bike) => {
+    return sortedFullMotorcycles.filter((bike) => {
       const searchableText = [
         getRoundLotDisplay(bike),
         bike.motorcycle_name,
@@ -1408,9 +1452,7 @@ export default function AdminMotorcyclesPage() {
 
       return matchSearch;
     });
-
-    return [...matchingMotorcycles].sort(sortChecklistMotorcycles);
-  }, [motorcycles, searchText]);
+  }, [sortedFullMotorcycles, searchText]);
 
   const totalPages = Math.max(
     1,
@@ -1672,11 +1714,11 @@ export default function AdminMotorcyclesPage() {
                 <div className="mt-5">{renderPaginationControls()}</div>
 
                 <div className="mt-5 space-y-4">
-                  {paginatedMotorcycles.map((bike, index) => {
+                  {paginatedMotorcycles.map((bike) => {
                     const isDetailOpen = openDetailIds.includes(bike.id);
-                    const displayOrderNumber = String(
-                      (safeCurrentPage - 1) * ITEMS_PER_PAGE + index + 1
-                    ).padStart(3, "0");
+                    const displayOrderNumber =
+                      displayOrderByMotorcycleId[String(bike.id)] ||
+                      formatAuctionDisplayOrder(bike.sort_order);
 
                     return (
                       <article
@@ -1691,12 +1733,8 @@ export default function AdminMotorcyclesPage() {
                           </div>
 
                           <h3 className="mt-1 text-base font-bold text-gray-900 sm:text-lg">
-                            {getMotorcycleDisplayTitle(bike)}
+                            {getAuctionDisplayLabel(bike)}
                           </h3>
-
-                          <p className="mt-1 text-sm font-medium text-gray-600">
-                            ทะเบียน: {bike.license_plate || "-"}
-                          </p>
 
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <div className="flex flex-wrap gap-2">

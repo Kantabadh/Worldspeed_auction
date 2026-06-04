@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  formatAuctionDisplayOrder,
+  getAuctionDisplayLabel,
+  sortAuctionMotorcycles,
+} from "@/lib/auctionDisplayOrder";
+import {
+  loadMerchantOfferDraft,
+  saveMerchantOfferDraft,
+} from "@/lib/merchantOfferDraft";
 
 type MotorcyclePhoto = {
   id: number;
@@ -42,6 +51,7 @@ function getMerchantCardImageUrl(imageUrl: string) {
 
 type Motorcycle = {
   id: number;
+  display_order: number | null;
   auction_round_id: number | null;
   stock_motorcycle_id: number | null;
   lot_number: string;
@@ -60,8 +70,27 @@ type Motorcycle = {
   motorcycle_photos?: MotorcyclePhoto[];
 };
 
+type StockMotorcycleSnapshot = {
+  id: number;
+  current_auction_motorcycle_id: number | null;
+  current_auction_round_id: number | null;
+  display_order: number | null;
+  motorcycle_name: string | null;
+  brand: string | null;
+  model: string | null;
+  year: string | null;
+  color: string | null;
+  license_plate: string | null;
+  frame_number: string | null;
+  engine_number?: string | null;
+  registration_status: string | null;
+  tax_expiry?: string | null;
+  notes: string | null;
+};
+
 type Offer = {
   motorcycle_id: number;
+  display_order: number | null;
   lot: string;
   sortOrder: number | null;
   motorcycle: string;
@@ -117,89 +146,8 @@ type RoundLotMapping = {
   sort_order?: number | null;
 };
 
-type StockMotorcycleOrderSnapshot = {
-  id: number;
-  display_order: number | null;
-};
-
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
-
-function cleanOptionalText(value: string | null | undefined) {
-  return value?.trim() || "";
-}
-
-function normalizeSortText(value: string | null | undefined) {
-  return cleanOptionalText(value).toLowerCase();
-}
-
-function parseSortYear(value: string | null | undefined) {
-  const year = Number(cleanOptionalText(value));
-
-  return Number.isFinite(year) ? year : null;
-}
-
-function formatVisibleNumber(value: number) {
-  return String(value).padStart(3, "0");
-}
-
-function compareSortYearDescending(
-  a: string | null | undefined,
-  b: string | null | undefined
-) {
-  const yearA = parseSortYear(a);
-  const yearB = parseSortYear(b);
-
-  if (yearA !== null && yearB !== null) return yearB - yearA;
-  if (yearA !== null) return -1;
-  if (yearB !== null) return 1;
-
-  return 0;
-}
-
-function compareOfferSortFields(a: Offer, b: Offer) {
-  return (
-    normalizeSortText(a.brand).localeCompare(normalizeSortText(b.brand), "th", {
-      numeric: true,
-      sensitivity: "base",
-    }) ||
-    normalizeSortText(a.model).localeCompare(normalizeSortText(b.model), "th", {
-      numeric: true,
-      sensitivity: "base",
-    }) ||
-    compareSortYearDescending(a.year, b.year) ||
-    normalizeSortText(a.license_plate).localeCompare(
-      normalizeSortText(b.license_plate),
-      "th",
-      { numeric: true, sensitivity: "base" }
-    ) ||
-    normalizeSortText(a.frame_number).localeCompare(
-      normalizeSortText(b.frame_number),
-      "th",
-      { numeric: true, sensitivity: "base" }
-    ) ||
-    Number(a.motorcycle_id) - Number(b.motorcycle_id)
-  );
-}
-
-function sortOffersBySavedOrder(a: Offer, b: Offer) {
-  const sortA = a.sortOrder;
-  const sortB = b.sortOrder;
-
-  if (sortA !== null && sortA !== undefined) {
-    if (sortB !== null && sortB !== undefined) {
-      const sortResult = Number(sortA) - Number(sortB);
-
-      if (sortResult !== 0) return sortResult;
-    }
-
-    return -1;
-  }
-
-  if (sortB !== null && sortB !== undefined) return 1;
-
-  return compareOfferSortFields(a, b);
-}
 
 export default function MerchantPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
@@ -224,6 +172,7 @@ export default function MerchantPage() {
   const [auctionStatus, setAuctionStatus] = useState("closed");
   const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(null);
   const [isLoadingCurrentRound, setIsLoadingCurrentRound] = useState(true);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -273,6 +222,21 @@ export default function MerchantPage() {
 
     const session = JSON.parse(savedSession) as MerchantSession;
     saveMerchantSession(session);
+  }
+
+  function getActiveMerchantAccountId() {
+    if (merchantAccountId) return merchantAccountId;
+
+    try {
+      const savedSession = localStorage.getItem("merchantSession");
+      const session = savedSession
+        ? (JSON.parse(savedSession) as MerchantSession)
+        : null;
+
+      return session?.merchantAccountId ? Number(session.merchantAccountId) : null;
+    } catch {
+      return null;
+    }
   }
 
   function getRoundStatusLabel(status?: string | null) {
@@ -436,12 +400,21 @@ export default function MerchantPage() {
     });
 
     localStorage.setItem("merchantOfferPrices", JSON.stringify(submittedPrices));
+    const draft = loadMerchantOfferDraft(
+      Number(accountId),
+      currentRound?.id
+    );
+    const pricesToApply = draft?.prices || submittedPrices;
+
+    if (draft?.updatedAt) {
+      setDraftSavedAt(draft.updatedAt);
+    }
 
     setOffers((currentOffers) =>
       currentOffers.map((offer) => ({
         ...offer,
         price:
-          submittedPrices[Number(offer.motorcycle_id)] || offer.price || "",
+          pricesToApply[Number(offer.motorcycle_id)] || offer.price || "",
       }))
     );
   }
@@ -550,13 +523,14 @@ export default function MerchantPage() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("motorcycles")
-        .select(`
+      const { data: stockData, error: stockError } = await supabase
+        .from("stock_motorcycles")
+        .select(
+          `
           id,
-          auction_round_id,
-          stock_motorcycle_id,
-          lot_number,
+          current_auction_motorcycle_id,
+          current_auction_round_id,
+          display_order,
           motorcycle_name,
           brand,
           model,
@@ -567,17 +541,57 @@ export default function MerchantPage() {
           engine_number,
           registration_status,
           tax_expiry,
-          condition,
           notes
-        `)
-        .eq("active", true)
-        .eq("auction_round_id", loadedRound.id)
-        .order("lot_number");
+        `
+        )
+        .eq("current_auction_round_id", loadedRound.id)
+        .not("current_auction_motorcycle_id", "is", null);
 
-      if (error) {
-        setErrorMessage(error.message);
+      if (stockError) {
+        setErrorMessage(stockError.message);
         setIsLoadingCurrentRound(false);
         return;
+      }
+
+      const stockRows = (stockData as StockMotorcycleSnapshot[] | null) || [];
+      const auctionMotorcycleIds = stockRows
+        .map((stock) => stock.current_auction_motorcycle_id)
+        .filter((id): id is number => typeof id === "number");
+      let auctionRows: Motorcycle[] = [];
+
+      if (auctionMotorcycleIds.length > 0) {
+        const { data: auctionData, error: auctionError } = await supabase
+          .from("motorcycles")
+          .select(
+            `
+            id,
+            display_order,
+            auction_round_id,
+            stock_motorcycle_id,
+            lot_number,
+            motorcycle_name,
+            brand,
+            model,
+            year,
+            color,
+            license_plate,
+            frame_number,
+            engine_number,
+            registration_status,
+            tax_expiry,
+            condition,
+            notes
+          `
+          )
+          .in("id", auctionMotorcycleIds);
+
+        if (auctionError) {
+          setErrorMessage(auctionError.message);
+          setIsLoadingCurrentRound(false);
+          return;
+        }
+
+        auctionRows = (auctionData as Motorcycle[] | null) || [];
       }
 
       let mappingRows: RoundLotMapping[] = [];
@@ -607,68 +621,74 @@ export default function MerchantPage() {
         }
       });
 
-      const stockMotorcycleIds = [
-        ...new Set(
-          ((data as Motorcycle[] | null) || [])
-            .map((bike) => bike.stock_motorcycle_id)
-            .filter((id): id is number => typeof id === "number")
-        ),
-      ];
-      const stockDisplayOrderById = new Map<number, number | null>();
-
-      if (stockMotorcycleIds.length > 0) {
-        const { data: stockOrderData, error: stockOrderError } = await supabase
-          .from("stock_motorcycles")
-          .select("id, display_order")
-          .in("id", stockMotorcycleIds);
-
-        if (stockOrderError) {
-          setErrorMessage(stockOrderError.message);
-          setIsLoadingCurrentRound(false);
-          return;
-        }
-
-        ((stockOrderData as StockMotorcycleOrderSnapshot[]) || []).forEach(
-          (stock) => {
-            stockDisplayOrderById.set(stock.id, stock.display_order);
-          }
-        );
-      }
+      const auctionById = new Map<number, Motorcycle>();
+      auctionRows.forEach((bike) => {
+        auctionById.set(Number(bike.id), bike);
+      });
 
       const motorcycleOffers =
-        data?.map((bike: Motorcycle) => ({
-          motorcycle_id: Number(bike.id),
-          lot:
-            mappingByMotorcycleId.get(Number(bike.id))?.round_lot_number ||
-            mappingByMotorcycleId.get(Number(bike.id))?.lot_number ||
-            bike.lot_number ||
-            String(bike.id),
-          sortOrder:
-            bike.stock_motorcycle_id
-              ? stockDisplayOrderById.get(bike.stock_motorcycle_id) ?? null
-              : null,
-          motorcycle: bike.motorcycle_name,
-          brand: bike.brand || "",
-          model: bike.model || "",
-          year: bike.year || "",
-          color: bike.color || "",
-          license_plate: bike.license_plate || "",
-          frame_number: bike.frame_number || "",
-          engine_number: bike.engine_number || "",
-          registration_status: bike.registration_status || "",
-          tax_expiry: bike.tax_expiry || "",
-          condition: bike.condition || "",
-          notes: bike.notes || "",
-          photos: [],
-          price: "",
-        })) || [];
+        stockRows.map((stockSnapshot) => {
+          const auctionMotorcycleId = Number(
+            stockSnapshot.current_auction_motorcycle_id
+          );
+          const bike = auctionById.get(auctionMotorcycleId);
+          const mapping = mappingByMotorcycleId.get(auctionMotorcycleId);
+          const brand = stockSnapshot?.brand || bike?.brand || "";
+          const model = stockSnapshot?.model || bike?.model || "";
+          const motorcycleName =
+            stockSnapshot?.motorcycle_name ||
+            bike?.motorcycle_name ||
+            [brand, model].filter(Boolean).join(" ");
 
-      motorcycleOffers.sort(sortOffersBySavedOrder);
+          return {
+            motorcycle_id: auctionMotorcycleId,
+            display_order: stockSnapshot.display_order ?? null,
+            lot:
+              mapping?.round_lot_number ||
+              mapping?.lot_number ||
+              bike?.lot_number ||
+              String(auctionMotorcycleId),
+            sortOrder: null,
+            motorcycle: motorcycleName,
+            brand,
+            model,
+            year: stockSnapshot?.year || bike?.year || "",
+            color: stockSnapshot?.color || bike?.color || "",
+            license_plate:
+              stockSnapshot?.license_plate || bike?.license_plate || "",
+            frame_number: stockSnapshot?.frame_number || bike?.frame_number || "",
+            engine_number: stockSnapshot?.engine_number || bike?.engine_number || "",
+            registration_status:
+              stockSnapshot?.registration_status ||
+              bike?.registration_status ||
+              "",
+            tax_expiry: stockSnapshot?.tax_expiry || bike?.tax_expiry || "",
+            condition: bike?.condition || "",
+            notes: stockSnapshot?.notes || bike?.notes || "",
+            photos: [],
+            price: "",
+          };
+        }) || [];
 
+      const sortedMotorcycleOffers =
+        sortAuctionMotorcycles(motorcycleOffers).map((offer, index) => ({
+          ...offer,
+          display_order: index + 1,
+        }));
+
+      const draft = loadMerchantOfferDraft(
+        getActiveMerchantAccountId(),
+        loadedRound.id
+      );
       const savedPricesText = localStorage.getItem("merchantOfferPrices");
-      const savedPrices = savedPricesText ? JSON.parse(savedPricesText) : {};
+      const legacySavedPrices = savedPricesText ? JSON.parse(savedPricesText) : {};
+      const savedPrices = draft?.prices || legacySavedPrices;
 
-      const motorcycleOffersWithSavedPrices = motorcycleOffers.map((offer) => ({
+      if (draft?.updatedAt) {
+        setDraftSavedAt(draft.updatedAt);
+      }
+
+      const motorcycleOffersWithSavedPrices = sortedMotorcycleOffers.map((offer) => ({
         ...offer,
         price: savedPrices[Number(offer.motorcycle_id)] || "",
       }));
@@ -735,6 +755,16 @@ export default function MerchantPage() {
     });
 
     localStorage.setItem("merchantOfferPrices", JSON.stringify(pricesToSave));
+
+    const savedDraft = saveMerchantOfferDraft(
+      getActiveMerchantAccountId(),
+      currentRound?.id,
+      pricesToSave
+    );
+
+    if (savedDraft?.updatedAt) {
+      setDraftSavedAt(savedDraft.updatedAt);
+    }
   }
 
   async function openGallery(
@@ -851,17 +881,8 @@ export default function MerchantPage() {
     (!hasSubmitted || editableLotCount > 0);
 
   const sortedOffers = useMemo(() => {
-    return [...offers].sort(sortOffersBySavedOrder);
+    return sortAuctionMotorcycles(offers);
   }, [offers]);
-
-  const sortedOfferNumberById = useMemo(() => {
-    return new Map(
-      sortedOffers.map((offer, index) => [
-        Number(offer.motorcycle_id),
-        index + 1,
-      ])
-    );
-  }, [sortedOffers]);
 
   const starredOffers = useMemo(() => {
     return sortedOffers.filter((offer) =>
@@ -880,7 +901,7 @@ export default function MerchantPage() {
       const lotCanEdit = canEditThisLot(Number(offer.motorcycle_id));
 
       const searchableText = [
-        sortedOfferNumberById.get(Number(offer.motorcycle_id)),
+        formatAuctionDisplayOrder(offer.display_order),
         offer.lot,
         offer.motorcycle,
         offer.brand,
@@ -917,7 +938,6 @@ export default function MerchantPage() {
     starredLotIds,
     editableLotIds,
     hasSubmitted,
-    sortedOfferNumberById,
   ]);
 
   const totalPages = Math.max(
@@ -1313,7 +1333,7 @@ export default function MerchantPage() {
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                 {starredOffers.map((offer) => {
                   const starredVisibleNumber =
-                    sortedOfferNumberById.get(Number(offer.motorcycle_id)) || 0;
+                    formatAuctionDisplayOrder(offer.display_order);
 
                   return (
                     <button
@@ -1325,11 +1345,11 @@ export default function MerchantPage() {
                       className="shrink-0 rounded-2xl border border-yellow-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-yellow-100"
                     >
                       <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
-                        ลำดับ {formatVisibleNumber(starredVisibleNumber)}
+                        ลำดับ {starredVisibleNumber}
                       </p>
 
                       <p className="mt-1 max-w-[180px] truncate text-sm font-bold text-gray-900">
-                        {offer.motorcycle}
+                        {getAuctionDisplayLabel(offer)}
                       </p>
 
                       {offer.price ? (
@@ -1372,10 +1392,8 @@ export default function MerchantPage() {
 
               <div className="mt-4 space-y-4">
                 {paginatedOffers.map((offer, index) => {
-                  const visibleNumber =
-                    (safeCurrentPage - 1) * ITEMS_PER_PAGE + index + 1;
                   const displayVisibleNumber =
-                    formatVisibleNumber(visibleNumber);
+                    formatAuctionDisplayOrder(offer.display_order);
                   const originalIndex = offers.findIndex(
                     (item) =>
                       Number(item.motorcycle_id) === Number(offer.motorcycle_id)
@@ -1524,13 +1542,7 @@ export default function MerchantPage() {
                             </p>
 
                             <h3 className="mt-1 text-lg font-bold text-gray-900">
-                              <span>{offer.motorcycle}</span>
-                              {offer.license_plate ? (
-                                <span className="text-gray-700">
-                                  {" "}
-                                  {offer.license_plate}
-                                </span>
-                              ) : null}
+                              {getAuctionDisplayLabel(offer)}
                             </h3>
                           </div>
 
@@ -1716,6 +1728,12 @@ export default function MerchantPage() {
             <p className="text-sm font-semibold text-gray-900">
               ใส่ราคาแล้ว {enteredOfferCount} / {offers.length} รายการ
             </p>
+
+            {draftSavedAt && (
+              <p className="mt-0.5 text-xs font-medium text-green-700">
+                บันทึกอัตโนมัติแล้ว
+              </p>
+            )}
           </div>
 
           <button
