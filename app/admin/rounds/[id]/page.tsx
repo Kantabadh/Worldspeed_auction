@@ -1208,33 +1208,24 @@ export default function AdminRoundDetailPage() {
   function exportRoundExcel() {
     if (!round) return;
 
+    const sortedMotorcycles = sortAuctionMotorcycles(
+      filteredLotResults
+        .map((lot) => lot.motorcycle)
+        .filter((motorcycle): motorcycle is ArrangementMotorcycle => Boolean(motorcycle))
+    );
+    const auctionOrderById = new Map(
+      sortedMotorcycles.map((motorcycle, index) => [motorcycle.id, index])
+    );
     const sortedExportLots = [...filteredLotResults].sort((a, b) => {
-      const orderA = Number(a.motorcycle?.display_order);
-      const orderB = Number(b.motorcycle?.display_order);
+      const orderA = a.motorcycle
+        ? auctionOrderById.get(a.motorcycle.id) ?? Number.MAX_SAFE_INTEGER
+        : Number.MAX_SAFE_INTEGER;
+      const orderB = b.motorcycle
+        ? auctionOrderById.get(b.motorcycle.id) ?? Number.MAX_SAFE_INTEGER
+        : Number.MAX_SAFE_INTEGER;
 
-      if (Number.isFinite(orderA) && Number.isFinite(orderB)) {
-        return orderA - orderB;
-      }
-
-      return 0;
+      return orderA - orderB;
     });
-    const rows = sortedExportLots.map((lot, index) => {
-      return [
-        getArrangementDisplayOrder(lot.motorcycle),
-        lot.motorcycle?.stock_number || "-",
-        getArrangementBrand(lot.motorcycle),
-        getArrangementModel(lot.motorcycle),
-        lot.motorcycle?.year || "-",
-        lot.motorcycle?.color || "-",
-        lot.motorcycle?.license_plate || "-",
-        lot.motorcycle?.frame_number || "-",
-        lot.motorcycle?.registration_status || "-",
-        lot.motorcycle?.cost_price || "-",
-        lot.motorcycle?.stock_branch_name || "-",
-        lot.motorcycle?.notes || "-",
-      ];
-    });
-
     const headers = [
       "ลำดับ",
       "รหัสสต๊อก",
@@ -1246,36 +1237,135 @@ export default function AdminRoundDetailPage() {
       "เลขตัวถัง",
       "สถานะเล่ม",
       "ต้นทุน",
+      "ราคาเสนอสูงสุด",
+      "ผู้ชนะ",
+      "ราคาอันดับ 2",
+      "ผู้เสนออันดับ 2",
+      "ราคาอันดับ 3",
+      "ผู้เสนออันดับ 3",
+      "กำไร/ขาดทุน",
       "สาขา",
       "หมายเหตุ",
     ];
+    const priceColumnIndexes = [9, 10, 12, 14, 16];
+    const rows = sortedExportLots.map((lot) => {
+      const offerGroups = getOfferGroupsByPrice(lot.offers);
+      const firstGroup = offerGroups[0] || [];
+      const secondGroup = offerGroups[1] || [];
+      const thirdGroup = offerGroups[2] || [];
+      const highestPrice = Number(firstGroup[0]?.offer_price || 0);
+      const costPrice = Number(lot.motorcycle?.cost_price || 0);
+      const profit = highestPrice ? highestPrice - costPrice : "";
+
+      return [
+        getArrangementDisplayOrder(lot.motorcycle),
+        lot.motorcycle?.stock_number || "-",
+        getArrangementBrand(lot.motorcycle),
+        getArrangementModel(lot.motorcycle),
+        lot.motorcycle?.year || "-",
+        lot.motorcycle?.color || "-",
+        lot.motorcycle?.license_plate || "-",
+        lot.motorcycle?.frame_number || "-",
+        lot.motorcycle?.registration_status || "-",
+        costPrice || "",
+        highestPrice || "",
+        firstGroup.map(getMerchantName).join(", ") || "-",
+        Number(secondGroup[0]?.offer_price || 0) || "",
+        secondGroup.map(getMerchantName).join(", ") || "-",
+        Number(thirdGroup[0]?.offer_price || 0) || "",
+        thirdGroup.map(getMerchantName).join(", ") || "-",
+        profit,
+        lot.motorcycle?.stock_branch_name || "-",
+        lot.motorcycle?.notes || "-",
+      ];
+    });
 
     const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const exportedAt = new Date();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ["รายงานผลเสนอราคารถจักรยานยนต์"],
+      [`รอบวันที่ ${round.round_name || formatThaiDate(round.auction_date)}`],
+      [`วันที่ส่งออก ${exportedAt.toLocaleString("th-TH")}`],
+      [],
+      headers,
+      ...rows,
+    ]);
+
+    sheet["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } },
+    ];
 
     sheet["!cols"] = [
-      { wch: 12 },
-      { wch: 18 },
-      { wch: 16 },
-      { wch: 18 },
       { wch: 10 },
       { wch: 16 },
-      { wch: 18 },
-      { wch: 24 },
-      { wch: 18 },
       { wch: 14 },
       { wch: 20 },
-      { wch: 42 },
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 13 },
+      { wch: 17 },
+      { wch: 26 },
+      { wch: 15 },
+      { wch: 26 },
+      { wch: 15 },
+      { wch: 26 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 36 },
     ];
+    sheet["!freeze"] = { xSplit: 0, ySplit: 5 };
 
     sheet["!autofilter"] = {
       ref: XLSX.utils.encode_range({
-        s: { r: 0, c: 0 },
-        e: { r: Math.max(rows.length, 1), c: headers.length - 1 },
+        s: { r: 4, c: 0 },
+        e: { r: Math.max(rows.length + 4, 4), c: headers.length - 1 },
       }),
     };
 
-    XLSX.utils.book_append_sheet(workbook, sheet, "รายการรถ");
+    for (let columnIndex = 0; columnIndex < headers.length; columnIndex += 1) {
+      const headerCell = sheet[XLSX.utils.encode_cell({ r: 4, c: columnIndex })];
+
+      if (headerCell) {
+        headerCell.s = {
+          font: { bold: true },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          fill:
+            columnIndex === 10
+              ? { fgColor: { rgb: "FFE699" } }
+              : { fgColor: { rgb: "D9EAF7" } },
+        };
+      }
+    }
+
+    sortedExportLots.forEach((_, rowIndex) => {
+      priceColumnIndexes.forEach((columnIndex) => {
+        const cell = sheet[
+          XLSX.utils.encode_cell({ r: rowIndex + 5, c: columnIndex })
+        ];
+
+        if (cell && typeof cell.v === "number") {
+          cell.z = "#,##0";
+        }
+      });
+
+      const highestPriceCell = sheet[
+        XLSX.utils.encode_cell({ r: rowIndex + 5, c: 10 })
+      ];
+
+      if (highestPriceCell) {
+        highestPriceCell.s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "FFF2CC" } },
+        };
+      }
+    });
+
+    XLSX.utils.book_append_sheet(workbook, sheet, "ผลราคา");
 
     const roundFileName = (round.round_name || `round-${round.id}`)
       .replace(/[\\/:*?"<>|]/g, "")
