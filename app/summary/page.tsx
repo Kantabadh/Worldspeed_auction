@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import {
   formatAuctionDisplayOrder,
   getAuctionDisplayLabel,
-  sortAuctionMotorcycles,
+  sortBySavedAuctionDisplayOrder,
 } from "@/lib/auctionDisplayOrder";
 import { clearMerchantOfferDraft } from "@/lib/merchantOfferDraft";
 import BackButton from "@/components/BackButton";
@@ -85,7 +85,6 @@ type FinalOfferRow = {
 type AuctionMotorcycleRow = {
   id: number;
   display_order: number | null;
-  current_auction_motorcycle_id?: number | null;
   motorcycle_name: string | null;
   brand: string | null;
   model: string | null;
@@ -136,21 +135,17 @@ export default function SummaryPage() {
 
   async function fetchFullAuctionMotorcycles(auctionRoundId: number) {
     const { data, error } = await supabase
-      .from("stock_motorcycles")
+      .from("motorcycles")
       .select(
-        "id, current_auction_motorcycle_id, motorcycle_name, brand, model, year, license_plate"
+        "id, display_order, motorcycle_name, brand, model, year, license_plate"
       )
-      .eq("current_auction_round_id", auctionRoundId)
-      .not("current_auction_motorcycle_id", "is", null);
+      .eq("auction_round_id", auctionRoundId);
 
     if (error) throw error;
 
-    return sortAuctionMotorcycles((data as AuctionMotorcycleRow[] | null) || [])
-      .map((motorcycle, index) => ({
-        ...motorcycle,
-        id: Number(motorcycle.current_auction_motorcycle_id),
-        display_order: index + 1,
-      }));
+    return sortBySavedAuctionDisplayOrder(
+      (data as AuctionMotorcycleRow[] | null) || []
+    );
   }
 
   async function applyStoredDisplayOrderToOffers(

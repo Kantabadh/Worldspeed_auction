@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { saveCachedStaffProfile } from "@/lib/staffSession";
 
 type MerchantAccount = {
   id: number;
@@ -14,6 +15,21 @@ type MerchantAccount = {
 };
 
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+function getSafeInternalNext(value: string | null) {
+  if (!value) return "";
+  if (!value.startsWith("/") || value.startsWith("//")) return "";
+
+  try {
+    const parsed = new URL(value, window.location.origin);
+
+    if (parsed.origin !== window.location.origin) return "";
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return "";
+  }
+}
 
 function cleanPhone(value: string) {
   return value.replace(/\D/g, "").slice(0, 10);
@@ -34,6 +50,7 @@ export default function HomePage() {
   const [showConsentPolicy, setShowConsentPolicy] = useState(false);
   const [merchantErrorMessage, setMerchantErrorMessage] = useState("");
   const [isMerchantLoading, setIsMerchantLoading] = useState(false);
+  const [merchantLoginNext, setMerchantLoginNext] = useState("");
 
   const [staffEmail, setStaffEmail] = useState("");
   const [staffPassword, setStaffPassword] = useState("");
@@ -43,6 +60,14 @@ export default function HomePage() {
   useEffect(() => {
     const savedPhone = localStorage.getItem("rememberedMerchantPhone");
     const savedPolicy = localStorage.getItem("merchantAcceptedPolicy");
+    const safeNext = getSafeInternalNext(
+      new URLSearchParams(window.location.search).get("next")
+    );
+
+    if (safeNext) {
+      setMerchantLoginNext(safeNext);
+      setSelectedTab("merchant");
+    }
 
     if (savedPhone) {
       setMerchantPhone(savedPhone);
@@ -142,7 +167,7 @@ export default function HomePage() {
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
 
-    window.location.href = "/merchant";
+    window.location.href = merchantLoginNext || "/merchant";
   }
 
   async function handleStaffLogin(event: FormEvent<HTMLFormElement>) {
@@ -188,18 +213,16 @@ export default function HomePage() {
 
     const profile = profileData[0];
 
-    localStorage.setItem(
-      "staffProfile",
-      JSON.stringify({
-        id: profile.id,
-        email: profile.email,
-        role: profile.role,
-        active: profile.active,
-        branch_code: profile.branch_code,
-        branch_name: profile.branch_name,
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      })
-    );
+    saveCachedStaffProfile({
+      id: profile.id,
+      email: profile.email,
+      role: profile.role,
+      active: profile.active,
+      branch_code: profile.branch_code,
+      branch_name: profile.branch_name,
+    });
+
+    await supabase.auth.getSession();
 
     window.location.href =
       profile.role === "stock_staff" ? "/admin/stock" : "/admin";

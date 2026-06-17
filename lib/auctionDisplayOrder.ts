@@ -188,6 +188,41 @@ export function sortByStoredAuctionDisplayOrder<
   });
 }
 
+export function sortBySavedAuctionDisplayOrder<
+  T extends AuctionDisplayMotorcycle,
+>(items: T[]) {
+  return [...items].sort((a, b) => {
+    const orderA = getStoredAuctionDisplayOrder(a);
+    const orderB = getStoredAuctionDisplayOrder(b);
+
+    if (orderA !== null && orderB !== null) return orderA - orderB;
+    if (orderA !== null) return -1;
+    if (orderB !== null) return 1;
+
+    return (
+      getAuctionBrandForSort(a).localeCompare(
+        getAuctionBrandForSort(b),
+        "th",
+        { numeric: true, sensitivity: "base" }
+      ) ||
+      getAuctionModelForSort(a).localeCompare(
+        getAuctionModelForSort(b),
+        "th",
+        { numeric: true, sensitivity: "base" }
+      ) ||
+      compareAuctionYear(
+        getAuctionSortValue(a, "year"),
+        getAuctionSortValue(b, "year")
+      ) ||
+      normalizeAuctionText(getAuctionSortValue(a, "license_plate")).localeCompare(
+        normalizeAuctionText(getAuctionSortValue(b, "license_plate")),
+        "th",
+        { numeric: true, sensitivity: "base" }
+      )
+    );
+  });
+}
+
 export function getAuctionDisplayName(item: AuctionDisplayMotorcycle) {
   const brand = String(getAuctionSortValue(item, "brand") ?? "").trim();
   const model = String(getAuctionSortValue(item, "model") ?? "").trim();

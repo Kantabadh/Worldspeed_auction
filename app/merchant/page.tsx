@@ -1,16 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import type {
+  IDetectedBarcode,
+  IScannerError,
+  IScannerProps,
+} from "@yudiel/react-qr-scanner";
 import { supabase } from "@/lib/supabase";
 import {
   formatAuctionDisplayOrder,
   getAuctionDisplayLabel,
-  sortAuctionMotorcycles,
+  sortBySavedAuctionDisplayOrder,
 } from "@/lib/auctionDisplayOrder";
 import {
   loadMerchantOfferDraft,
   saveMerchantOfferDraft,
 } from "@/lib/merchantOfferDraft";
+
+const QrScanner = dynamic<IScannerProps>(
+  () => import("@yudiel/react-qr-scanner").then((module) => module.Scanner),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-72 items-center justify-center rounded-2xl bg-gray-900 text-sm font-semibold text-white">
+        กำลังเปิดกล้อง...
+      </div>
+    ),
+  }
+);
 
 type MotorcyclePhoto = {
   id: number;
@@ -90,6 +108,7 @@ type StockMotorcycleSnapshot = {
 
 type Offer = {
   motorcycle_id: number;
+  stock_motorcycle_id: number | null;
   display_order: number | null;
   lot: string;
   sortOrder: number | null;
@@ -148,9 +167,50 @@ type RoundLotMapping = {
 
 const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
+const INVALID_QR_MESSAGE = "QR ไม่ถูกต้อง";
+const CAMERA_ERROR_MESSAGE =
+  "ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง หรือใช้กล้องมือถือสแกน QR แทน";
+
+function buildMerchantLoginUrl() {
+  const next = `${window.location.pathname}${window.location.search}`;
+
+  return `/merchant-login?next=${encodeURIComponent(next)}`;
+}
+
+function extractMotorcycleIdFromQr(value: string) {
+  const text = value.trim();
+
+  if (!text) return null;
+
+  try {
+    const url = new URL(text, window.location.origin);
+    const motorcycleId = url.searchParams.get("motorcycleId")?.trim();
+
+    return motorcycleId || null;
+  } catch {
+    return null;
+  }
+}
+
+function getStockMotorcycleId(item: {
+  stock_motorcycle_id?: number | null;
+  stock_motorcycles?: { id?: number | null } | null;
+  stock_motorcycle?: { id?: number | null } | null;
+}) {
+  const id = Number(
+    item.stock_motorcycle_id ??
+      item.stock_motorcycles?.id ??
+      item.stock_motorcycle?.id
+  );
+
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
 
 export default function MerchantPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
+  const hasHandledQrJumpRef = useRef(false);
+  const qrSortedOffersRef = useRef<Offer[]>([]);
+  const qrPaginatedOffersRef = useRef<Offer[]>([]);
 
   const [merchantName, setMerchantName] = useState("");
   const [shopName, setShopName] = useState("");
@@ -173,6 +233,15 @@ export default function MerchantPage() {
   const [currentRound, setCurrentRound] = useState<CurrentAuctionRound | null>(null);
   const [isLoadingCurrentRound, setIsLoadingCurrentRound] = useState(true);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [targetMotorcycleId, setTargetMotorcycleId] = useState<string | null>(
+    null
+  );
+  const [highlightedMotorcycleId, setHighlightedMotorcycleId] =
+    useState<number | null>(null);
+  const [qrJumpPlanVersion, setQrJumpPlanVersion] = useState(0);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [qrScannerErrorMessage, setQrScannerErrorMessage] = useState("");
+  const [hasHandledQrScan, setHasHandledQrScan] = useState(false);
 
   const [isMerchantLoggedIn, setIsMerchantLoggedIn] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -213,6 +282,10 @@ export default function MerchantPage() {
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
     window.location.href = "/merchant-login";
+  }
+
+  function redirectToMerchantLogin() {
+    window.location.href = buildMerchantLoginUrl();
   }
 
   function refreshMerchantActivity() {
@@ -420,17 +493,22 @@ export default function MerchantPage() {
   }
 
   useEffect(() => {
+    setTargetMotorcycleId(
+      new URLSearchParams(window.location.search).get("motorcycleId")
+    );
+
     const savedSession = localStorage.getItem("merchantSession");
 
     if (!savedSession) {
-      window.location.href = "/merchant-login";
+      redirectToMerchantLogin();
       return;
     }
 
     const session = JSON.parse(savedSession) as MerchantSession;
 
     if (session.expiresAt && Date.now() > session.expiresAt) {
-      logoutMerchant();
+      localStorage.removeItem("merchantSession");
+      redirectToMerchantLogin();
       return;
     }
 
@@ -465,14 +543,15 @@ export default function MerchantPage() {
       const savedSession = localStorage.getItem("merchantSession");
 
       if (!savedSession) {
-        window.location.href = "/merchant-login";
+        redirectToMerchantLogin();
         return;
       }
 
       const session = JSON.parse(savedSession) as MerchantSession;
 
       if (session.expiresAt && Date.now() > session.expiresAt) {
-        logoutMerchant();
+        localStorage.removeItem("merchantSession");
+        redirectToMerchantLogin();
       }
     }, 5000);
 
@@ -484,6 +563,59 @@ export default function MerchantPage() {
       clearInterval(interval);
     };
   }, [isMerchantLoggedIn]);
+
+  function jumpToMotorcycle(motorcycleId: string) {
+    hasHandledQrJumpRef.current = false;
+    setTargetMotorcycleId(motorcycleId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("motorcycleId", motorcycleId);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }
+
+  function handleQrScan(detectedCodes: IDetectedBarcode[]) {
+    if (hasHandledQrScan) return;
+
+    const rawValue = detectedCodes[0]?.rawValue || "";
+    const motorcycleId = extractMotorcycleIdFromQr(rawValue);
+
+    if (!motorcycleId) {
+      setQrScannerErrorMessage(INVALID_QR_MESSAGE);
+      return;
+    }
+
+    setHasHandledQrScan(true);
+    setQrScannerErrorMessage("");
+    setIsQrScannerOpen(false);
+    jumpToMotorcycle(motorcycleId);
+  }
+
+  function handleQrScannerError(error: IScannerError) {
+    if (
+      error.kind === "permission-denied" ||
+      error.kind === "no-camera" ||
+      error.kind === "in-use" ||
+      error.kind === "insecure-context" ||
+      error.kind === "unsupported" ||
+      error.kind === "security"
+    ) {
+      setQrScannerErrorMessage(CAMERA_ERROR_MESSAGE);
+      return;
+    }
+
+    setQrScannerErrorMessage(INVALID_QR_MESSAGE);
+  }
+
+  function openQrScanner() {
+    setHasHandledQrScan(false);
+    setQrScannerErrorMessage("");
+    setIsQrScannerOpen(true);
+  }
+
+  function closeQrScanner() {
+    setIsQrScannerOpen(false);
+    setHasHandledQrScan(false);
+  }
 
   useEffect(() => {
     async function loadCurrentRoundAndMotorcycles() {
@@ -642,7 +774,8 @@ export default function MerchantPage() {
 
           return {
             motorcycle_id: auctionMotorcycleId,
-            display_order: stockSnapshot.display_order ?? null,
+            stock_motorcycle_id: stockSnapshot.id,
+            display_order: bike?.display_order ?? stockSnapshot.display_order ?? null,
             lot:
               mapping?.round_lot_number ||
               mapping?.lot_number ||
@@ -671,10 +804,7 @@ export default function MerchantPage() {
         }) || [];
 
       const sortedMotorcycleOffers =
-        sortAuctionMotorcycles(motorcycleOffers).map((offer, index) => ({
-          ...offer,
-          display_order: index + 1,
-        }));
+        sortBySavedAuctionDisplayOrder(motorcycleOffers);
 
       const draft = loadMerchantOfferDraft(
         getActiveMerchantAccountId(),
@@ -881,8 +1011,9 @@ export default function MerchantPage() {
     (!hasSubmitted || editableLotCount > 0);
 
   const sortedOffers = useMemo(() => {
-    return sortAuctionMotorcycles(offers);
+    return sortBySavedAuctionDisplayOrder(offers);
   }, [offers]);
+  qrSortedOffersRef.current = sortedOffers;
 
   const starredOffers = useMemo(() => {
     return sortedOffers.filter((offer) =>
@@ -951,6 +1082,82 @@ export default function MerchantPage() {
     (safeCurrentPage - 1) * ITEMS_PER_PAGE,
     safeCurrentPage * ITEMS_PER_PAGE
   );
+  qrPaginatedOffersRef.current = paginatedOffers;
+
+  useEffect(() => {
+    if (hasHandledQrJumpRef.current) return;
+    if (!targetMotorcycleId || isLoadingCurrentRound) return;
+
+    const sortedQrOffers = qrSortedOffersRef.current;
+    if (sortedQrOffers.length === 0) return;
+
+    const targetId = Number(targetMotorcycleId);
+    if (!Number.isFinite(targetId)) {
+      setErrorMessage(INVALID_QR_MESSAGE);
+      return;
+    }
+
+    const targetIndex = sortedQrOffers.findIndex(
+      (offer) => getStockMotorcycleId(offer) === targetId
+    );
+
+    if (targetIndex < 0) {
+      setErrorMessage(INVALID_QR_MESSAGE);
+      return;
+    }
+
+    setSearchText("");
+    setOfferFilter("all");
+    setCurrentPage(Math.floor(targetIndex / ITEMS_PER_PAGE) + 1);
+    setQrJumpPlanVersion((current) => current + 1);
+  }, [targetMotorcycleId, isLoadingCurrentRound]);
+
+  useEffect(() => {
+    if (hasHandledQrJumpRef.current) return;
+    if (!targetMotorcycleId || isLoadingCurrentRound) return;
+
+    const paginatedQrOffers = qrPaginatedOffersRef.current;
+    if (paginatedQrOffers.length === 0) return;
+
+    const targetId = Number(targetMotorcycleId);
+    if (!Number.isFinite(targetId)) return;
+
+    const targetOffer = paginatedQrOffers.find(
+      (offer) => getStockMotorcycleId(offer) === targetId
+    );
+
+    if (!targetOffer) return;
+
+    window.setTimeout(() => {
+      const card = document.querySelector<HTMLElement>(
+        `[data-motorcycle-card-id="${targetId}"]`
+      );
+      const input = document.querySelector<HTMLInputElement>(
+        `[data-price-input-id="${targetId}"]`
+      );
+
+      if (!card) return;
+
+      hasHandledQrJumpRef.current = true;
+      const rect = card.getBoundingClientRect();
+      const absoluteTop = window.scrollY + rect.top;
+      const targetTop =
+        absoluteTop - window.innerHeight / 2 + rect.height / 2;
+
+      window.scrollTo({
+        top: Math.max(targetTop, 0),
+        behavior: "smooth",
+      });
+      input?.focus({ preventScroll: true });
+      setHighlightedMotorcycleId(targetId);
+
+      window.setTimeout(() => {
+        setHighlightedMotorcycleId((current) =>
+          current === targetId ? null : current
+        );
+      }, 1800);
+    }, 150);
+  }, [targetMotorcycleId, currentPage, isLoadingCurrentRound, qrJumpPlanVersion]);
 
   const paginatedMotorcycleIds = useMemo(
     () => paginatedOffers.map((offer) => Number(offer.motorcycle_id)),
@@ -984,26 +1191,32 @@ export default function MerchantPage() {
 
     async function loadCardPhotos() {
       try {
-        const photoResults = await Promise.all(
-          motorcycleIdsToLoad.map(async (motorcycleId) => {
-            const { data, error, count } = await supabase
-              .from("motorcycle_photos")
-              .select("id, motorcycle_id, image_url", { count: "exact" })
-              .eq("motorcycle_id", motorcycleId)
-              .order("id", { ascending: true })
-              .limit(2);
+        const { data, error } = await supabase
+          .from("motorcycle_photos")
+          .select("id, motorcycle_id, image_url")
+          .in("motorcycle_id", motorcycleIdsToLoad)
+          .order("motorcycle_id", { ascending: true })
+          .order("id", { ascending: true });
 
-            if (error) throw error;
+        if (error) throw error;
 
-            const photos = (data as MotorcyclePhoto[] | null) || [];
+        const photosByMotorcycleId = new Map<number, MotorcyclePhoto[]>();
 
-            return {
-              motorcycleId,
-              photos,
-              count: count ?? photos.length,
-            };
-          })
-        );
+        ((data as MotorcyclePhoto[] | null) || []).forEach((photo) => {
+          const photos = photosByMotorcycleId.get(photo.motorcycle_id) || [];
+          photos.push(photo);
+          photosByMotorcycleId.set(photo.motorcycle_id, photos);
+        });
+
+        const photoResults = motorcycleIdsToLoad.map((motorcycleId) => {
+          const photos = photosByMotorcycleId.get(motorcycleId) || [];
+
+          return {
+            motorcycleId,
+            photos: photos.slice(0, 2),
+            count: photos.length,
+          };
+        });
 
         if (isCancelled) return;
 
@@ -1428,14 +1641,20 @@ export default function MerchantPage() {
                   );
 
                   const inputDisabled = auctionStatus !== "open" || !lotCanEdit;
+                  const qrStockMotorcycleId = getStockMotorcycleId(offer);
+                  const isQrHighlighted =
+                    highlightedMotorcycleId === qrStockMotorcycleId;
 
                   return (
                     <article
                       key={offer.motorcycle_id}
+                      data-motorcycle-card-id={qrStockMotorcycleId ?? undefined}
                       className={
-                        isStarred
-                          ? "overflow-hidden rounded-3xl border border-yellow-300 bg-yellow-50 shadow-sm"
-                          : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
+                        isQrHighlighted
+                          ? "overflow-hidden rounded-3xl bg-white shadow-sm ring-4 ring-blue-300"
+                          : isStarred
+                            ? "overflow-hidden rounded-3xl border border-yellow-300 bg-yellow-50 shadow-sm"
+                            : "overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-200"
                       }
                     >
                       {visiblePhotos.length > 0 ? (
@@ -1685,6 +1904,7 @@ export default function MerchantPage() {
 
                           <div className="mt-2 flex items-center overflow-hidden rounded-2xl border bg-white focus-within:ring-2 focus-within:ring-black">
                             <input
+                              data-price-input-id={qrStockMotorcycleId ?? undefined}
                               inputMode="numeric"
                               disabled={inputDisabled}
                               className="w-full p-4 text-xl font-semibold outline-none disabled:bg-gray-100 disabled:text-gray-700"
@@ -1723,7 +1943,7 @@ export default function MerchantPage() {
       </section>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white p-3 shadow-lg sm:p-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
               ใส่ราคาแล้ว {enteredOfferCount} / {offers.length} รายการ
@@ -1736,17 +1956,27 @@ export default function MerchantPage() {
             )}
           </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="shrink-0 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow disabled:bg-gray-400 sm:px-6 sm:text-base"
-          >
-            {isLockedAfterSubmission
-              ? "ส่งแล้ว"
-              : hasSubmitted && editableLotCount > 0
-                ? "ตรวจสอบราคาใหม่"
-                : "ตรวจสอบราคา"}
-          </button>
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:shrink-0">
+            <button
+              type="button"
+              onClick={openQrScanner}
+              className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700 sm:px-6 sm:text-base"
+            >
+              สแกน QR
+            </button>
+
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow disabled:bg-gray-400 sm:px-6 sm:text-base"
+            >
+              {isLockedAfterSubmission
+                ? "ส่งแล้ว"
+                : hasSubmitted && editableLotCount > 0
+                  ? "ตรวจสอบราคาใหม่"
+                  : "ตรวจสอบราคา"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1797,6 +2027,47 @@ export default function MerchantPage() {
     }}
   />
 </div>
+        </div>
+      )}
+
+      {isQrScannerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <section className="w-full max-w-md rounded-3xl bg-white p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">สแกน QR</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeQrScanner}
+                className="rounded-xl border px-3 py-2 text-sm font-bold hover:bg-gray-100"
+              >
+                ปิด
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-2xl bg-gray-900">
+              <QrScanner
+                onScan={handleQrScan}
+                onError={handleQrScannerError}
+                constraints={{ facingMode: "environment" }}
+                formats={["qr_code"]}
+                paused={!isQrScannerOpen || hasHandledQrScan}
+                sound={false}
+                styles={{
+                  container: { width: "100%" },
+                  video: { width: "100%", height: "320px", objectFit: "cover" },
+                }}
+              />
+            </div>
+
+            {qrScannerErrorMessage && (
+              <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+                {qrScannerErrorMessage}
+              </p>
+            )}
+          </section>
         </div>
       )}
     </main>

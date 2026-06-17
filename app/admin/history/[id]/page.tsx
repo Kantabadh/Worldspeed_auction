@@ -500,7 +500,7 @@ export default function AdminHistoryDetailPage() {
       <header className="border-b bg-white px-4 py-5 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
-            <BackButton href="/admin/history" />
+            <BackButton fallbackHref="/admin/history" />
 
             <div>
             <p className="text-sm font-medium uppercase tracking-wide text-gray-500">

@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   clearCachedStaffProfile,
   getCachedStaffProfile,
   isStaffRoleAllowed,
-  saveCachedStaffProfile,
-  type StaffProfile,
   type StaffRole,
 } from "@/lib/staffSession";
 
@@ -16,163 +14,137 @@ type StaffGuardProps = {
   allowedRoles?: StaffRole[];
 };
 
+type AccessState = "checking" | "allowed" | "redirecting" | "error";
+
 const DEFAULT_ALLOWED_ROLES: StaffRole[] = ["owner", "admin"];
+const AUTH_CHECK_TIMEOUT_MS = 5000;
+const AUTH_ERROR_MESSAGE = "โหลดข้อมูลไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่";
 
 export default function StaffGuard({
   children,
   allowedRoles = DEFAULT_ALLOWED_ROLES,
 }: StaffGuardProps) {
-  const [isAllowed, setIsAllowed] = useState(false);
-  const [isChecking, setIsChecking] = useState(true);
+  const router = useRouter();
+  const redirectStartedRef = useRef(false);
+  const checkedRoleKeyRef = useRef("");
+  const accessStateRef = useRef<AccessState>("checking");
+  const [mounted, setMounted] = useState(false);
+  const [accessState, setAccessState] = useState<AccessState>("checking");
+  const [shouldRedirectToLogin, setShouldRedirectToLogin] = useState(false);
+  const roleKey = allowedRoles.join("|");
 
-  async function logoutStaff() {
-    clearCachedStaffProfile();
-    await supabase.auth.signOut();
-    window.location.href = "/";
-  }
+  const setGuardState = useCallback((nextState: AccessState) => {
+    accessStateRef.current = nextState;
+    setAccessState(nextState);
+  }, []);
 
-  async function denyAccess() {
-    clearCachedStaffProfile();
-    setIsAllowed(false);
-    setIsChecking(false);
+  const safeRedirectToLogin = useCallback(() => {
+    if (redirectStartedRef.current) return;
 
-    setTimeout(() => {
-      window.location.href = "/";
-    }, 900);
-  }
-
-  async function verifyStaffInBackground(showLoading: boolean) {
-    if (showLoading) {
-      setIsChecking(true);
-      setIsAllowed(false);
-    }
-
-    const savedProfile = getCachedStaffProfile();
-
-    if (!savedProfile) {
-      window.location.href = "/";
-      return;
-    }
-
-    if (!isStaffRoleAllowed(savedProfile, allowedRoles)) {
-      await denyAccess();
-      return;
-    }
-
-    setIsAllowed(true);
-    setIsChecking(false);
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !userData.user) {
-      await logoutStaff();
-      return;
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("staff_profiles")
-      .select("id, email, role, active, branch_code, branch_name")
-      .eq("id", userData.user.id)
-      .eq("active", true)
-      .limit(1);
-
-    if (profileError || !profile || profile.length === 0) {
-      await logoutStaff();
-      return;
-    }
-
-    const verifiedProfile = profile[0] as StaffProfile;
-
-    if (!isStaffRoleAllowed(verifiedProfile, allowedRoles)) {
-      await denyAccess();
-      return;
-    }
-
-    saveCachedStaffProfile({
-      id: verifiedProfile.id,
-      email: verifiedProfile.email,
-      role: verifiedProfile.role,
-      active: verifiedProfile.active,
-      branch_code: verifiedProfile.branch_code,
-      branch_name: verifiedProfile.branch_name,
-    });
-
-    setIsAllowed(true);
-    setIsChecking(false);
-  }
-
-  function refreshStaffActivity() {
-    const savedProfileText = localStorage.getItem("staffProfile");
-
-    if (!savedProfileText) return;
-
-    try {
-      const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
-      saveCachedStaffProfile(savedProfile);
-    } catch {
-      clearCachedStaffProfile();
-    }
-  }
+    redirectStartedRef.current = true;
+    setGuardState("redirecting");
+    setShouldRedirectToLogin(true);
+  }, [setGuardState]);
 
   useEffect(() => {
-    const cachedProfile = getCachedStaffProfile();
-
-    if (isStaffRoleAllowed(cachedProfile, allowedRoles)) {
-      setIsAllowed(true);
-      setIsChecking(false);
-      verifyStaffInBackground(false);
-      return;
-    }
-
-    verifyStaffInBackground(true);
+    setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (!isAllowed) return;
+    if (!mounted || !shouldRedirectToLogin) return;
 
-    const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
+    router.replace("/staff-login");
+  }, [mounted, router, shouldRedirectToLogin]);
 
-    events.forEach((event) => {
-      window.addEventListener(event, refreshStaffActivity);
-    });
+  useEffect(() => {
+    if (!mounted) return;
+    if (
+      checkedRoleKeyRef.current === roleKey &&
+      accessStateRef.current !== "checking"
+    ) {
+      return;
+    }
 
-    const interval = setInterval(() => {
-      const savedProfileText = localStorage.getItem("staffProfile");
+    let cancelled = false;
+    const allowedRoleSet = new Set(roleKey.split("|"));
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled && accessStateRef.current === "checking") {
+        setGuardState("error");
+      }
+    }, AUTH_CHECK_TIMEOUT_MS);
 
-      if (!savedProfileText) {
-        logoutStaff();
-        return;
+    try {
+      if (accessStateRef.current !== "allowed") {
+        setGuardState("checking");
       }
 
-      try {
-        const savedProfile = JSON.parse(savedProfileText) as StaffProfile;
+      const cachedProfile = getCachedStaffProfile();
 
-        if (savedProfile.expiresAt && Date.now() > savedProfile.expiresAt) {
-          logoutStaff();
-        }
-      } catch {
-        logoutStaff();
+      if (!cachedProfile) {
+        clearCachedStaffProfile();
+        safeRedirectToLogin();
+        return () => {
+          cancelled = true;
+          window.clearTimeout(timeoutId);
+        };
       }
-    }, 5000);
+
+      if (!allowedRoleSet.has(cachedProfile.role)) {
+        clearCachedStaffProfile();
+        safeRedirectToLogin();
+        return () => {
+          cancelled = true;
+          window.clearTimeout(timeoutId);
+        };
+      }
+
+      checkedRoleKeyRef.current = roleKey;
+      setGuardState("allowed");
+    } catch (error) {
+      console.error("[StaffGuard] access check failed", error);
+      clearCachedStaffProfile();
+      setGuardState("error");
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     return () => {
-      events.forEach((event) => {
-        window.removeEventListener(event, refreshStaffActivity);
-      });
-
-      clearInterval(interval);
+      cancelled = true;
+      window.clearTimeout(timeoutId);
     };
-  }, [isAllowed]);
+  }, [mounted, roleKey, safeRedirectToLogin, setGuardState]);
 
-  if (isChecking || !isAllowed) {
+  if (accessState === "allowed") {
+    return <>{children}</>;
+  }
+
+  if (accessState === "error") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <section className="flex min-h-[300px] w-full max-w-md items-center justify-center rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
+        <section className="flex min-h-[300px] w-full max-w-md flex-col items-center justify-center gap-4 rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-gray-200">
+          <p className="text-sm font-semibold text-red-700">
+            {AUTH_ERROR_MESSAGE}
+          </p>
+          <a
+            href="/staff-login"
+            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+          >
+            กลับไปหน้าเข้าสู่ระบบ
+          </a>
         </section>
       </main>
     );
   }
 
-  return <>{children}</>;
+  if (accessState === "redirecting") {
+    return null;
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+      <section className="flex min-h-[300px] w-full max-w-md items-center justify-center rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
+      </section>
+    </main>
+  );
 }

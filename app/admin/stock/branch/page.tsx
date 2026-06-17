@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 import { supabase } from "@/lib/supabase";
 
@@ -635,13 +636,7 @@ export default function BranchStockPage() {
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-5xl px-3 py-4 sm:px-4 sm:py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <a
-              href="/admin"
-              aria-label="กลับหน้าแอดมิน"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xl font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
-            >
-              ←
-            </a>
+            <BackButton fallbackHref="/admin" />
 
             <button
               type="button"

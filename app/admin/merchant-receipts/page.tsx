@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  buildAuctionDisplayOrderMap,
   formatAuctionDisplayOrder,
   getAuctionDisplayLabel,
-  sortAuctionMotorcycles,
+  sortBySavedAuctionDisplayOrder,
 } from "@/lib/auctionDisplayOrder";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -67,7 +66,7 @@ type RoundLotMapping = {
 
 type AuctionMotorcycleOrderRow = {
   id: number;
-  current_auction_motorcycle_id: number | null;
+  display_order: number | null;
   motorcycle_name: string | null;
   brand: string | null;
   model: string | null;
@@ -251,12 +250,11 @@ export default function AdminMerchantReceiptsPage() {
     });
 
     const { data: auctionOrderData, error: auctionOrderError } = await supabase
-      .from("stock_motorcycles")
+      .from("motorcycles")
       .select(
-        "id, current_auction_motorcycle_id, motorcycle_name, brand, model, year, license_plate"
+        "id, display_order, motorcycle_name, brand, model, year, license_plate"
       )
-      .eq("current_auction_round_id", loadedRound.id)
-      .not("current_auction_motorcycle_id", "is", null);
+      .eq("auction_round_id", loadedRound.id);
 
     if (auctionOrderError) {
       setErrorMessage(auctionOrderError.message);
@@ -264,16 +262,8 @@ export default function AdminMerchantReceiptsPage() {
       return;
     }
 
-    const fullAuctionMotorcycles = sortAuctionMotorcycles(
-      ((auctionOrderData as AuctionMotorcycleOrderRow[] | null) || []).map(
-        (motorcycle) => ({
-          ...motorcycle,
-          id: Number(motorcycle.current_auction_motorcycle_id),
-        })
-      )
-    );
-    const displayOrderByMotorcycleId = buildAuctionDisplayOrderMap(
-      fullAuctionMotorcycles
+    const fullAuctionMotorcycles = sortBySavedAuctionDisplayOrder(
+      (auctionOrderData as AuctionMotorcycleOrderRow[] | null) || []
     );
     const auctionMotorcycleById = new Map(
       fullAuctionMotorcycles.map((motorcycle) => [
@@ -287,9 +277,9 @@ export default function AdminMerchantReceiptsPage() {
         const motorcycleId = Number(offer.motorcycles?.id || offer.motorcycle_id);
         const mapping = mappingByMotorcycleId.get(motorcycleId);
         const auctionMotorcycle = auctionMotorcycleById.get(motorcycleId);
-        const displayOrder =
-          displayOrderByMotorcycleId[String(motorcycleId)] ||
-          formatAuctionDisplayOrder(null);
+        const displayOrder = formatAuctionDisplayOrder(
+          auctionMotorcycle?.display_order
+        );
 
         return {
           ...offer,

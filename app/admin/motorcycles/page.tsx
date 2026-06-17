@@ -2,14 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import {
-  buildAuctionDisplayOrderMap,
   formatAuctionDisplayOrder,
   getAuctionDisplayLabel,
+  getStoredAuctionDisplayOrder,
+  sortBySavedAuctionDisplayOrder,
+  sortByStoredAuctionDisplayOrder,
   sortAuctionMotorcycles,
 } from "@/lib/auctionDisplayOrder";
+import { withBackFrom } from "@/lib/navigation";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -44,6 +49,7 @@ type Motorcycle = MotorcycleDetails & {
   round_lot_id?: number | null;
   round_lot_number?: string | null;
   sort_order?: number | null;
+  display_order?: number | null;
   auction_round_id?: number | null;
   stock_motorcycle_id?: number | null;
   stock_number?: string | null;
@@ -378,6 +384,7 @@ function getSavedStaffProfile() {
 }
 
 export default function AdminMotorcyclesPage() {
+  const pathname = usePathname();
   const listSectionRef = useRef<HTMLElement | null>(null);
 
   const [motorcycles, setMotorcycles] = useState<Motorcycle[]>([]);
@@ -593,6 +600,7 @@ export default function AdminMotorcyclesPage() {
         .select(
           `
           id,
+          display_order,
           lot_number,
           auction_round_id,
           stock_motorcycle_id,
@@ -699,16 +707,12 @@ export default function AdminMotorcyclesPage() {
         round_lot_id: mapping?.id ?? null,
         round_lot_number:
           mapping?.round_lot_number || mapping?.lot_number || null,
-        sort_order: stockSnapshot.display_order ?? null,
+        display_order: bike?.display_order ?? stockSnapshot.display_order ?? null,
+        sort_order: bike?.display_order ?? stockSnapshot.display_order ?? null,
       } as Motorcycle;
     });
 
-    setMotorcycles(
-      sortAuctionMotorcycles(mergedMotorcycles).map((bike, index) => ({
-        ...bike,
-        sort_order: index + 1,
-      }))
-    );
+    setMotorcycles(sortByStoredAuctionDisplayOrder(mergedMotorcycles));
     setIsLoading(false);
   }
 
@@ -1066,6 +1070,7 @@ export default function AdminMotorcyclesPage() {
         currentRoundMotorcycles
       ).map((bike, index) => ({
         ...bike,
+        display_order: index + 1,
         sort_order: index + 1,
       }));
 
@@ -1106,6 +1111,20 @@ export default function AdminMotorcyclesPage() {
 
       if (sortUpdateError) throw sortUpdateError;
 
+      const motorcycleUpdateResults = await Promise.all(
+        sortedMotorcycles.map((bike, index) =>
+          supabase
+            .from("motorcycles")
+            .update({ display_order: index + 1 })
+            .eq("id", bike.id)
+        )
+      );
+      const motorcycleUpdateError = motorcycleUpdateResults.find(
+        (result) => result.error
+      )?.error;
+
+      if (motorcycleUpdateError) throw motorcycleUpdateError;
+
       await createAuditLog({
         action: "auction_motorcycles_sorted",
         targetType: "auction_round",
@@ -1123,7 +1142,7 @@ export default function AdminMotorcyclesPage() {
       });
 
       await loadMotorcycles();
-      alert("เรียงลำดับแล้ว");
+      alert("เรียงและบันทึกลำดับแล้ว");
     } catch (error) {
       const sortError = error as {
         message?: string;
@@ -1178,8 +1197,7 @@ export default function AdminMotorcyclesPage() {
     ];
 
     const rows = checklistMotorcycles.map((bike) => [
-      displayOrderByMotorcycleId[String(bike.id)] ||
-        formatAuctionDisplayOrder(bike.sort_order),
+      formatAuctionDisplayOrder(bike.display_order ?? bike.sort_order),
       getDisplayBrand(bike) || "-",
       getDisplayModel(bike) || "-",
       bike.year || "-",
@@ -1411,15 +1429,8 @@ export default function AdminMotorcyclesPage() {
   }, [searchText]);
 
   const sortedFullMotorcycles = useMemo(() => {
-    return sortAuctionMotorcycles(motorcycles).map((bike, index) => ({
-      ...bike,
-      sort_order: index + 1,
-    }));
+    return sortBySavedAuctionDisplayOrder(motorcycles);
   }, [motorcycles]);
-
-  const displayOrderByMotorcycleId = useMemo(() => {
-    return buildAuctionDisplayOrderMap(sortedFullMotorcycles);
-  }, [sortedFullMotorcycles]);
 
   const filteredMotorcycles = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -1497,8 +1508,20 @@ export default function AdminMotorcyclesPage() {
               >
                 {isSavingSortOrder
                   ? "กำลังเรียง..."
-                  : "เรียงตามยี่ห้อ/รุ่น"}
+                  : "เรียงและบันทึกลำดับ"}
               </button>
+
+              {currentRound && (
+                <Link
+                  href={withBackFrom(
+                    `/admin/rounds/${currentRound.id}/qr`,
+                    pathname
+                  )}
+                  className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
+                >
+                  พิมพ์ QR รถ
+                </Link>
+              )}
 
               <button
                 type="button"
@@ -1717,8 +1740,9 @@ export default function AdminMotorcyclesPage() {
                   {paginatedMotorcycles.map((bike) => {
                     const isDetailOpen = openDetailIds.includes(bike.id);
                     const displayOrderNumber =
-                      displayOrderByMotorcycleId[String(bike.id)] ||
-                      formatAuctionDisplayOrder(bike.sort_order);
+                      formatAuctionDisplayOrder(
+                        getStoredAuctionDisplayOrder(bike) ?? bike.sort_order
+                      );
 
                     return (
                       <article

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { withBackFrom } from "@/lib/navigation";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -135,6 +137,7 @@ async function createAuditLog({
 }
 
 export default function AdminRoundsPage() {
+  const pathname = usePathname();
   const [rounds, setRounds] = useState<AuctionRound[]>([]);
   const [searchText, setSearchText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -543,7 +546,7 @@ export default function AdminRoundsPage() {
                             </button>
 
                             <a
-                              href={`/admin/rounds/${round.id}`}
+                              href={withBackFrom(`/admin/rounds/${round.id}`, pathname)}
                               className="rounded-lg bg-black px-3 py-2 text-xs font-bold text-white hover:bg-gray-800"
                             >
                               ดูรายละเอียด

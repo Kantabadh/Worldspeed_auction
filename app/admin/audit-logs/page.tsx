@@ -807,7 +807,7 @@ export default function AdminAuditLogsPage() {
       <header className="border-b bg-white px-4 py-5 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
-            <BackButton href="/admin" />
+            <BackButton fallbackHref="/admin" />
 
             <div>
             <h1 className="text-2xl font-bold text-gray-900">

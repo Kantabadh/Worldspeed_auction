@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { withBackFrom } from "@/lib/navigation";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -195,6 +197,7 @@ function getIsCompleteMigrationMessage() {
 }
 
 export default function AdminStockPage() {
+  const pathname = usePathname();
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(() => {
     if (typeof window === "undefined") return null;
@@ -1015,7 +1018,7 @@ export default function AdminStockPage() {
                   </button>
 
                   <a
-                    href="/admin/stock/branch"
+                    href={withBackFrom("/admin/stock/branch", pathname)}
                     className="w-full rounded-2xl border bg-white px-5 py-3 text-center font-semibold shadow hover:bg-gray-100 sm:w-auto"
                   >
                     ไปคลังสาขา

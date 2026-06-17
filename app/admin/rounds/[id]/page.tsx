@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import Link from "next/link";
+import { useParams, usePathname } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import {
   formatAuctionDisplayOrder,
-  sortAuctionMotorcycles,
+  sortBySavedAuctionDisplayOrder,
 } from "@/lib/auctionDisplayOrder";
+import { withBackFrom } from "@/lib/navigation";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
 
@@ -296,11 +298,12 @@ function getArrangementTitle(motorcycle: ArrangementMotorcycle | null) {
 }
 
 function sortArrangementMotorcycles(items: ArrangementMotorcycle[]) {
-  return sortAuctionMotorcycles(items);
+  return sortBySavedAuctionDisplayOrder(items);
 }
 
 export default function AdminRoundDetailPage() {
   const params = useParams<{ id: string }>();
+  const pathname = usePathname();
   const roundId = Number(params.id);
 
   const [round, setRound] = useState<AuctionRound | null>(null);
@@ -489,12 +492,7 @@ export default function AdminRoundDetailPage() {
       }
     );
 
-    setArrangementMotorcycles(
-      sortArrangementMotorcycles(roundMotorcycles).map((motorcycle, index) => ({
-        ...motorcycle,
-        display_order: index + 1,
-      }))
-    );
+    setArrangementMotorcycles(sortArrangementMotorcycles(roundMotorcycles));
   }
 
   async function loadRoundDetail() {
@@ -1208,7 +1206,7 @@ export default function AdminRoundDetailPage() {
   function exportRoundExcel() {
     if (!round) return;
 
-    const sortedMotorcycles = sortAuctionMotorcycles(
+    const sortedMotorcycles = sortBySavedAuctionDisplayOrder(
       filteredLotResults
         .map((lot) => lot.motorcycle)
         .filter((motorcycle): motorcycle is ArrangementMotorcycle => Boolean(motorcycle))
@@ -1381,7 +1379,7 @@ export default function AdminRoundDetailPage() {
     <StaffGuard allowedRoles={["owner", "admin"]}>
       <main className="min-h-screen bg-gray-50 pb-10">
         <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
-          <BackButton href="/admin/rounds" />
+          <BackButton fallbackHref="/admin/rounds" />
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1489,14 +1487,25 @@ export default function AdminRoundDetailPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={exportRoundExcel}
-                disabled={!round || lotResults.length === 0}
-                className="rounded-xl bg-black px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                ดาวน์โหลด Excel ผลราคา
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {round && (
+                  <Link
+                    href={withBackFrom(`/admin/rounds/${round.id}/qr`, pathname)}
+                    className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
+                  >
+                    พิมพ์ QR รถ
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  onClick={exportRoundExcel}
+                  disabled={!round || lotResults.length === 0}
+                  className="rounded-xl bg-black px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  ดาวน์โหลด Excel ผลราคา
+                </button>
+              </div>
             </div>
 
             <div className="mt-4">
@@ -1758,7 +1767,10 @@ export default function AdminRoundDetailPage() {
 
                               {lot.motorcycle?.id ? (
                                 <a
-                                  href={`/admin/lots/${lot.motorcycle.id}`}
+                                  href={withBackFrom(
+                                    `/admin/lots/${lot.motorcycle.id}`,
+                                    pathname
+                                  )}
                                   className="inline-flex rounded-lg bg-black px-3 py-2 text-xs font-bold text-white hover:bg-gray-800"
                                 >
                                   ดูรายละเอียด
