@@ -4,7 +4,7 @@ import {
   getMerchantServerSessionCookieOptions,
   MERCHANT_SERVER_SESSION_COOKIE,
 } from "@/lib/merchantServerSession";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +22,37 @@ function cleanPhone(value: string) {
   return value.replace(/\D/g, "").slice(0, 10);
 }
 
-function getErrorResponse(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
+function getErrorDetails(error: unknown) {
+  if (error instanceof Error) {
+    return { message: error.message, code: "", details: "", hint: "" };
+  }
+
+  if (!error || typeof error !== "object") {
+    return { message: String(error || ""), code: "", details: "", hint: "" };
+  }
+
+  return {
+    message: "message" in error ? String(error.message || "") : "",
+    code: "code" in error ? String(error.code || "") : "",
+    details: "details" in error ? String(error.details || "") : "",
+    hint: "hint" in error ? String(error.hint || "") : "",
+  };
+}
+
+function getErrorResponse(
+  message: string,
+  status = 400,
+  details?: Record<string, string>
+) {
+  return NextResponse.json(
+    {
+      error: message,
+      ...(process.env.NODE_ENV !== "production" && details
+        ? { details }
+        : {}),
+    },
+    { status }
+  );
 }
 
 export async function POST(request: Request) {
@@ -42,6 +71,20 @@ export async function POST(request: Request) {
     return getErrorResponse("Phone and merchant code are required");
   }
 
+  let supabaseServer;
+
+  try {
+    supabaseServer = getSupabaseServerClient();
+  } catch (error) {
+    const details = getErrorDetails(error);
+    console.error("[MERCHANT LOGIN SERVER CLIENT ERROR]", details);
+    return getErrorResponse(
+      "Merchant session server is not configured",
+      500,
+      details
+    );
+  }
+
   const { data, error } = await supabaseServer
     .from("merchant_accounts")
     .select("id, merchant_code, merchant_name, shop_name, phone, active, approval_status")
@@ -51,7 +94,9 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (error) {
-    return getErrorResponse(error.message, 500);
+    const details = getErrorDetails(error);
+    console.error("[MERCHANT LOGIN VALIDATION ERROR]", details);
+    return getErrorResponse(details.message || "Merchant login failed", 500, details);
   }
 
   if (!data) {
@@ -93,11 +138,13 @@ export async function POST(request: Request) {
 
     return response;
   } catch (sessionError) {
-    const message =
-      sessionError instanceof Error
-        ? sessionError.message
-        : "Could not create merchant session";
+    const details = getErrorDetails(sessionError);
+    console.error("[MERCHANT SESSION CREATE ERROR]", details);
 
-    return getErrorResponse(message, 500);
+    return getErrorResponse(
+      details.message || "Could not create merchant session",
+      500,
+      details
+    );
   }
 }

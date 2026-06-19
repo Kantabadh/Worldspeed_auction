@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export const MERCHANT_SERVER_SESSION_COOKIE = "merchant_session_token";
 export const MERCHANT_SERVER_SESSION_MAX_AGE_SECONDS = 2 * 24 * 60 * 60;
@@ -31,6 +31,17 @@ type MerchantAccountRow = {
   approval_status: string | null;
 };
 
+function getErrorDetails(error: unknown) {
+  if (!error || typeof error !== "object") return {};
+
+  return {
+    message: "message" in error ? String(error.message || "") : "",
+    code: "code" in error ? String(error.code || "") : "",
+    details: "details" in error ? String(error.details || "") : "",
+    hint: "hint" in error ? String(error.hint || "") : "",
+  };
+}
+
 export function createRawSessionToken() {
   return randomBytes(32).toString("base64url");
 }
@@ -50,6 +61,7 @@ export function getMerchantServerSessionCookieOptions() {
 }
 
 export async function createMerchantServerSession(merchantAccountId: number) {
+  const supabaseServer = getSupabaseServerClient();
   const token = createRawSessionToken();
   const tokenHash = hashSessionToken(token);
   const expiresAt = new Date(
@@ -62,7 +74,14 @@ export async function createMerchantServerSession(merchantAccountId: number) {
     expires_at: expiresAt,
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error("[MERCHANT SESSION INSERT ERROR]", {
+      ...getErrorDetails(error),
+      merchantAccountId,
+      insertColumns: ["token_hash", "merchant_account_id", "expires_at"],
+    });
+    throw error;
+  }
 
   return { token, expiresAt };
 }
@@ -70,6 +89,7 @@ export async function createMerchantServerSession(merchantAccountId: number) {
 export async function getMerchantSessionFromToken(token?: string | null) {
   if (!token) return null;
 
+  const supabaseServer = getSupabaseServerClient();
   const tokenHash = hashSessionToken(token);
   const { data: sessionRow, error: sessionError } = await supabaseServer
     .from("merchant_sessions")
@@ -114,6 +134,7 @@ export async function getMerchantSessionFromRequestCookie() {
 export async function revokeMerchantServerSession(token?: string | null) {
   if (!token) return;
 
+  const supabaseServer = getSupabaseServerClient();
   await supabaseServer
     .from("merchant_sessions")
     .update({ revoked_at: new Date().toISOString() })
