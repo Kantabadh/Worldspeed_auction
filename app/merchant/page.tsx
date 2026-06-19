@@ -22,6 +22,7 @@ import {
   clearMerchantSession,
   getValidMerchantSession,
   saveMerchantSession,
+  type MerchantSession,
 } from "@/lib/merchantSession";
 
 const QrScanner = dynamic<IScannerProps>(
@@ -202,6 +203,22 @@ function getStockMotorcycleId(item: {
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+async function getServerMerchantSession() {
+  const response = await fetch("/api/merchant/session", {
+    cache: "no-store",
+  });
+
+  if (!response.ok) return null;
+
+  const result = (await response.json().catch(() => null)) as
+    | {
+        merchant?: MerchantSession;
+      }
+    | null;
+
+  return result?.merchant || null;
+}
+
 export default function MerchantPage() {
   const listSectionRef = useRef<HTMLElement | null>(null);
   const hasHandledQrJumpRef = useRef(false);
@@ -262,7 +279,15 @@ export default function MerchantPage() {
     Record<number, boolean>
   >({});
 
-  function logoutMerchant() {
+  async function logoutMerchant() {
+    try {
+      await fetch("/api/merchant/logout", {
+        method: "POST",
+      });
+    } catch {
+      // Client-side session cleanup below still logs the merchant out locally.
+    }
+
     clearMerchantSession();
     localStorage.removeItem("merchantPageDraft");
     localStorage.removeItem("merchantOfferPrices");
@@ -487,34 +512,47 @@ export default function MerchantPage() {
   }
 
   useEffect(() => {
+    let isCancelled = false;
+
     setTargetMotorcycleId(
       new URLSearchParams(window.location.search).get("motorcycleId")
     );
 
-    const session = getValidMerchantSession();
+    async function loadMerchantSession() {
+      const serverSession = await getServerMerchantSession();
+      const session = serverSession || getValidMerchantSession();
 
-    if (!session) {
-      clearMerchantSession();
-      redirectToMerchantLogin();
-      return;
+      if (isCancelled) return;
+
+      if (!session) {
+        clearMerchantSession();
+        redirectToMerchantLogin();
+        return;
+      }
+
+      const savedStarredLots = localStorage.getItem("merchantStarredLotIds");
+
+      if (savedStarredLots) {
+        setStarredLotIds(
+          JSON.parse(savedStarredLots).map((id: number | string) => Number(id))
+        );
+      }
+
+      setMerchantName(session.merchantName || "");
+      setShopName(session.shopName || "");
+      setPhone(session.phone || "");
+      setMerchantAccountId(Number(session.merchantAccountId));
+      setIsMerchantLoggedIn(true);
+
+      saveMerchantSession(session);
+      checkExistingSubmission(Number(session.merchantAccountId));
     }
 
-    const savedStarredLots = localStorage.getItem("merchantStarredLotIds");
+    loadMerchantSession();
 
-    if (savedStarredLots) {
-      setStarredLotIds(
-        JSON.parse(savedStarredLots).map((id: number | string) => Number(id))
-      );
-    }
-
-    setMerchantName(session.merchantName || "");
-    setShopName(session.shopName || "");
-    setPhone(session.phone || "");
-    setMerchantAccountId(Number(session.merchantAccountId));
-    setIsMerchantLoggedIn(true);
-
-    saveMerchantSession(session);
-    checkExistingSubmission(Number(session.merchantAccountId));
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   useEffect(() => {

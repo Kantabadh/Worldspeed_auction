@@ -132,7 +132,7 @@ export default function RoundQrPrintPage() {
         .map((motorcycle) => ({
           motorcycle,
           order: formatAuctionDisplayOrder(motorcycle.display_order),
-          url: `${siteOrigin}/merchant?motorcycleId=${motorcycle.stock_motorcycle_id}`,
+          url: `${siteOrigin}/q/${motorcycle.stock_motorcycle_id}`,
         })),
     [motorcycles, siteOrigin]
   );

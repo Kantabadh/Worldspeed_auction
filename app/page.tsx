@@ -9,16 +9,6 @@ import { saveMerchantSession } from "@/lib/merchantSession";
 import { supabase } from "@/lib/supabase";
 import { saveCachedStaffProfile } from "@/lib/staffSession";
 
-type MerchantAccount = {
-  id: number;
-  merchant_code: string;
-  merchant_name: string;
-  shop_name: string;
-  phone: string;
-  active: boolean;
-  approval_status: "pending" | "approved" | "rejected";
-};
-
 function getSafeInternalNext(value: string | null) {
   if (!value) return "";
   if (!value.startsWith("/") || value.startsWith("//")) return "";
@@ -109,55 +99,39 @@ export default function HomePage() {
     setIsMerchantLoading(true);
     setMerchantErrorMessage("");
 
-    const { data, error } = await supabase
-      .from("merchant_accounts")
-      .select("id, merchant_code, merchant_name, shop_name, phone, active, approval_status")
-      .eq("phone", cleanPhoneNumber)
-      .eq("merchant_code", cleanCode)
-      .limit(1);
+    const loginResponse = await fetch("/api/merchant/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        phone: cleanPhoneNumber,
+        merchantCode: cleanCode,
+      }),
+    });
 
-    if (error) {
-      if (
-        await handleInvalidRefreshToken(
-          error,
-          supabase,
-          "merchant",
-          "/merchant-login"
-        )
-      ) {
-        setIsMerchantLoading(false);
-        return;
-      }
+    const loginResult = (await loginResponse.json().catch(() => null)) as
+      | {
+          merchant?: {
+            merchantAccountId: number;
+            merchantName: string;
+            shopName: string;
+            phone: string;
+            merchantCode?: string;
+          };
+          error?: string;
+        }
+      | null;
 
-      setMerchantErrorMessage(error.message);
-      setIsMerchantLoading(false);
-      return;
-    }
+    if (!loginResponse.ok || !loginResult?.merchant) {
+      const fallbackMessage =
+        loginResponse.status === 401
+          ? "เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง"
+          : loginResponse.status === 403
+            ? "บัญชีร้านค้านี้ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล"
+            : "เข้าสู่ระบบร้านค้าไม่สำเร็จ";
 
-    if (!data || data.length === 0) {
-      setMerchantErrorMessage("เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง");
-      setIsMerchantLoading(false);
-      return;
-    }
-
-    const merchant = data[0] as MerchantAccount;
-
-    if (merchant.approval_status === "pending") {
-      setMerchantErrorMessage(
-        "บัญชีร้านค้านี้ยังรออนุมัติ กรุณารอผู้ดูแลระบบอนุมัติ"
-      );
-      setIsMerchantLoading(false);
-      return;
-    }
-
-    if (merchant.approval_status === "rejected") {
-      setMerchantErrorMessage("บัญชีร้านค้านี้ไม่ได้รับการอนุมัติ กรุณาติดต่อผู้ดูแล");
-      setIsMerchantLoading(false);
-      return;
-    }
-
-    if (!merchant.active || merchant.approval_status !== "approved") {
-      setMerchantErrorMessage("บัญชีร้านค้านี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแล");
+      setMerchantErrorMessage(loginResult?.error || fallbackMessage);
       setIsMerchantLoading(false);
       return;
     }
@@ -170,11 +144,11 @@ export default function HomePage() {
 
     localStorage.setItem("merchantAcceptedPolicy", "yes");
     saveMerchantSession({
-      merchantAccountId: merchant.id,
-      merchantName: merchant.merchant_name,
-      shopName: merchant.shop_name,
-      phone: merchant.phone,
-      merchantCode: merchant.merchant_code,
+      merchantAccountId: loginResult.merchant.merchantAccountId,
+      merchantName: loginResult.merchant.merchantName,
+      shopName: loginResult.merchant.shopName,
+      phone: loginResult.merchant.phone,
+      merchantCode: loginResult.merchant.merchantCode,
     });
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
