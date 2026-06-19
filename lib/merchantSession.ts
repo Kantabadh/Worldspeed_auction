@@ -2,6 +2,8 @@
 
 export type MerchantSession = {
   merchantAccountId: number;
+  merchantId?: number;
+  merchant_account_id?: number;
   merchantName: string;
   shopName: string;
   phone: string;
@@ -19,12 +21,34 @@ function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
-function isValidMerchantSession(session: MerchantSession | null) {
-  return Boolean(
-    session?.merchantAccountId &&
-      session.expiresAt &&
-      Date.now() <= session.expiresAt
+function getSessionMerchantAccountId(session: MerchantSession | null) {
+  const accountId = Number(
+    session?.merchantAccountId ??
+      session?.merchantId ??
+      session?.merchant_account_id
   );
+
+  return Number.isFinite(accountId) && accountId > 0 ? accountId : null;
+}
+
+function isValidMerchantSession(session: MerchantSession | null) {
+  const expiresAt = Number(session?.expiresAt);
+
+  return Boolean(
+    getSessionMerchantAccountId(session) &&
+      Number.isFinite(expiresAt) &&
+      expiresAt > Date.now()
+  );
+}
+
+function normalizeMerchantSession(session: MerchantSession) {
+  return {
+    ...session,
+    merchantAccountId: getSessionMerchantAccountId(session) || 0,
+    merchantName: session.merchantName || "",
+    shopName: session.shopName || "",
+    phone: session.phone || "",
+  };
 }
 
 function readLocalStorageSession() {
@@ -79,6 +103,20 @@ function writeLocalStorageSession(session: MerchantSession) {
   localStorage.setItem(MERCHANT_SESSION_KEY, JSON.stringify(session));
 }
 
+function clearLocalStorageSession() {
+  if (!isBrowser()) return;
+
+  localStorage.removeItem(MERCHANT_SESSION_KEY);
+}
+
+function clearCookieSession() {
+  if (!isBrowser()) return;
+
+  document.cookie = `${MERCHANT_SESSION_COOKIE_NAME}=; ${getCookieAttributes(
+    0
+  )}`;
+}
+
 function persistMerchantSession(session: MerchantSession) {
   const maxAgeSeconds = Math.max(
     1,
@@ -92,7 +130,7 @@ function persistMerchantSession(session: MerchantSession) {
 export function saveMerchantSession(session: MerchantSession) {
   const now = Date.now();
   const nextSession = {
-    ...session,
+    ...normalizeMerchantSession(session),
     loginAt: session.loginAt || now,
     expiresAt: now + MERCHANT_SESSION_DURATION_MS,
   };
@@ -103,38 +141,39 @@ export function saveMerchantSession(session: MerchantSession) {
   return nextSession;
 }
 
-export function getMerchantSession() {
+export function getValidMerchantSession() {
   const localSession = readLocalStorageSession();
 
   if (localSession) {
     if (isValidMerchantSession(localSession)) {
-      persistMerchantSession(localSession);
-      return localSession;
+      const normalizedSession = normalizeMerchantSession(localSession);
+      persistMerchantSession(normalizedSession);
+      return normalizedSession;
     }
 
-    clearMerchantSession();
-    return null;
+    clearLocalStorageSession();
   }
 
   const cookieSession = readCookieSession();
 
   if (cookieSession) {
     if (isValidMerchantSession(cookieSession)) {
-      persistMerchantSession(cookieSession);
-      return cookieSession;
+      const normalizedSession = normalizeMerchantSession(cookieSession);
+      persistMerchantSession(normalizedSession);
+      return normalizedSession;
     }
 
-    clearMerchantSession();
+    clearCookieSession();
   }
 
   return null;
 }
 
+export const getMerchantSession = getValidMerchantSession;
+
 export function clearMerchantSession() {
   if (!isBrowser()) return;
 
-  localStorage.removeItem(MERCHANT_SESSION_KEY);
-  document.cookie = `${MERCHANT_SESSION_COOKIE_NAME}=; ${getCookieAttributes(
-    0
-  )}`;
+  clearLocalStorageSession();
+  clearCookieSession();
 }

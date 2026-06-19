@@ -20,7 +20,7 @@ import {
 } from "@/lib/merchantOfferDraft";
 import {
   clearMerchantSession,
-  getMerchantSession,
+  getValidMerchantSession,
   saveMerchantSession,
 } from "@/lib/merchantSession";
 
@@ -284,7 +284,7 @@ export default function MerchantPage() {
   }
 
   function refreshMerchantActivity() {
-    const session = getMerchantSession();
+    const session = getValidMerchantSession();
     if (session) saveMerchantSession(session);
   }
 
@@ -292,7 +292,7 @@ export default function MerchantPage() {
     if (merchantAccountId) return merchantAccountId;
 
     try {
-      const session = getMerchantSession();
+      const session = getValidMerchantSession();
 
       return session?.merchantAccountId ? Number(session.merchantAccountId) : null;
     } catch {
@@ -491,7 +491,7 @@ export default function MerchantPage() {
       new URLSearchParams(window.location.search).get("motorcycleId")
     );
 
-    const session = getMerchantSession();
+    const session = getValidMerchantSession();
 
     if (!session) {
       clearMerchantSession();
@@ -527,7 +527,7 @@ export default function MerchantPage() {
     });
 
     const interval = setInterval(() => {
-      const session = getMerchantSession();
+      const session = getValidMerchantSession();
 
       if (!session) {
         clearMerchantSession();
@@ -598,6 +598,8 @@ export default function MerchantPage() {
   }
 
   useEffect(() => {
+    if (!isMerchantLoggedIn) return;
+
     async function loadCurrentRoundAndMotorcycles() {
       setIsLoadingCurrentRound(true);
       setErrorMessage("");
@@ -837,7 +839,7 @@ export default function MerchantPage() {
     }
 
     loadCurrentRoundAndMotorcycles();
-  }, []);
+  }, [isMerchantLoggedIn]);
 
   useEffect(() => {
     if (merchantAccountId) {
@@ -1093,6 +1095,7 @@ export default function MerchantPage() {
 
   useEffect(() => {
     if (hasHandledQrJumpRef.current) return;
+    if (!isMerchantLoggedIn) return;
     if (!targetMotorcycleId || isLoadingCurrentRound) return;
 
     const sortedQrOffers = qrSortedOffersRef.current;
@@ -1117,10 +1120,11 @@ export default function MerchantPage() {
     setOfferFilter("all");
     setCurrentPage(Math.floor(targetIndex / ITEMS_PER_PAGE) + 1);
     setQrJumpPlanVersion((current) => current + 1);
-  }, [targetMotorcycleId, isLoadingCurrentRound]);
+  }, [targetMotorcycleId, isLoadingCurrentRound, isMerchantLoggedIn]);
 
   useEffect(() => {
     if (hasHandledQrJumpRef.current) return;
+    if (!isMerchantLoggedIn) return;
     if (!targetMotorcycleId || isLoadingCurrentRound) return;
 
     const paginatedQrOffers = qrPaginatedOffersRef.current;
@@ -1164,7 +1168,13 @@ export default function MerchantPage() {
         );
       }, 1800);
     }, 150);
-  }, [targetMotorcycleId, currentPage, isLoadingCurrentRound, qrJumpPlanVersion]);
+  }, [
+    targetMotorcycleId,
+    currentPage,
+    isLoadingCurrentRound,
+    qrJumpPlanVersion,
+    isMerchantLoggedIn,
+  ]);
 
   const paginatedMotorcycleIds = useMemo(
     () => paginatedOffers.map((offer) => Number(offer.motorcycle_id)),
