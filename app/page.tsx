@@ -9,6 +9,16 @@ import { saveMerchantSession } from "@/lib/merchantSession";
 import { supabase } from "@/lib/supabase";
 import { saveCachedStaffProfile } from "@/lib/staffSession";
 
+type MerchantAccount = {
+  id: number;
+  merchant_code: string;
+  merchant_name: string;
+  shop_name: string;
+  phone: string;
+  active: boolean;
+  approval_status: "pending" | "approved" | "rejected";
+};
+
 function getSafeInternalNext(value: string | null) {
   if (!value) return "";
   if (!value.startsWith("/") || value.startsWith("//")) return "";
@@ -33,6 +43,23 @@ function isValidPhone(value: string) {
   return /^\d{9,10}$/.test(value);
 }
 
+function isServerSessionInfrastructureError(
+  status: number,
+  errorMessage?: string
+) {
+  if (status !== 500) return false;
+
+  const message = (errorMessage || "").toLowerCase();
+
+  return (
+    message.includes("merchant session server is not configured") ||
+    message.includes("merchant_sessions") ||
+    message.includes("could not create merchant session") ||
+    message.includes("schema cache") ||
+    message.includes("does not exist")
+  );
+}
+
 export default function HomePage() {
   const [selectedTab, setSelectedTab] = useState<"merchant" | "admin">(
     "merchant"
@@ -50,6 +77,96 @@ export default function HomePage() {
   const [staffPassword, setStaffPassword] = useState("");
   const [staffErrorMessage, setStaffErrorMessage] = useState("");
   const [isStaffLoading, setIsStaffLoading] = useState(false);
+
+  function completeMerchantLogin(merchant: {
+    merchantAccountId: number;
+    merchantName: string;
+    shopName: string;
+    phone: string;
+    merchantCode?: string;
+  }) {
+    if (rememberPhone) {
+      localStorage.setItem("rememberedMerchantPhone", cleanPhone(merchantPhone));
+    } else {
+      localStorage.removeItem("rememberedMerchantPhone");
+    }
+
+    localStorage.setItem("merchantAcceptedPolicy", "yes");
+    saveMerchantSession(merchant);
+    localStorage.removeItem("merchantOfferPrices");
+    localStorage.removeItem("draftSubmission");
+
+    window.location.href = merchantLoginNext || "/merchant";
+  }
+
+  async function fallbackClientMerchantLogin(
+    cleanPhoneNumber: string,
+    cleanCode: string
+  ) {
+    const { data, error } = await supabase
+      .from("merchant_accounts")
+      .select("id, merchant_code, merchant_name, shop_name, phone, active, approval_status")
+      .eq("phone", cleanPhoneNumber)
+      .eq("merchant_code", cleanCode)
+      .limit(1);
+
+    if (error) {
+      if (
+        await handleInvalidRefreshToken(
+          error,
+          supabase,
+          "merchant",
+          "/merchant-login"
+        )
+      ) {
+        return;
+      }
+
+      setMerchantErrorMessage(error.message);
+      setIsMerchantLoading(false);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setMerchantErrorMessage("เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง");
+      setIsMerchantLoading(false);
+      return;
+    }
+
+    const merchant = data[0] as MerchantAccount;
+
+    if (merchant.approval_status === "pending") {
+      setMerchantErrorMessage(
+        "บัญชีร้านค้านี้ยังรออนุมัติ กรุณารอผู้ดูแลระบบอนุมัติ"
+      );
+      setIsMerchantLoading(false);
+      return;
+    }
+
+    if (merchant.approval_status === "rejected") {
+      setMerchantErrorMessage(
+        "บัญชีร้านค้านี้ไม่ได้รับการอนุมัติ กรุณาติดต่อผู้ดูแล"
+      );
+      setIsMerchantLoading(false);
+      return;
+    }
+
+    if (!merchant.active || merchant.approval_status !== "approved") {
+      setMerchantErrorMessage(
+        "บัญชีร้านค้านี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแล"
+      );
+      setIsMerchantLoading(false);
+      return;
+    }
+
+    completeMerchantLogin({
+      merchantAccountId: merchant.id,
+      merchantName: merchant.merchant_name,
+      shopName: merchant.shop_name,
+      phone: merchant.phone,
+      merchantCode: merchant.merchant_code,
+    });
+  }
 
   useEffect(() => {
     const savedPhone = localStorage.getItem("rememberedMerchantPhone");
@@ -124,6 +241,16 @@ export default function HomePage() {
       | null;
 
     if (!loginResponse.ok || !loginResult?.merchant) {
+      if (
+        isServerSessionInfrastructureError(
+          loginResponse.status,
+          loginResult?.error
+        )
+      ) {
+        await fallbackClientMerchantLogin(cleanPhoneNumber, cleanCode);
+        return;
+      }
+
       const fallbackMessage =
         loginResponse.status === 401
           ? "เบอร์โทรหรือรหัสร้านค้าไม่ถูกต้อง"
@@ -136,24 +263,13 @@ export default function HomePage() {
       return;
     }
 
-    if (rememberPhone) {
-      localStorage.setItem("rememberedMerchantPhone", cleanPhoneNumber);
-    } else {
-      localStorage.removeItem("rememberedMerchantPhone");
-    }
-
-    localStorage.setItem("merchantAcceptedPolicy", "yes");
-    saveMerchantSession({
+    completeMerchantLogin({
       merchantAccountId: loginResult.merchant.merchantAccountId,
       merchantName: loginResult.merchant.merchantName,
       shopName: loginResult.merchant.shopName,
       phone: loginResult.merchant.phone,
       merchantCode: loginResult.merchant.merchantCode,
     });
-    localStorage.removeItem("merchantOfferPrices");
-    localStorage.removeItem("draftSubmission");
-
-    window.location.href = merchantLoginNext || "/merchant";
   }
 
   async function handleStaffLogin(event: FormEvent<HTMLFormElement>) {
