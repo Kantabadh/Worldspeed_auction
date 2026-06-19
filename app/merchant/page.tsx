@@ -7,6 +7,7 @@ import type {
   IScannerError,
   IScannerProps,
 } from "@yudiel/react-qr-scanner";
+import { handleInvalidRefreshToken } from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 import {
   formatAuctionDisplayOrder,
@@ -134,6 +135,7 @@ type MerchantSession = {
   shopName: string;
   phone: string;
   merchantCode: string;
+  loginAt?: number;
   expiresAt?: number;
 };
 
@@ -165,7 +167,8 @@ type RoundLotMapping = {
   sort_order?: number | null;
 };
 
-const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const MERCHANT_SESSION_KEY = "merchantSession";
+const MERCHANT_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
 const INVALID_QR_MESSAGE = "QR ไม่ถูกต้อง";
 const CAMERA_ERROR_MESSAGE =
@@ -175,6 +178,14 @@ function buildMerchantLoginUrl() {
   const next = `${window.location.pathname}${window.location.search}`;
 
   return `/merchant-login?next=${encodeURIComponent(next)}`;
+}
+
+function isValidMerchantSession(session: MerchantSession | null) {
+  return Boolean(
+    session?.merchantAccountId &&
+      session.expiresAt &&
+      Date.now() <= session.expiresAt
+  );
 }
 
 function extractMotorcycleIdFromQr(value: string) {
@@ -268,16 +279,17 @@ export default function MerchantPage() {
 
   function saveMerchantSession(session: MerchantSession) {
     localStorage.setItem(
-      "merchantSession",
+      MERCHANT_SESSION_KEY,
       JSON.stringify({
         ...session,
+        loginAt: session.loginAt || Date.now(),
         expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
       })
     );
   }
 
   function logoutMerchant() {
-    localStorage.removeItem("merchantSession");
+    localStorage.removeItem(MERCHANT_SESSION_KEY);
     localStorage.removeItem("merchantPageDraft");
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
@@ -288,20 +300,35 @@ export default function MerchantPage() {
     window.location.href = buildMerchantLoginUrl();
   }
 
+  async function handleMerchantAuthError(error: unknown) {
+    return handleInvalidRefreshToken(
+      error,
+      supabase,
+      "merchant",
+      buildMerchantLoginUrl()
+    );
+  }
+
   function refreshMerchantActivity() {
-    const savedSession = localStorage.getItem("merchantSession");
+    const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
 
     if (!savedSession) return;
 
-    const session = JSON.parse(savedSession) as MerchantSession;
-    saveMerchantSession(session);
+    try {
+      const session = JSON.parse(savedSession) as MerchantSession;
+      if (isValidMerchantSession(session)) {
+        saveMerchantSession(session);
+      }
+    } catch {
+      localStorage.removeItem(MERCHANT_SESSION_KEY);
+    }
   }
 
   function getActiveMerchantAccountId() {
     if (merchantAccountId) return merchantAccountId;
 
     try {
-      const savedSession = localStorage.getItem("merchantSession");
+      const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
       const session = savedSession
         ? (JSON.parse(savedSession) as MerchantSession)
         : null;
@@ -422,6 +449,8 @@ export default function MerchantPage() {
       .limit(1);
 
     if (merchantError) {
+      if (await handleMerchantAuthError(merchantError)) return;
+
       setErrorMessage(merchantError.message);
       return;
     }
@@ -444,6 +473,8 @@ export default function MerchantPage() {
       .eq("merchant_id", merchantRowId);
 
     if (offersError) {
+      if (await handleMerchantAuthError(offersError)) return;
+
       setErrorMessage(offersError.message);
       return;
     }
@@ -455,6 +486,8 @@ export default function MerchantPage() {
       .eq("can_edit", true);
 
     if (permissionError) {
+      if (await handleMerchantAuthError(permissionError)) return;
+
       setErrorMessage(permissionError.message);
       return;
     }
@@ -497,17 +530,25 @@ export default function MerchantPage() {
       new URLSearchParams(window.location.search).get("motorcycleId")
     );
 
-    const savedSession = localStorage.getItem("merchantSession");
+    const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
 
     if (!savedSession) {
       redirectToMerchantLogin();
       return;
     }
 
-    const session = JSON.parse(savedSession) as MerchantSession;
+    let session: MerchantSession | null = null;
 
-    if (session.expiresAt && Date.now() > session.expiresAt) {
-      localStorage.removeItem("merchantSession");
+    try {
+      session = JSON.parse(savedSession) as MerchantSession;
+    } catch {
+      localStorage.removeItem(MERCHANT_SESSION_KEY);
+      redirectToMerchantLogin();
+      return;
+    }
+
+    if (!isValidMerchantSession(session)) {
+      localStorage.removeItem(MERCHANT_SESSION_KEY);
       redirectToMerchantLogin();
       return;
     }
@@ -540,17 +581,25 @@ export default function MerchantPage() {
     });
 
     const interval = setInterval(() => {
-      const savedSession = localStorage.getItem("merchantSession");
+      const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
 
       if (!savedSession) {
         redirectToMerchantLogin();
         return;
       }
 
-      const session = JSON.parse(savedSession) as MerchantSession;
+      let session: MerchantSession | null = null;
 
-      if (session.expiresAt && Date.now() > session.expiresAt) {
-        localStorage.removeItem("merchantSession");
+      try {
+        session = JSON.parse(savedSession) as MerchantSession;
+      } catch {
+        localStorage.removeItem(MERCHANT_SESSION_KEY);
+        redirectToMerchantLogin();
+        return;
+      }
+
+      if (!isValidMerchantSession(session)) {
+        localStorage.removeItem(MERCHANT_SESSION_KEY);
         redirectToMerchantLogin();
       }
     }, 5000);
@@ -631,6 +680,11 @@ export default function MerchantPage() {
         .maybeSingle();
 
       if (roundError) {
+        if (await handleMerchantAuthError(roundError)) {
+          setIsLoadingCurrentRound(false);
+          return;
+        }
+
         setErrorMessage(roundError.message);
         setIsLoadingCurrentRound(false);
         return;
@@ -680,6 +734,11 @@ export default function MerchantPage() {
         .not("current_auction_motorcycle_id", "is", null);
 
       if (stockError) {
+        if (await handleMerchantAuthError(stockError)) {
+          setIsLoadingCurrentRound(false);
+          return;
+        }
+
         setErrorMessage(stockError.message);
         setIsLoadingCurrentRound(false);
         return;
@@ -718,6 +777,11 @@ export default function MerchantPage() {
           .in("id", auctionMotorcycleIds);
 
         if (auctionError) {
+          if (await handleMerchantAuthError(auctionError)) {
+            setIsLoadingCurrentRound(false);
+            return;
+          }
+
           setErrorMessage(auctionError.message);
           setIsLoadingCurrentRound(false);
           return;
@@ -735,6 +799,11 @@ export default function MerchantPage() {
       if (!mappingResult.error) {
         mappingRows = (mappingResult.data as unknown as RoundLotMapping[]) || [];
       } else {
+        if (await handleMerchantAuthError(mappingResult.error)) {
+          setIsLoadingCurrentRound(false);
+          return;
+        }
+
         const fallbackMappingResult = await supabase
           .from("auction_round_lots")
           .select("original_motorcycle_id, lot_number")
@@ -743,6 +812,11 @@ export default function MerchantPage() {
         if (!fallbackMappingResult.error) {
           mappingRows =
             (fallbackMappingResult.data as unknown as RoundLotMapping[]) || [];
+        } else {
+          if (await handleMerchantAuthError(fallbackMappingResult.error)) {
+            setIsLoadingCurrentRound(false);
+            return;
+          }
         }
       }
 
@@ -912,6 +986,8 @@ export default function MerchantPage() {
       .order("id", { ascending: true });
 
     if (error) {
+      if (await handleMerchantAuthError(error)) return;
+
       console.error("โหลดรูปภาพรถไม่สำเร็จ", error);
       return;
     }
@@ -955,7 +1031,7 @@ export default function MerchantPage() {
 
     if (!merchantName || !shopName || !phone || !merchantAccountId) {
       alert("ไม่พบข้อมูลร้านค้า กรุณาเข้าสู่ระบบใหม่");
-      window.location.href = "/merchant-login";
+      redirectToMerchantLogin();
       return;
     }
 
@@ -1240,6 +1316,8 @@ export default function MerchantPage() {
           return nextCountsById;
         });
       } catch (error) {
+        if (await handleMerchantAuthError(error)) return;
+
         console.error("โหลดรูปภาพรถไม่สำเร็จ", error);
       } finally {
         if (isCancelled) return;

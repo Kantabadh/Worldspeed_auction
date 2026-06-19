@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { handleInvalidRefreshToken } from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
@@ -58,6 +59,18 @@ export default function AdminStaffPage() {
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
+    if (
+      await handleInvalidRefreshToken(
+        userError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsLoading(false);
+      return;
+    }
+
     if (userError || !userData.user) {
       setErrorMessage("ไม่พบข้อมูลเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่");
       setIsLoading(false);
@@ -69,6 +82,18 @@ export default function AdminStaffPage() {
       .select("id, email, role, active, created_at")
       .eq("id", userData.user.id)
       .limit(1);
+
+    if (
+      await handleInvalidRefreshToken(
+        currentProfileError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsLoading(false);
+      return;
+    }
 
     if (
       currentProfileError ||
@@ -95,6 +120,18 @@ export default function AdminStaffPage() {
       .order("created_at", { ascending: true });
 
     if (error) {
+      if (
+        await handleInvalidRefreshToken(
+          error,
+          supabase,
+          "staff",
+          "/staff-login"
+        )
+      ) {
+        setIsLoading(false);
+        return;
+      }
+
       setErrorMessage(error.message);
       setIsLoading(false);
       return;

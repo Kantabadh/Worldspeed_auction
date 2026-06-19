@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import {
+  handleInvalidRefreshToken,
+  signOutAfterInvalidAuth,
+} from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 import { getMemoryCachedStaffProfile } from "@/lib/staffSession";
 import BackButton from "@/components/BackButton";
@@ -88,7 +92,7 @@ export default function AdminHistoryDetailPage() {
 
   async function logoutStaff() {
     localStorage.removeItem("staffProfile");
-    await supabase.auth.signOut();
+    await signOutAfterInvalidAuth(supabase, "staff");
     setStaffProfile(null);
     window.location.href = "/staff-login";
   }
@@ -110,6 +114,18 @@ export default function AdminHistoryDetailPage() {
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
+    if (
+      await handleInvalidRefreshToken(
+        userError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsCheckingStaff(false);
+      return;
+    }
+
     if (userError || !userData.user) {
       localStorage.removeItem("staffProfile");
       window.location.href = "/staff-login";
@@ -122,6 +138,18 @@ export default function AdminHistoryDetailPage() {
       .eq("id", userData.user.id)
       .eq("active", true)
       .limit(1);
+
+    if (
+      await handleInvalidRefreshToken(
+        profileError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsCheckingStaff(false);
+      return;
+    }
 
     if (profileError || !profile || profile.length === 0) {
       await logoutStaff();

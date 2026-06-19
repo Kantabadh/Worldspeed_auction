@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import StaffGuard from "@/components/StaffGuard";
+import { signOutAfterInvalidAuth } from "@/lib/authRecovery";
 import { clearCachedStaffProfile, getCachedStaffProfile } from "@/lib/staffSession";
 import { supabase } from "@/lib/supabase";
 
@@ -74,7 +75,7 @@ export default function AdminPage() {
 
   async function logoutStaff() {
     clearCachedStaffProfile();
-    await supabase.auth.signOut();
+    await signOutAfterInvalidAuth(supabase, "staff");
     window.location.href = "/staff-login";
   }
 

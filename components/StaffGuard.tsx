@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import {
+  clearStaffAuthStorage,
+  handleInvalidRefreshToken,
+} from "@/lib/authRecovery";
 import {
   clearCachedStaffProfile,
   getCachedStaffProfile,
@@ -73,40 +78,77 @@ export default function StaffGuard({
       }
     }, AUTH_CHECK_TIMEOUT_MS);
 
-    try {
-      if (accessStateRef.current !== "allowed") {
-        setGuardState("checking");
-      }
+    const checkAccess = async () => {
+      try {
+        if (accessStateRef.current !== "allowed") {
+          setGuardState("checking");
+        }
 
-      const cachedProfile = getCachedStaffProfile();
+        const cachedProfile = getCachedStaffProfile();
 
-      if (!cachedProfile) {
+        if (!cachedProfile) {
+          clearCachedStaffProfile();
+          safeRedirectToLogin();
+          return;
+        }
+
+        if (!allowedRoleSet.has(cachedProfile.role)) {
+          clearCachedStaffProfile();
+          safeRedirectToLogin();
+          return;
+        }
+
+        const { data: userData, error: userError } =
+          await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (
+          await handleInvalidRefreshToken(
+            userError,
+            supabase,
+            "staff",
+            "/staff-login"
+          )
+        ) {
+          clearCachedStaffProfile();
+          setGuardState("redirecting");
+          return;
+        }
+
+        if (userError || !userData.user) {
+          clearCachedStaffProfile();
+          clearStaffAuthStorage();
+          safeRedirectToLogin();
+          return;
+        }
+
+        checkedRoleKeyRef.current = roleKey;
+        setGuardState("allowed");
+      } catch (error) {
+        if (cancelled) return;
+
+        if (
+          await handleInvalidRefreshToken(
+            error,
+            supabase,
+            "staff",
+            "/staff-login"
+          )
+        ) {
+          clearCachedStaffProfile();
+          setGuardState("redirecting");
+          return;
+        }
+
         clearCachedStaffProfile();
-        safeRedirectToLogin();
-        return () => {
-          cancelled = true;
-          window.clearTimeout(timeoutId);
-        };
+        setGuardState("error");
+      } finally {
+        window.clearTimeout(timeoutId);
       }
+    };
 
-      if (!allowedRoleSet.has(cachedProfile.role)) {
-        clearCachedStaffProfile();
-        safeRedirectToLogin();
-        return () => {
-          cancelled = true;
-          window.clearTimeout(timeoutId);
-        };
-      }
-
-      checkedRoleKeyRef.current = roleKey;
-      setGuardState("allowed");
-    } catch (error) {
-      console.error("[StaffGuard] access check failed", error);
-      clearCachedStaffProfile();
-      setGuardState("error");
-    } finally {
-      window.clearTimeout(timeoutId);
-    }
+    checkAccess();
 
     return () => {
       cancelled = true;

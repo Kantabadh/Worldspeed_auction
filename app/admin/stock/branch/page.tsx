@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import BackButton from "@/components/BackButton";
 import StaffGuard from "@/components/StaffGuard";
+import {
+  handleInvalidRefreshToken,
+  signOutAfterInvalidAuth,
+} from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 
 type RegistrationStatus = "" | "มีเล่ม" | "ปิดบัญชี" | "อื่น";
@@ -41,11 +45,15 @@ type StockMotorcycle = {
   stock_branch_name: string | null;
   created_by_staff_email: string | null;
   sent_to_center_at: string | null;
+  is_complete: boolean | null;
+  current_auction_motorcycle_id: number | null;
+  current_auction_round_id: number | null;
   missing_detail_remark: string | null;
   stock_motorcycle_photos: StockPhoto[];
 };
 
 type StockEditForm = {
+  stock_branch_code: string;
   brand: string;
   model: string;
   year: string;
@@ -83,6 +91,27 @@ const branchFilterOptions: { code: BranchCode; label: string }[] = [
   { code: "tohlim", label: "โต๊ะลิ้ม" },
   { code: "other", label: "อื่น" },
 ];
+
+const BRANCH_OPTIONS = [
+  { code: "bangkapi", name: "บางกะปิ", prefix: "A" },
+  { code: "bangbon", name: "บางบอน", prefix: "B" },
+  { code: "rangsit", name: "รังสิต", prefix: "C" },
+  { code: "sukhapiban3", name: "สุขาภิบาล3", prefix: "D" },
+  { code: "tohlim", name: "โต๊ะลิ้ม", prefix: "E" },
+  { code: "other", name: "อื่นๆ", prefix: "F" },
+] as const;
+
+const BRANCH_BY_PREFIX = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.prefix, branch.name])
+) as Record<string, string>;
+
+const BRANCH_BY_CODE = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.code, branch.name])
+) as Record<string, string>;
+
+const BRANCH_CODE_BY_PREFIX = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.prefix, branch.code])
+) as Record<string, string>;
 
 function getSavedStaffProfile() {
   const savedProfileText = localStorage.getItem("staffProfile");
@@ -136,15 +165,6 @@ function isRegistrationStatus(
   return registrationStatusOptions.includes((value || "") as RegistrationStatus);
 }
 
-function getStockStatusLabel(status?: string | null) {
-  if (status === "branch_stock") return "คลังสาขา";
-  if (status === "center_stock") return "คลังกลาง";
-  if (status === "in_auction" || status === "อยู่ในรอบเสนอราคา") {
-    return "อยู่ในรอบประมูล";
-  }
-  return status || "-";
-}
-
 function normalizeFrameNumber(value?: string | null) {
   return (value || "").trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -153,10 +173,57 @@ function isAdminOrOwner(profile?: StaffProfile | null) {
   return profile?.role === "owner" || profile?.role === "admin";
 }
 
+function isSoldStockBike(bike: StockMotorcycle) {
+  return bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว";
+}
+
+function isStockBikeInAuction(bike: StockMotorcycle) {
+  return Boolean(
+    bike.stock_status === "in_auction" ||
+      bike.stock_status === "อยู่ในรอบเสนอราคา" ||
+      bike.current_auction_motorcycle_id ||
+      bike.current_auction_round_id
+  );
+}
+
+function getBranchWorkflowStatus(bike: StockMotorcycle) {
+  return bike.is_complete === false ? "รอกรอกข้อมูล" : "รอส่งเข้าคลังกลาง";
+}
+
 function matchesBranchFilter(bike: StockMotorcycle, branchCode: BranchCode) {
   if (branchCode === "all") return true;
 
   return bike.stock_branch_code === branchCode;
+}
+
+function getBranchPrefix(stockNumber?: string | null) {
+  return String(stockNumber || "").trim().charAt(0).toUpperCase();
+}
+
+function getDisplayBranch(row: {
+  stock_branch_name?: string | null;
+  stock_number?: string | null;
+}) {
+  const savedBranchName = row.stock_branch_name?.trim();
+
+  if (savedBranchName && savedBranchName !== "-") {
+    return savedBranchName;
+  }
+
+  return BRANCH_BY_PREFIX[getBranchPrefix(row.stock_number)] || "-";
+}
+
+function getEditableBranchCode(row: {
+  stock_branch_code?: string | null;
+  stock_number?: string | null;
+}) {
+  const savedBranchCode = row.stock_branch_code?.trim();
+
+  if (savedBranchCode && BRANCH_BY_CODE[savedBranchCode]) {
+    return savedBranchCode;
+  }
+
+  return BRANCH_CODE_BY_PREFIX[getBranchPrefix(row.stock_number)] || "";
 }
 
 function getMotorcycleTitle(bike: StockMotorcycle) {
@@ -178,6 +245,7 @@ function getDisplayBrand(bike: StockMotorcycle) {
 
 function createStockEditForm(bike: StockMotorcycle): StockEditForm {
   return {
+    stock_branch_code: getEditableBranchCode(bike),
     brand: bike.brand || getDisplayBrand(bike),
     model: bike.model || "",
     year: bike.year || "",
@@ -191,27 +259,6 @@ function createStockEditForm(bike: StockMotorcycle): StockEditForm {
     cost_price: formatMoneyInput(bike.cost_price),
     notes: bike.notes || "",
   };
-}
-
-function getMissingDetailRemark(bike: StockMotorcycle) {
-  const missingFields = [
-    { label: "ยี่ห้อ", value: bike.brand },
-    { label: "รุ่น", value: bike.model },
-    { label: "ปี", value: bike.year },
-    { label: "สี", value: bike.color },
-    { label: "ทะเบียน", value: bike.license_plate },
-    { label: "เลขตัวถัง", value: bike.frame_number },
-    { label: "สถานะเล่ม", value: bike.registration_status },
-    { label: "ภาษีหมดอายุ", value: bike.tax_expiry },
-    { label: "ต้นทุน", value: bike.cost_price },
-  ].filter((field) => {
-    if (typeof field.value === "number") return Number.isNaN(field.value);
-    return !String(field.value || "").trim();
-  });
-
-  return missingFields.length > 0
-    ? `ข้อมูลยังไม่ครบ: ${missingFields.map((field) => field.label).join(", ")}`
-    : null;
 }
 
 export default function BranchStockPage() {
@@ -268,12 +315,23 @@ export default function BranchStockPage() {
 
   async function logoutStaff() {
     localStorage.removeItem("staffProfile");
-    await supabase.auth.signOut();
+    await signOutAfterInvalidAuth(supabase, "staff");
     window.location.href = "/staff-login";
   }
 
   async function refreshStaffProfile() {
     const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (
+      await handleInvalidRefreshToken(
+        userError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      return null;
+    }
 
     if (userError || !userData.user) return null;
 
@@ -284,6 +342,12 @@ export default function BranchStockPage() {
       .eq("active", true)
       .limit(1)
       .maybeSingle();
+
+    if (
+      await handleInvalidRefreshToken(error, supabase, "staff", "/staff-login")
+    ) {
+      return null;
+    }
 
     if (error || !data) return null;
 
@@ -366,6 +430,9 @@ export default function BranchStockPage() {
         stock_branch_name,
         created_by_staff_email,
         sent_to_center_at,
+        is_complete,
+        current_auction_motorcycle_id,
+        current_auction_round_id,
         missing_detail_remark,
         stock_motorcycle_photos (
           id,
@@ -373,7 +440,12 @@ export default function BranchStockPage() {
         )
       `
       )
-      .eq("stock_status", "branch_stock")
+      .is("sent_to_center_at", null)
+      .not("stock_branch_code", "is", null)
+      .is("current_auction_motorcycle_id", null)
+      .is("current_auction_round_id", null)
+      .not("stock_status", "eq", "sold")
+      .not("stock_status", "eq", "ขายแล้ว")
       .order("id", { ascending: false });
 
     if (currentStaffProfile?.role === "stock_staff") {
@@ -394,7 +466,14 @@ export default function BranchStockPage() {
   }
 
   function canManageBranchStock(bike: StockMotorcycle) {
-    if (bike.stock_status !== "branch_stock") return false;
+    if (
+      bike.sent_to_center_at ||
+      !bike.stock_branch_code ||
+      isSoldStockBike(bike) ||
+      isStockBikeInAuction(bike)
+    ) {
+      return false;
+    }
 
     if (isAdminOrOwner(staffProfile)) return true;
 
@@ -445,6 +524,9 @@ export default function BranchStockPage() {
     setSuccessMessage("");
 
     try {
+      const isComplete = Boolean(finalBrand && finalModel && cleanMoney(editForm.cost_price) !== null);
+      const selectedBranchCode = editForm.stock_branch_code.trim();
+      const selectedBranchName = BRANCH_BY_CODE[selectedBranchCode];
       const updatedStockInput = {
         motorcycle_name: motorcycleName,
         cost_price: cleanMoney(editForm.cost_price),
@@ -457,14 +539,22 @@ export default function BranchStockPage() {
         registration_status: editForm.registration_status || null,
         tax_expiry: editForm.tax_expiry.trim() || null,
         notes: editForm.notes.trim() || null,
+        stock_status: isComplete ? "branch_stock" : "รอกรอกข้อมูล",
+        is_complete: isComplete,
         missing_detail_remark: null,
+        ...(isAdminOrOwner(staffProfile) && selectedBranchCode && selectedBranchName
+          ? {
+              stock_branch_code: selectedBranchCode,
+              stock_branch_name: selectedBranchName,
+            }
+          : {}),
       };
 
       let updateQuery = supabase
         .from("stock_motorcycles")
         .update(updatedStockInput)
         .eq("id", bike.id)
-        .eq("stock_status", "branch_stock");
+        .is("sent_to_center_at", null);
 
       if (staffProfile?.role === "stock_staff") {
         updateQuery = updateQuery.eq(
@@ -523,7 +613,7 @@ export default function BranchStockPage() {
         .from("stock_motorcycles")
         .delete()
         .eq("id", bike.id)
-        .eq("stock_status", "branch_stock");
+        .is("sent_to_center_at", null);
 
       if (staffProfile?.role === "stock_staff") {
         deleteQuery = deleteQuery.eq(
@@ -565,24 +655,27 @@ export default function BranchStockPage() {
   async function sendToCenterStock(bike: StockMotorcycle) {
     if (!canManageBranchStock(bike)) return;
 
-    const missingDetailRemark = getMissingDetailRemark(bike);
-
     setSendingCenterId(bike.id);
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
+      const sentToCenterAt = new Date().toISOString();
       const updateInput = {
         stock_status: "center_stock",
-        sent_to_center_at: new Date().toISOString(),
-        missing_detail_remark: missingDetailRemark,
+        sent_to_center_at: sentToCenterAt,
+        updated_at: sentToCenterAt,
       };
 
       let updateQuery = supabase
         .from("stock_motorcycles")
         .update(updateInput)
         .eq("id", bike.id)
-        .eq("stock_status", "branch_stock");
+        .is("sent_to_center_at", null)
+        .is("current_auction_motorcycle_id", null)
+        .is("current_auction_round_id", null)
+        .not("stock_status", "eq", "sold")
+        .not("stock_status", "eq", "ขายแล้ว");
 
       if (staffProfile?.role === "stock_staff") {
         updateQuery = updateQuery.eq(
@@ -605,7 +698,7 @@ export default function BranchStockPage() {
           stock_branch_name: bike.stock_branch_name || "",
           old_status: bike.stock_status,
           new_status: "center_stock",
-          missing_detail_remark: missingDetailRemark,
+          sent_to_center_at: sentToCenterAt,
         },
       });
 
@@ -775,14 +868,14 @@ export default function BranchStockPage() {
                             </div>
 
                             <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
-                              {getStockStatusLabel(bike.stock_status)}
+                              {getBranchWorkflowStatus(bike)}
                             </span>
                           </div>
 
                           <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-2">
                             <p>
                               <span className="font-semibold">สาขา:</span>{" "}
-                              {bike.stock_branch_name || "-"}
+                              {getDisplayBranch(bike)}
                             </p>
                             <p>
                               <span className="font-semibold">ยี่ห้อ:</span>{" "}
@@ -831,6 +924,34 @@ export default function BranchStockPage() {
                           {editingStockId === bike.id && editForm && (
                             <div className="mt-4 rounded-2xl bg-gray-50 p-3">
                               <div className="grid gap-3 md:grid-cols-2">
+                                {isAdminOrOwner(staffProfile) && (
+                                  <div>
+                                    <label className="text-xs font-semibold text-gray-700">
+                                      สาขา
+                                    </label>
+                                    <select
+                                      className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                      value={editForm.stock_branch_code}
+                                      onChange={(event) =>
+                                        updateEditForm(
+                                          "stock_branch_code",
+                                          event.target.value
+                                        )
+                                      }
+                                    >
+                                      <option value="">ระบุสาขา</option>
+                                      {BRANCH_OPTIONS.map((branch) => (
+                                        <option
+                                          key={branch.code}
+                                          value={branch.code}
+                                        >
+                                          {branch.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+
                                 <div>
                                   <label className="text-xs font-semibold text-gray-700">
                                     ยี่ห้อ

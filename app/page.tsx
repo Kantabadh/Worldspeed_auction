@@ -1,6 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import {
+  clearStaffAuthStorage,
+  handleInvalidRefreshToken,
+} from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 import { saveCachedStaffProfile } from "@/lib/staffSession";
 
@@ -14,11 +18,12 @@ type MerchantAccount = {
   approval_status: "pending" | "approved" | "rejected";
 };
 
-const MERCHANT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const MERCHANT_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000;
 
 function getSafeInternalNext(value: string | null) {
   if (!value) return "";
   if (!value.startsWith("/") || value.startsWith("//")) return "";
+  if (value.includes("http://") || value.includes("https://")) return "";
 
   try {
     const parsed = new URL(value, window.location.origin);
@@ -113,6 +118,18 @@ export default function HomePage() {
       .limit(1);
 
     if (error) {
+      if (
+        await handleInvalidRefreshToken(
+          error,
+          supabase,
+          "merchant",
+          "/merchant-login"
+        )
+      ) {
+        setIsMerchantLoading(false);
+        return;
+      }
+
       setMerchantErrorMessage(error.message);
       setIsMerchantLoading(false);
       return;
@@ -161,6 +178,7 @@ export default function HomePage() {
         shopName: merchant.shop_name,
         phone: merchant.phone,
         merchantCode: merchant.merchant_code,
+        loginAt: Date.now(),
         expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
       })
     );
@@ -189,6 +207,18 @@ export default function HomePage() {
         password: staffPassword,
       });
 
+    if (
+      await handleInvalidRefreshToken(
+        loginError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsStaffLoading(false);
+      return;
+    }
+
     if (loginError || !loginData.user) {
       setStaffErrorMessage("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
       setIsStaffLoading(false);
@@ -203,7 +233,25 @@ export default function HomePage() {
       .limit(1);
 
     if (profileError || !profileData || profileData.length === 0) {
-      await supabase.auth.signOut();
+      if (
+        await handleInvalidRefreshToken(
+          profileError,
+          supabase,
+          "staff",
+          "/staff-login"
+        )
+      ) {
+        setIsStaffLoading(false);
+        return;
+      }
+
+      clearStaffAuthStorage();
+
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        clearStaffAuthStorage();
+      }
       setStaffErrorMessage(
         profileError?.message || "บัญชีนี้ยังไม่ได้รับสิทธิ์แอดมินหรือ Owner"
       );
@@ -222,7 +270,19 @@ export default function HomePage() {
       branch_name: profile.branch_name,
     });
 
-    await supabase.auth.getSession();
+    const { error: sessionError } = await supabase.auth.getSession();
+
+    if (
+      await handleInvalidRefreshToken(
+        sessionError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      setIsStaffLoading(false);
+      return;
+    }
 
     window.location.href =
       profile.role === "stock_staff" ? "/admin/stock" : "/admin";

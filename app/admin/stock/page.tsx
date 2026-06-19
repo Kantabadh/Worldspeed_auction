@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import {
+  handleInvalidRefreshToken,
+  signOutAfterInvalidAuth,
+} from "@/lib/authRecovery";
 import { supabase } from "@/lib/supabase";
 import { withBackFrom } from "@/lib/navigation";
 import BackButton from "@/components/BackButton";
@@ -83,6 +87,15 @@ const sourcePrefixMap: Record<Exclude<SourceBranch, "">, string> = {
   สุขาภิบาล3: "D",
   โต๊ะลิ้ม: "E",
   อื่น: "F",
+};
+
+const sourceBranchCodeMap: Record<Exclude<SourceBranch, "">, string> = {
+  บางกะปิ: "bangkapi",
+  บางบอน: "bangbon",
+  รังสิต: "rangsit",
+  สุขาภิบาล3: "sukhapiban3",
+  โต๊ะลิ้ม: "tohlim",
+  อื่น: "other",
 };
 
 const registrationStatusOptions: RegistrationStatus[] = [
@@ -291,6 +304,17 @@ export default function AdminStockPage() {
   async function refreshStaffProfile() {
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
+    if (
+      await handleInvalidRefreshToken(
+        userError,
+        supabase,
+        "staff",
+        "/staff-login"
+      )
+    ) {
+      return;
+    }
+
     if (userError || !userData.user) return;
 
     const { data, error } = await supabase
@@ -300,6 +324,12 @@ export default function AdminStockPage() {
       .eq("active", true)
       .limit(1)
       .maybeSingle();
+
+    if (
+      await handleInvalidRefreshToken(error, supabase, "staff", "/staff-login")
+    ) {
+      return;
+    }
 
     if (error || !data) return;
 
@@ -341,7 +371,7 @@ export default function AdminStockPage() {
 
   async function logoutStaff() {
     localStorage.removeItem("staffProfile");
-    await supabase.auth.signOut();
+    await signOutAfterInvalidAuth(supabase, "staff");
     window.location.href = "/staff-login";
   }
 
@@ -508,25 +538,28 @@ export default function AdminStockPage() {
         `รอกรอกข้อมูล ${finalStockNumber}`;
 
       const cleanedDetails = cleanDetails(details);
+      const stockBranchCode = isStockStaff
+        ? staffProfile?.branch_code || null
+        : sourceBranchCodeMap[selectedSourceBranch as Exclude<SourceBranch, "">] ||
+          null;
+      const stockStatus =
+        saveMode === "complete" ? "branch_stock" : "รอกรอกข้อมูล";
       const newStockInput = {
         ...cleanedDetails,
         stock_number: finalStockNumber,
         motorcycle_name: generatedMotorcycleName,
         cost_price: cleanMoney(costPrice),
-        stock_status: isStockStaff ? "branch_stock" : "center_stock",
+        stock_status: stockStatus,
         current_auction_motorcycle_id: null,
         current_auction_round_id: null,
+        sent_to_center_at: null,
         is_complete: saveMode === "complete",
         brand: finalBrand || null,
         source_name: finalSourceName,
         registration_status: finalRegistrationStatus || null,
-        ...(isStockStaff
-          ? {
-              stock_branch_code: staffProfile?.branch_code || null,
-              stock_branch_name: staffBranchName,
-              created_by_staff_email: staffProfile?.email || null,
-            }
-          : {}),
+        stock_branch_code: stockBranchCode,
+        stock_branch_name: finalSourceName,
+        created_by_staff_email: staffProfile?.email || null,
       };
 
       const { data: stockData, error: stockError } = await supabase
@@ -558,9 +591,10 @@ export default function AdminStockPage() {
           is_complete: saveMode === "complete",
           stock_status: stockData.stock_status,
           stock_status_thai: stockData.stock_status,
-          stock_branch_code: isStockStaff ? staffProfile?.branch_code || "" : "",
-          stock_branch_name: isStockStaff ? staffBranchName : "",
-          created_by_staff_email: isStockStaff ? staffProfile?.email || "" : "",
+          stock_branch_code: stockBranchCode || "",
+          stock_branch_name: finalSourceName,
+          created_by_staff_email: staffProfile?.email || "",
+          sent_to_center_at: null,
           source_name: finalSourceName,
           registration_status: finalRegistrationStatus || "",
           uploaded_photo_count: uploadedPhotoCount,

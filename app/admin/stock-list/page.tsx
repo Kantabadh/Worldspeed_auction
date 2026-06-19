@@ -15,10 +15,16 @@ type StockStatus =
   | "อยู่ในสต็อก"
   | "branch_stock"
   | "center_stock"
+  | "รอกรอกข้อมูล"
+  | "รอส่งเข้าคลังกลาง"
+  | "อยู่ในคลัง"
+  | "รถตีกลับ"
   | "repairing"
   | "ready_to_sell"
   | "in_auction"
+  | "อยู่ในการประมูล"
   | "อยู่ในรอบเสนอราคา"
+  | "auction"
   | "sold"
   | "ขายแล้ว"
   | "cancelled";
@@ -46,6 +52,7 @@ type StockMotorcycle = {
   stock_branch_code: string | null;
   stock_branch_name: string | null;
   created_by_staff_email: string | null;
+  sent_to_center_at: string | null;
   missing_detail_remark: string | null;
   is_complete: boolean | null;
   current_auction_motorcycle_id: number | null;
@@ -98,6 +105,7 @@ type RoundMotorcycle = {
 
 type StockEditForm = {
   stock_number: string;
+  stock_branch_code: string;
   brand: string;
   model: string;
   cost_price: string;
@@ -110,15 +118,42 @@ type StockEditForm = {
   notes: string;
 };
 
+const BRANCH_OPTIONS = [
+  { code: "bangkapi", name: "บางกะปิ", prefix: "A" },
+  { code: "bangbon", name: "บางบอน", prefix: "B" },
+  { code: "rangsit", name: "รังสิต", prefix: "C" },
+  { code: "sukhapiban3", name: "สุขาภิบาล3", prefix: "D" },
+  { code: "tohlim", name: "โต๊ะลิ้ม", prefix: "E" },
+  { code: "other", name: "อื่นๆ", prefix: "F" },
+] as const;
+
+const BRANCH_BY_PREFIX = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.prefix, branch.name])
+) as Record<string, string>;
+
+const BRANCH_BY_CODE = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.code, branch.name])
+) as Record<string, string>;
+
+const BRANCH_CODE_BY_PREFIX = Object.fromEntries(
+  BRANCH_OPTIONS.map((branch) => [branch.prefix, branch.code])
+) as Record<string, string>;
+
 const statusLabels: Record<string, string> = {
   in_stock: "อยู่ในคลัง",
   "อยู่ในสต็อก": "อยู่ในคลัง",
   branch_stock: "อยู่ในคลังสาขา",
   center_stock: "อยู่ในคลัง",
+  "รอกรอกข้อมูล": "รอกรอกข้อมูล",
+  "รอส่งเข้าคลังกลาง": "รอส่งเข้าคลังกลาง",
+  "อยู่ในคลัง": "อยู่ในคลัง",
+  "รถตีกลับ": "รถตีกลับ",
   repairing: "กำลังซ่อม",
   ready_to_sell: "พร้อมขาย",
   in_auction: "อยู่ในรอบเสนอราคา",
+  "อยู่ในการประมูล": "อยู่ในการประมูล",
   "อยู่ในรอบเสนอราคา": "อยู่ในรอบเสนอราคา",
+  auction: "อยู่ในการประมูล",
   sold: "ขายแล้ว",
   "ขายแล้ว": "ขายแล้ว",
   cancelled: "ยกเลิก",
@@ -133,6 +168,36 @@ const statusFilterOptions: { value: StatusFilter; label: string }[] = [
 
 function getStatusLabel(status: string | null | undefined) {
   return status ? statusLabels[status] || status : "-";
+}
+
+function getBranchPrefix(stockNumber?: string | null) {
+  return String(stockNumber || "").trim().charAt(0).toUpperCase();
+}
+
+function getDisplayBranch(row: {
+  stock_branch_name?: string | null;
+  stock_number?: string | null;
+}) {
+  const savedBranchName = row.stock_branch_name?.trim();
+
+  if (savedBranchName && savedBranchName !== "-") {
+    return savedBranchName;
+  }
+
+  return BRANCH_BY_PREFIX[getBranchPrefix(row.stock_number)] || "-";
+}
+
+function getEditableBranchCode(row: {
+  stock_branch_code?: string | null;
+  stock_number?: string | null;
+}) {
+  const savedBranchCode = row.stock_branch_code?.trim();
+
+  if (savedBranchCode && BRANCH_BY_CODE[savedBranchCode]) {
+    return savedBranchCode;
+  }
+
+  return BRANCH_CODE_BY_PREFIX[getBranchPrefix(row.stock_number)] || "";
 }
 
 function normalizeFrameNumber(value?: string | null) {
@@ -172,6 +237,34 @@ function hasActiveAuctionRoundLink(
   );
 }
 
+function isSold(bike: StockMotorcycle) {
+  return bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว";
+}
+
+function isInAuction(bike: StockMotorcycle) {
+  return Boolean(
+    bike.current_auction_round_id ||
+      bike.current_auction_motorcycle_id ||
+      bike.stock_status === "auction" ||
+      bike.stock_status === "in_auction" ||
+      bike.stock_status === "อยู่ในการประมูล" ||
+      bike.stock_status === "อยู่ในรอบเสนอราคา"
+  );
+}
+
+function isBranchWaiting(bike: StockMotorcycle) {
+  return Boolean(
+    bike.stock_status === "branch_stock" ||
+      (!bike.sent_to_center_at &&
+        bike.stock_branch_code &&
+        bike.stock_status === "รอกรอกข้อมูล")
+  );
+}
+
+function isCenterStock(bike: StockMotorcycle) {
+  return bike.stock_status === "center_stock";
+}
+
 function getSupabaseErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
 
@@ -195,11 +288,14 @@ function getStockLocationLabel(
     return "รอกรอกข้อมูล";
   }
 
-  if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
+  if (isSold(bike)) {
     return "ขายแล้ว";
   }
 
-  if (hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)) {
+  if (
+    hasExistingAuctionRoundLink(bike, existingAuctionRoundIds) ||
+    isInAuction(bike)
+  ) {
     return "อยู่ในการประมูล";
   }
 
@@ -214,11 +310,14 @@ function getStockLocationBadge(
     return "bg-yellow-100 text-yellow-800";
   }
 
-  if (bike.stock_status === "sold" || bike.stock_status === "ขายแล้ว") {
+  if (isSold(bike)) {
     return "bg-purple-100 text-purple-700";
   }
 
-  if (hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)) {
+  if (
+    hasExistingAuctionRoundLink(bike, existingAuctionRoundIds) ||
+    isInAuction(bike)
+  ) {
     return "bg-blue-100 text-blue-700";
   }
 
@@ -230,10 +329,10 @@ function isAvailableStockBike(
   existingAuctionRoundIds: Set<number>
 ) {
   return (
-    bike.stock_status !== "sold" &&
-    bike.stock_status !== "ขายแล้ว" &&
+    isCenterStock(bike) &&
+    !isSold(bike) &&
     !isIncompleteStockBike(bike) &&
-    !hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)
+    !isInAuction(bike)
   );
 }
 
@@ -242,9 +341,9 @@ function matchesStockFilter(
   existingAuctionRoundIds: Set<number>
 ) {
   return (
-    bike.stock_status !== "sold" &&
-    bike.stock_status !== "ขายแล้ว" &&
-    !hasExistingAuctionRoundLink(bike, existingAuctionRoundIds)
+    isCenterStock(bike) &&
+    !isSold(bike) &&
+    !isInAuction(bike)
   );
 }
 
@@ -280,6 +379,7 @@ function getIsCompleteMigrationMessage() {
 function createStockEditForm(bike: StockMotorcycle): StockEditForm {
   return {
     stock_number: bike.stock_number || "",
+    stock_branch_code: getEditableBranchCode(bike),
     brand: bike.brand || "",
     model: bike.model || "",
     cost_price: formatMoneyInput(bike.cost_price),
@@ -517,6 +617,7 @@ export default function AdminStockListPage() {
         stock_branch_code,
         stock_branch_name,
         created_by_staff_email,
+        sent_to_center_at,
         missing_detail_remark,
         ${includeIsComplete ? "is_complete," : ""}
         current_auction_motorcycle_id,
@@ -554,12 +655,12 @@ export default function AdminStockListPage() {
       return;
     }
 
-    setStockMotorcycles(
-      (((data as unknown as StockMotorcycle[]) || []).map((bike) => ({
-        ...bike,
-        is_complete: bike.is_complete ?? true,
-      })))
-    );
+    const rows = ((data as unknown as StockMotorcycle[]) || []).map((bike) => ({
+      ...bike,
+      is_complete: bike.is_complete ?? true,
+    }));
+
+    setStockMotorcycles(rows);
   }
 
   async function loadReturnedStockIds() {
@@ -608,6 +709,10 @@ export default function AdminStockListPage() {
     const keyword = searchText.trim().toLowerCase();
 
     return stockMotorcycles.filter((bike) => {
+      if (statusFilter === "all" && isBranchWaiting(bike)) {
+        return false;
+      }
+
       if (
         statusFilter === "in_stock" &&
         !matchesStockFilter(bike, existingAuctionRoundIds)
@@ -617,15 +722,14 @@ export default function AdminStockListPage() {
 
       if (
         statusFilter === "in_auction" &&
-        getStockLocationLabel(bike, existingAuctionRoundIds) !==
-          "อยู่ในการประมูล"
+        !isInAuction(bike)
       ) {
         return false;
       }
 
       if (
         statusFilter === "sold" &&
-        getStockLocationLabel(bike, existingAuctionRoundIds) !== "ขายแล้ว"
+        !isSold(bike)
       ) {
         return false;
       }
@@ -640,7 +744,7 @@ export default function AdminStockListPage() {
         bike.year,
         bike.license_plate,
         bike.frame_number,
-        bike.stock_branch_name,
+        getDisplayBranch(bike),
         getStockLocationLabel(bike, existingAuctionRoundIds),
         getStatusLabel(bike.stock_status),
       ]
@@ -753,6 +857,8 @@ export default function AdminStockListPage() {
         [finalBrand, finalModel].filter(Boolean).join(" ") ||
         bike.motorcycle_name ||
         `รอกรอกข้อมูล ${editForm.stock_number.trim() || bike.id}`;
+      const selectedBranchCode = editForm.stock_branch_code.trim();
+      const selectedBranchName = BRANCH_BY_CODE[selectedBranchCode];
       const updatedStockInput = {
         motorcycle_name: motorcycleName,
         stock_number: editForm.stock_number.trim() || null,
@@ -767,6 +873,16 @@ export default function AdminStockListPage() {
         tax_expiry: editForm.tax_expiry.trim() || null,
         notes: editForm.notes.trim() || null,
         is_complete: Boolean(finalBrand && finalModel && costPrice !== null),
+        stock_status:
+          finalBrand && finalModel && costPrice !== null
+            ? "center_stock"
+            : "รอกรอกข้อมูล",
+        ...(selectedBranchCode && selectedBranchName
+          ? {
+              stock_branch_code: selectedBranchCode,
+              stock_branch_name: selectedBranchName,
+            }
+          : {}),
         updated_at: new Date().toISOString(),
       };
 
@@ -1252,17 +1368,19 @@ export default function AdminStockListPage() {
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="mt-1 text-2xl font-bold text-gray-900">
-                รายการรถในคลัง
+                รถในคลังบริษัท
               </h1>
             </div>
 
-            <button
-              type="button"
-              onClick={loadPageData}
-              className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
-            >
-              โหลดใหม่
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={loadPageData}
+                className="rounded-xl border bg-white px-4 py-2 font-medium shadow-sm hover:bg-gray-100"
+              >
+                โหลดใหม่
+              </button>
+            </div>
           </div>
 
           {errorMessage && (
@@ -1483,7 +1601,7 @@ export default function AdminStockListPage() {
                           </td>
 
                           <td className="border p-3">
-                            {bike.stock_branch_name || "-"}
+                            {getDisplayBranch(bike)}
                           </td>
 
                           <td className="border p-3">
@@ -1532,6 +1650,32 @@ export default function AdminStockListPage() {
                                       )
                                     }
                                   />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-700">
+                                    สาขา
+                                  </label>
+                                  <select
+                                    className="mt-1 w-full rounded-xl border bg-white p-2 outline-none focus:ring-2 focus:ring-black"
+                                    value={editForm.stock_branch_code}
+                                    onChange={(event) =>
+                                      updateEditForm(
+                                        "stock_branch_code",
+                                        event.target.value
+                                      )
+                                    }
+                                  >
+                                    <option value="">ระบุสาขา</option>
+                                    {BRANCH_OPTIONS.map((branch) => (
+                                      <option
+                                        key={branch.code}
+                                        value={branch.code}
+                                      >
+                                        {branch.name}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
 
                                 <div>
