@@ -18,6 +18,11 @@ import {
   loadMerchantOfferDraft,
   saveMerchantOfferDraft,
 } from "@/lib/merchantOfferDraft";
+import {
+  clearMerchantSession,
+  getMerchantSession,
+  saveMerchantSession,
+} from "@/lib/merchantSession";
 
 const QrScanner = dynamic<IScannerProps>(
   () => import("@yudiel/react-qr-scanner").then((module) => module.Scanner),
@@ -129,16 +134,6 @@ type Offer = {
   price: string;
 };
 
-type MerchantSession = {
-  merchantAccountId: number;
-  merchantName: string;
-  shopName: string;
-  phone: string;
-  merchantCode: string;
-  loginAt?: number;
-  expiresAt?: number;
-};
-
 type ExistingSubmissionOffer = {
   id: number;
   offer_price: number;
@@ -167,8 +162,6 @@ type RoundLotMapping = {
   sort_order?: number | null;
 };
 
-const MERCHANT_SESSION_KEY = "merchantSession";
-const MERCHANT_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 5;
 const INVALID_QR_MESSAGE = "QR ไม่ถูกต้อง";
 const CAMERA_ERROR_MESSAGE =
@@ -178,14 +171,6 @@ function buildMerchantLoginUrl() {
   const next = `${window.location.pathname}${window.location.search}`;
 
   return `/merchant-login?next=${encodeURIComponent(next)}`;
-}
-
-function isValidMerchantSession(session: MerchantSession | null) {
-  return Boolean(
-    session?.merchantAccountId &&
-      session.expiresAt &&
-      Date.now() <= session.expiresAt
-  );
 }
 
 function extractMotorcycleIdFromQr(value: string) {
@@ -277,19 +262,8 @@ export default function MerchantPage() {
     Record<number, boolean>
   >({});
 
-  function saveMerchantSession(session: MerchantSession) {
-    localStorage.setItem(
-      MERCHANT_SESSION_KEY,
-      JSON.stringify({
-        ...session,
-        loginAt: session.loginAt || Date.now(),
-        expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
-      })
-    );
-  }
-
   function logoutMerchant() {
-    localStorage.removeItem(MERCHANT_SESSION_KEY);
+    clearMerchantSession();
     localStorage.removeItem("merchantPageDraft");
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
@@ -310,28 +284,15 @@ export default function MerchantPage() {
   }
 
   function refreshMerchantActivity() {
-    const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
-
-    if (!savedSession) return;
-
-    try {
-      const session = JSON.parse(savedSession) as MerchantSession;
-      if (isValidMerchantSession(session)) {
-        saveMerchantSession(session);
-      }
-    } catch {
-      localStorage.removeItem(MERCHANT_SESSION_KEY);
-    }
+    const session = getMerchantSession();
+    if (session) saveMerchantSession(session);
   }
 
   function getActiveMerchantAccountId() {
     if (merchantAccountId) return merchantAccountId;
 
     try {
-      const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
-      const session = savedSession
-        ? (JSON.parse(savedSession) as MerchantSession)
-        : null;
+      const session = getMerchantSession();
 
       return session?.merchantAccountId ? Number(session.merchantAccountId) : null;
     } catch {
@@ -530,25 +491,10 @@ export default function MerchantPage() {
       new URLSearchParams(window.location.search).get("motorcycleId")
     );
 
-    const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
+    const session = getMerchantSession();
 
-    if (!savedSession) {
-      redirectToMerchantLogin();
-      return;
-    }
-
-    let session: MerchantSession | null = null;
-
-    try {
-      session = JSON.parse(savedSession) as MerchantSession;
-    } catch {
-      localStorage.removeItem(MERCHANT_SESSION_KEY);
-      redirectToMerchantLogin();
-      return;
-    }
-
-    if (!isValidMerchantSession(session)) {
-      localStorage.removeItem(MERCHANT_SESSION_KEY);
+    if (!session) {
+      clearMerchantSession();
       redirectToMerchantLogin();
       return;
     }
@@ -581,25 +527,10 @@ export default function MerchantPage() {
     });
 
     const interval = setInterval(() => {
-      const savedSession = localStorage.getItem(MERCHANT_SESSION_KEY);
+      const session = getMerchantSession();
 
-      if (!savedSession) {
-        redirectToMerchantLogin();
-        return;
-      }
-
-      let session: MerchantSession | null = null;
-
-      try {
-        session = JSON.parse(savedSession) as MerchantSession;
-      } catch {
-        localStorage.removeItem(MERCHANT_SESSION_KEY);
-        redirectToMerchantLogin();
-        return;
-      }
-
-      if (!isValidMerchantSession(session)) {
-        localStorage.removeItem(MERCHANT_SESSION_KEY);
+      if (!session) {
+        clearMerchantSession();
         redirectToMerchantLogin();
       }
     }, 5000);

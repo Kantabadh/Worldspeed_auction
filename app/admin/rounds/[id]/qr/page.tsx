@@ -35,9 +35,6 @@ type QrMotorcycle = {
 };
 
 function getOrigin() {
-  const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-
-  if (configuredOrigin) return configuredOrigin;
   if (typeof window === "undefined") return "";
 
   return window.location.origin;

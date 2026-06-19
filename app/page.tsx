@@ -5,6 +5,7 @@ import {
   clearStaffAuthStorage,
   handleInvalidRefreshToken,
 } from "@/lib/authRecovery";
+import { saveMerchantSession } from "@/lib/merchantSession";
 import { supabase } from "@/lib/supabase";
 import { saveCachedStaffProfile } from "@/lib/staffSession";
 
@@ -17,8 +18,6 @@ type MerchantAccount = {
   active: boolean;
   approval_status: "pending" | "approved" | "rejected";
 };
-
-const MERCHANT_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000;
 
 function getSafeInternalNext(value: string | null) {
   if (!value) return "";
@@ -170,18 +169,13 @@ export default function HomePage() {
     }
 
     localStorage.setItem("merchantAcceptedPolicy", "yes");
-    localStorage.setItem(
-      "merchantSession",
-      JSON.stringify({
-        merchantAccountId: merchant.id,
-        merchantName: merchant.merchant_name,
-        shopName: merchant.shop_name,
-        phone: merchant.phone,
-        merchantCode: merchant.merchant_code,
-        loginAt: Date.now(),
-        expiresAt: Date.now() + MERCHANT_TIMEOUT_MS,
-      })
-    );
+    saveMerchantSession({
+      merchantAccountId: merchant.id,
+      merchantName: merchant.merchant_name,
+      shopName: merchant.shop_name,
+      phone: merchant.phone,
+      merchantCode: merchant.merchant_code,
+    });
     localStorage.removeItem("merchantOfferPrices");
     localStorage.removeItem("draftSubmission");
 

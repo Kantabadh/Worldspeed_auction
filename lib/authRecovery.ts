@@ -66,6 +66,11 @@ export function clearMerchantAuthStorage() {
   if (typeof window === "undefined") return;
 
   MERCHANT_SESSION_KEYS.forEach((key) => localStorage.removeItem(key));
+
+  const secure =
+    window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `merchantSession=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+
   clearSupabaseAuthStorage();
 }
 
